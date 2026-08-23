@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -6194,7 +6194,7 @@ export type Database = {
           net_weight_snapshot: number | null
           packing_list_line_id: string
           product_id: string
-          product_packing_box_id: string
+          product_packing_box_id: string | null
           warehouse_id: string
           warehouse_location_id: string
         }
@@ -6213,7 +6213,7 @@ export type Database = {
           net_weight_snapshot?: number | null
           packing_list_line_id: string
           product_id: string
-          product_packing_box_id: string
+          product_packing_box_id: string | null
           warehouse_id: string
           warehouse_location_id: string
         }
@@ -6232,7 +6232,7 @@ export type Database = {
           net_weight_snapshot?: number | null
           packing_list_line_id?: string
           product_id?: string
-          product_packing_box_id?: string
+          product_packing_box_id?: string | null
           warehouse_id?: string
           warehouse_location_id?: string
         }
@@ -9451,6 +9451,7 @@ export type Database = {
           balance_at_order_entry_snapshot: number | null
           bill_to_snapshot_json: Json | null
           closed_at: string | null
+          converted_from_quote_id: string | null
           created_at: string
           created_by_user_id: string | null
           credit_hold_reason:
@@ -9501,6 +9502,7 @@ export type Database = {
           ship_to_display_name_snapshot: string
           ship_to_snapshot_json: Json
           ship_to_type: Database["public"]["Enums"]["sales_order_ship_to_type"]
+          shipping_priority: Database["public"]["Enums"]["shipping_priority"]
           shipping_readiness_status: Database["public"]["Enums"]["shipping_readiness_status"]
           status: Database["public"]["Enums"]["sales_order_status"]
           subtotal_amount: number
@@ -9515,6 +9517,7 @@ export type Database = {
           balance_at_order_entry_snapshot?: number | null
           bill_to_snapshot_json?: Json | null
           closed_at?: string | null
+          converted_from_quote_id?: string | null
           created_at?: string
           created_by_user_id?: string | null
           credit_hold_reason?:
@@ -9565,6 +9568,7 @@ export type Database = {
           ship_to_display_name_snapshot: string
           ship_to_snapshot_json: Json
           ship_to_type?: Database["public"]["Enums"]["sales_order_ship_to_type"]
+          shipping_priority?: Database["public"]["Enums"]["shipping_priority"]
           shipping_readiness_status?: Database["public"]["Enums"]["shipping_readiness_status"]
           status?: Database["public"]["Enums"]["sales_order_status"]
           subtotal_amount?: number
@@ -9579,6 +9583,7 @@ export type Database = {
           balance_at_order_entry_snapshot?: number | null
           bill_to_snapshot_json?: Json | null
           closed_at?: string | null
+          converted_from_quote_id?: string | null
           created_at?: string
           created_by_user_id?: string | null
           credit_hold_reason?:
@@ -9629,6 +9634,7 @@ export type Database = {
           ship_to_display_name_snapshot?: string
           ship_to_snapshot_json?: Json
           ship_to_type?: Database["public"]["Enums"]["sales_order_ship_to_type"]
+          shipping_priority?: Database["public"]["Enums"]["shipping_priority"]
           shipping_readiness_status?: Database["public"]["Enums"]["shipping_readiness_status"]
           status?: Database["public"]["Enums"]["sales_order_status"]
           subtotal_amount?: number
@@ -9639,6 +9645,20 @@ export type Database = {
           updated_by_user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "sales_order_converted_from_quote_id_fkey"
+            columns: ["converted_from_quote_id"]
+            isOneToOne: false
+            referencedRelation: "sales_order"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_order_converted_from_quote_id_fkey"
+            columns: ["converted_from_quote_id"]
+            isOneToOne: false
+            referencedRelation: "shipping_dashboard_open_queue"
+            referencedColumns: ["sales_order_id"]
+          },
           {
             foreignKeyName: "sales_order_created_by_user_id_fkey"
             columns: ["created_by_user_id"]
@@ -13562,6 +13582,14 @@ export type Database = {
         }
         Returns: string
       }
+      confirm_freight_shipment: {
+        Args: {
+          p_freight_shipment_id: string
+          p_released_by_user_id?: string
+          p_ship_date?: string
+        }
+        Returns: undefined
+      }
       create_invoices_from_packing_list: {
         Args: {
           p_brand_dropship_allocations?: Json
@@ -13570,6 +13598,19 @@ export type Database = {
           p_created_by_user_id?: string
           p_invoice_date?: string
           p_packing_list_id: string
+        }
+        Returns: string[]
+      }
+      create_invoices_from_packing_list_with_terms: {
+        Args: {
+          p_brand_dropship_allocations: Json
+          p_brand_freight_allocations: Json
+          p_brand_tax_allocations: Json
+          p_customer_freight_charge: number
+          p_invoice_date: string
+          p_packing_list_id: string
+          p_payment_days: number
+          p_payment_terms: string
         }
         Returns: string[]
       }
@@ -13615,6 +13656,48 @@ export type Database = {
       post_shipment_adjustment: {
         Args: { p_shipment_adjustment_id: string }
         Returns: undefined
+      }
+      record_customer_payment_for_invoice: {
+        Args: {
+          p_amount: number
+          p_customer_invoice_id: string
+          p_memo?: string
+          p_payment_date: string
+          p_payment_method: Database["public"]["Enums"]["customer_payment_method"]
+          p_recorded_by_user_id?: string
+          p_reference_number?: string
+        }
+        Returns: string
+      }
+      record_invoice_settlement_with_credit_memo: {
+        Args: {
+          p_credit_memo_amount?: number
+          p_credit_memo_id?: string
+          p_customer_invoice_id: string
+          p_customer_payment_amount?: number
+          p_memo?: string
+          p_payment_date: string
+          p_payment_method: Database["public"]["Enums"]["customer_payment_method"]
+          p_recorded_by_user_id?: string
+          p_reference_number?: string
+        }
+        Returns: Json
+      }
+      record_invoice_settlement_with_waiver: {
+        Args: {
+          p_credit_memo_amount?: number
+          p_credit_memo_id?: string
+          p_customer_invoice_id: string
+          p_customer_payment_amount?: number
+          p_memo?: string
+          p_payment_date: string
+          p_payment_method: Database["public"]["Enums"]["customer_payment_method"]
+          p_recorded_by_user_id?: string
+          p_reference_number?: string
+          p_waiver_amount?: number
+          p_waiver_reason?: string
+        }
+        Returns: Json
       }
       receive_rga_return: {
         Args: {
@@ -13727,7 +13810,12 @@ export type Database = {
         | "partially_applied"
         | "fully_applied"
         | "void"
-      customer_account_status: "pending" | "active" | "inactive" | "credit_hold"
+      customer_account_status:
+        | "pending"
+        | "active"
+        | "inactive"
+        | "credit_hold"
+        | "obsolete"
       customer_invoice_generation_mode: "brand_specific_invoice"
       customer_invoice_payment_status: "unpaid" | "partially_paid" | "paid"
       customer_invoice_status:
@@ -14038,6 +14126,7 @@ export type Database = {
         | "portal"
         | "ecommerce"
         | "rep_submitted"
+        | "converted"
       sales_order_status:
         | "draft"
         | "open"
@@ -14046,17 +14135,23 @@ export type Database = {
         | "closed"
         | "cancelled"
         | "deleted"
+        | "converted"
+        | "pending"
+        | "hold"
+        | "void"
       sales_order_type:
         | "regular"
         | "display"
         | "rga_replacement"
         | "catalog_marketing"
         | "other"
+        | "quote"
       sales_rep_agency_status: "active" | "inactive"
       sales_rep_status: "active" | "inactive"
       scheduled_report_frequency: "daily" | "weekly" | "monthly"
       scheduled_report_status: "active" | "paused" | "error" | "disabled"
       shipment_adjustment_status: "posted" | "reversed"
+      shipping_priority: "normal" | "highest"
       shipping_readiness_status:
         | "not_ready"
         | "ready"
@@ -14325,7 +14420,13 @@ export const Constants = {
         "fully_applied",
         "void",
       ],
-      customer_account_status: ["pending", "active", "inactive", "credit_hold"],
+      customer_account_status: [
+        "pending",
+        "active",
+        "inactive",
+        "credit_hold",
+        "obsolete",
+      ],
       customer_invoice_generation_mode: ["brand_specific_invoice"],
       customer_invoice_payment_status: ["unpaid", "partially_paid", "paid"],
       customer_invoice_status: [
@@ -14676,6 +14777,7 @@ export const Constants = {
         "portal",
         "ecommerce",
         "rep_submitted",
+        "converted",
       ],
       sales_order_status: [
         "draft",
@@ -14685,6 +14787,10 @@ export const Constants = {
         "closed",
         "cancelled",
         "deleted",
+        "converted",
+        "pending",
+        "hold",
+        "void",
       ],
       sales_order_type: [
         "regular",
@@ -14692,12 +14798,14 @@ export const Constants = {
         "rga_replacement",
         "catalog_marketing",
         "other",
+        "quote",
       ],
       sales_rep_agency_status: ["active", "inactive"],
       sales_rep_status: ["active", "inactive"],
       scheduled_report_frequency: ["daily", "weekly", "monthly"],
       scheduled_report_status: ["active", "paused", "error", "disabled"],
       shipment_adjustment_status: ["posted", "reversed"],
+      shipping_priority: ["normal", "highest"],
       shipping_readiness_status: [
         "not_ready",
         "ready",

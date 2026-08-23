@@ -10,7 +10,24 @@ import { ProductListRows } from "./product-list-rows";
 import { ProductPartsEditRows } from "./product-parts-edit-rows";
 import { PartParentProductPicker } from "./part-parent-product-picker";
 import { ProductVendorRows } from "./product-vendor-rows";
+import { CustomerOrderControls } from "./customer-order-controls";
+import { CustomerInvoiceControls } from "./customer-invoice-controls";
+import { FinancialInvoiceControls } from "./financial-invoice-controls";
+import { OrdersOverviewControls } from "./orders-overview-controls";
+import { OrderEntryForm, type OrderPartOption, type OrderProductOption, type OrderShipToOption } from "./order-entry-form";
+import { OrderEntryPartsInitializer } from "./order-entry-parts-initializer";
+import { QuoteDocumentControls } from "./quote-document-controls";
+import { PackingListDocumentControls } from "./packing-list-document-controls";
+import { ShipmentSubmitButton } from "./shipment-submit-button";
+import { ShipmentFreightFields } from "./shipment-freight-fields";
+import { PackingListFreightEditor } from "./packing-list-freight-editor";
+import { InvoiceTermsAndFreightFields } from "./invoice-terms-and-freight-fields";
+import { InvoiceDocumentControls } from "./invoice-document-controls";
+import { PaymentSettlementFields } from "./payment-settlement-fields";
+import { ModuleNav } from "./module-nav";
+import { EditOrderAddresses } from "./edit-order-addresses";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import type { Database } from "@/types/supabase";
 
 type SearchParams = Promise<{
   advanced?: string;
@@ -31,6 +48,61 @@ type SearchParams = Promise<{
   product_status?: string;
   product_style?: string;
   product?: string;
+  quote?: string;
+  order?: string;
+  order_action?: string;
+  order_page?: string;
+  order_page_size?: string;
+  order_q?: string;
+  order_advanced?: string;
+  order_date_from?: string;
+  order_date_to?: string;
+  order_customer_name?: string;
+  order_sku?: string;
+  order_territory?: string;
+  order_rep?: string;
+  order_sort?: string;
+  order_dir?: string;
+  order_status?: string;
+  order_ready?: string;
+  order_customer?: string;
+  order_mode?: string;
+  invoice_page?: string;
+  invoice_page_size?: string;
+  invoice_q?: string;
+  invoice_advanced?: string;
+  invoice_date_from?: string;
+  invoice_date_to?: string;
+  invoice_status?: string;
+  invoice_skus?: string;
+  financial_page?: string;
+  financial_page_size?: string;
+  financial_q?: string;
+  financial_advanced?: string;
+  financial_date_from?: string;
+  financial_date_to?: string;
+  financial_status?: string;
+  financial_customer?: string;
+  financial_skus?: string;
+  packing_freight_edit?: string;
+  packing_invoice_status?: string;
+  shipping_tab?: string;
+  shipment?: string;
+  shipment_edit?: string;
+  packing_list?: string;
+  payment?: string;
+  invoice?: string;
+  invoice_ids?: string;
+  invoice_date?: string;
+  invoice_payment_terms?: string;
+  invoice_payment_days?: string;
+  invoice_customer_freight?: string;
+  invoice_freight_allocations?: string;
+  invoice_dropship_allocations?: string;
+  invoice_tax_allocations?: string;
+  financial_tab?: string;
+  preparation_packing_list?: string;
+  return_customer?: string;
   return_module?: string;
   part?: string;
   image_category?: string;
@@ -107,6 +179,7 @@ type LocationEditRecord = CustomerLocation & {
   address_line_1: string | null;
   address_line_2: string | null;
   country: string;
+  email: string | null;
   postal_code: string | null;
 };
 
@@ -130,6 +203,7 @@ type CustomerContact = {
 };
 
 type SalesOrder = {
+  created_at: string;
   id: string;
   sales_order_number: string;
   customer_po_number: string;
@@ -140,11 +214,76 @@ type SalesOrder = {
   shipping_readiness_status: string;
   credit_hold_status: string;
   total_amount: number;
+  converted_order?: { id: string; sales_order_number: string } | null;
+  shipping_in_progress?: boolean;
+  shipping_quantity?: { shipped: number; total: number };
 };
+
+type SalesOrderDetail = SalesOrder & {
+  customer_account_id: string;
+  customer_location_id: string | null;
+  customer_name_snapshot: string;
+  bill_to_snapshot_json: Record<string, unknown> | null;
+  is_dropship: boolean;
+  order_source: string;
+  order_type: string;
+  requested_ship_date: string | null;
+  ship_to_display_name_snapshot: string;
+  ship_to_snapshot_json: Record<string, unknown>;
+  ship_to_type: string;
+  shipping_priority: string;
+  sales_rep_agency_id_snapshot: string | null;
+  sales_rep_id_snapshot: string | null;
+  territory_id_snapshot: string | null;
+  subtotal_amount: number;
+  tax_amount: number;
+  freight_amount: number;
+  notes: string | null;
+  lines: {
+    brand_name_snapshot: string;
+    available_inventory: number;
+    discount_percent: number;
+    id: string;
+    line_number: number;
+    line_status: string;
+    product_id: string;
+    product_name_snapshot: string;
+    product_sku_snapshot: string;
+    quantity_cancelled: number;
+    quantity_cleared: number;
+    quantity_ordered: number;
+    quantity_shipped: number;
+    unit_price: number;
+    line_total: number;
+  }[];
+};
+
+type OrderAddressOption = OrderShipToOption & {
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  country: string | null;
+  countryCode: string | null;
+  email: string | null;
+  postalCode: string | null;
+  stateProvince: string | null;
+};
+
+function addressSnapshotLines(snapshot: Record<string, unknown> | null, fallbackName?: string) {
+  const value = snapshot ?? {};
+  const name = String(value.ship_to_display_name ?? value.bill_to_display_name ?? value.location_name ?? fallbackName ?? "").trim();
+  const cityStatePostal = [value.city, value.state_province, value.postal_code].filter(Boolean).map(String).join(", ");
+
+  return [name, value.address_line_1, value.address_line_2, cityStatePostal, value.country]
+    .filter(Boolean)
+    .map(String);
+}
 
 type CustomerInvoice = {
   id: string;
   invoice_number: string;
+  sales_order: { customer_po_number: string } | null;
+  sales_order_id: string;
   brand_name_snapshot: string;
   invoice_date: string;
   due_date: string | null;
@@ -167,13 +306,30 @@ type CreditMemo = {
 };
 
 type PackingList = {
+  allocated_freight_cost: number;
+  freight_shipment_id: string | null;
   id: string;
   packing_list_number: string;
+  sales_order_id: string;
   customer_po_number_snapshot: string;
   status: string;
   invoice_generation_status_snapshot: string;
   shipping_fee: number;
   ship_date: string | null;
+};
+
+type InvoiceQueuePackingList = PackingList & {
+  customer_account_id: string;
+  customer_name: string;
+  created_at: string;
+  dropship_fee_amount: number;
+  sales_order_number_snapshot: string | null;
+};
+
+type InvoiceBrandSummary = {
+  brand_id: string;
+  brand_name: string;
+  subtotal_amount: number;
 };
 
 type Rga = {
@@ -503,6 +659,27 @@ function money(value: number | null | undefined) {
   return currencyFormatter.format(Number(value ?? 0));
 }
 
+function textValue(formData: FormData, key: string) {
+  return String(formData.get(key) ?? "").trim();
+}
+
+function invoiceDueDate(shipDate: string | null | undefined, paymentDays: number, fallbackDate: string) {
+  const sourceDate = shipDate?.slice(0, 10) || fallbackDate;
+  const date = new Date(`${sourceDate}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return fallbackDate;
+  date.setDate(date.getDate() + paymentDays);
+  return date.toISOString().slice(0, 10);
+}
+
+function parseInvoiceAllocations(value: string | undefined) {
+  try {
+    const parsed = JSON.parse(value ?? "{}") as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(parsed).map(([key, amount]) => [key, Number(amount)])) as Record<string, number>;
+  } catch {
+    return null;
+  }
+}
+
 function label(value: string | null | undefined) {
   if (!value) {
     return "Not set";
@@ -524,6 +701,46 @@ function dateLabel(value: string | null | undefined) {
     month: "short",
     year: "numeric"
   }).format(new Date(`${value}T00:00:00`));
+}
+
+function timestampLabel(value: string | null | undefined) {
+  if (!value) return "Not set";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not set";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
+function shippingQuantityLabel(value: SalesOrder["shipping_quantity"]) {
+  const shipped = Number(value?.shipped ?? 0);
+  const total = Number(value?.total ?? 0);
+  const formatQuantity = (quantity: number) => (Number.isInteger(quantity) ? String(quantity) : quantity.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""));
+  return `${formatQuantity(shipped)}/${formatQuantity(total)}`;
+}
+
+function shippingQuantityTone(value: SalesOrder["shipping_quantity"]) {
+  const shipped = Number(value?.shipped ?? 0);
+  const total = Number(value?.total ?? 0);
+  if (total > 0 && shipped >= total) return "good";
+  if (shipped > 0) return "warn";
+  return "danger";
+}
+
+function shippingStatus(value: SalesOrder["shipping_quantity"], shipmentInProgress = false) {
+  const shipped = Number(value?.shipped ?? 0);
+  const total = Number(value?.total ?? 0);
+  if (total > 0 && shipped >= total) return { tone: "good" as const, value: "Closed" };
+  if (shipmentInProgress) return { tone: "warn" as const, value: "In Progress" };
+  if (shipped > 0) return { tone: "warn" as const, value: "Partial" };
+  return { tone: "danger" as const, value: "Open" };
+}
+
+function orderLifecycleStatus(status: string) {
+  if (status === "open" || status === "partially_shipped") return { tone: "neutral" as const, value: "Active" };
+  if (status === "closed") return { tone: "good" as const, value: "Closed" };
+  if (status === "hold") return { tone: "warn" as const, value: "Hold" };
+  if (status === "void" || status === "deleted") return { tone: "danger" as const, value: label(status) };
+  return { tone: "neutral" as const, value: label(status) };
 }
 
 function fileSizeLabel(value: number | null | undefined) {
@@ -893,6 +1110,1492 @@ async function createCustomerAction(formData: FormData) {
   }
 
   redirect(`/?customer=${customerId}`);
+}
+
+async function createSalesOrderAction(formData: FormData) {
+  "use server";
+
+  const customerId = textValue(formData, "customer_id");
+  const customerPoNumber = textValue(formData, "customer_po_number");
+  const orderDate = textValue(formData, "order_date");
+  const orderSource = textValue(formData, "order_source") || "manual";
+  const orderType = textValue(formData, "order_type") || "regular";
+  const displayOrderType = textValue(formData, "display_order_type") || null;
+  const isDropship = formData.get("is_dropship") === "on";
+  const locationId = textValue(formData, "customer_location_id") || null;
+  const notes = textValue(formData, "notes") || null;
+  const productSearch = textValue(formData, "product_search");
+  const fallbackUrl = `/?module=new-order&customer=${customerId}`;
+
+  let requestedLines: { discountPercent: number; productId: string; quantity: number; unitPrice: number }[] = [];
+  try {
+    requestedLines = JSON.parse(textValue(formData, "order_lines") || "[]") as typeof requestedLines;
+  } catch {
+    redirect(`${fallbackUrl}&error=Order%20lines%20could%20not%20be%20read.`);
+  }
+
+  const validLines = requestedLines.filter(
+    (line) => line.productId && Number.isInteger(line.quantity) && line.quantity > 0 && line.unitPrice >= 0 && line.discountPercent >= 0
+  );
+
+  if (!customerId || !customerPoNumber || !orderDate || (validLines.length === 0 && !productSearch) || validLines.length !== requestedLines.length) {
+    redirect(`${fallbackUrl}&error=Enter%20a%20PO%20number,%20order%20date,%20and%20at%20least%20one%20valid%20product%20line.`);
+  }
+
+  if (!isDropship && !locationId) {
+    redirect(`${fallbackUrl}&error=Select%20a%20saved%20shipping%20address%20or%20use%20Manual%20Ship-to.`);
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const quoteDate = orderDate.replaceAll("-", "");
+  const quoteNumber = orderType === "quote"
+    ? `QT${quoteDate.slice(4, 8)}${quoteDate.slice(0, 4)}-${String(Math.floor(Math.random() * 10000)).padStart(4, "0")}`
+    : undefined;
+  const [accountResult, billingResult, invoiceResult, freightResult, locationResult, productsResult] = await Promise.all([
+    supabase
+      .from("customer_account")
+      .select("id, name, account_number, legacy_account_id, default_discount_percent, is_sales_tax_exempt, purchase_email")
+      .eq("id", customerId)
+      .single(),
+    supabase
+      .from("customer_billing_profile")
+      .select("payment_terms, credit_limit")
+      .eq("customer_account_id", customerId)
+      .eq("is_active", true)
+      .maybeSingle(),
+    supabase
+      .from("customer_invoice")
+      .select("balance_due")
+      .eq("customer_account_id", customerId)
+      .neq("invoice_status", "void"),
+    supabase
+      .from("customer_freight_policy")
+      .select("ltl_freight_terms, ground_freight_terms, default_ltl_carrier, default_ltl_carrier_account_number, default_ground_carrier, default_ground_carrier_account_number")
+      .eq("customer_account_id", customerId)
+      .eq("is_active", true)
+      .order("is_default", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    locationId
+      ? supabase
+          .from("customer_location")
+          .select("id, location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, email")
+          .eq("id", locationId)
+          .eq("customer_account_id", customerId)
+          .eq("is_shipping_address", true)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    validLines.length > 0
+      ? supabase
+          .from("product")
+          .select("id, sku, name, default_price, brand_id, brand(name)")
+          .in("id", validLines.map((line) => line.productId))
+      : supabase
+          .from("product")
+          .select("id, sku, name, default_price, brand_id, brand(name)")
+          .eq("sku", productSearch)
+          .limit(1)
+  ]);
+
+  const failure = [accountResult, billingResult, invoiceResult, freightResult, locationResult, productsResult].find((result) => result.error);
+  if (failure?.error) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(failure.error.message)}`);
+  }
+
+  if (!accountResult.data || (!isDropship && !locationResult.data)) {
+    redirect(`${fallbackUrl}&error=The%20customer%20or%20selected%20shipping%20address%20is%20not%20available.`);
+  }
+
+  const productById = new Map((productsResult.data ?? []).map((product) => [product.id, product]));
+  const effectiveLines =
+    validLines.length > 0
+      ? validLines
+      : productsResult.data?.length === 1
+        ? [
+            {
+              discountPercent: Number(accountResult.data.default_discount_percent ?? 0),
+              productId: productsResult.data[0].id,
+              quantity: 1,
+              unitPrice: Number(productsResult.data[0].default_price ?? 0)
+            }
+          ]
+        : [];
+
+  if (effectiveLines.length === 0 || productById.size !== effectiveLines.length) {
+    redirect(`${fallbackUrl}&error=One%20or%20more%20selected%20products%20are%20no%20longer%20available.`);
+  }
+
+  const account = accountResult.data;
+  const savedLocation = locationResult.data;
+  const dropshipName = textValue(formData, "dropship_name");
+  const dropshipAddressLine1 = textValue(formData, "dropship_address_line_1");
+  const dropshipCity = textValue(formData, "dropship_city");
+  const dropshipStateProvince = textValue(formData, "dropship_state_province");
+  const dropshipPostalCode = textValue(formData, "dropship_postal_code");
+  const dropshipCountry = textValue(formData, "dropship_country") || "United States";
+  const shippingContactEmail = textValue(formData, "shipping_contact_email");
+
+  if (isDropship && (!dropshipName || !dropshipAddressLine1 || !dropshipCity || !dropshipStateProvince || !dropshipPostalCode)) {
+    redirect(`${fallbackUrl}&error=Complete%20the%20manual%20Ship-to%20address.`);
+  }
+
+  const currentBalance = (invoiceResult.data ?? []).reduce((sum, invoice) => sum + Number(invoice.balance_due ?? 0), 0);
+  const creditLimit = billingResult.data?.credit_limit === null || billingResult.data?.credit_limit === undefined ? 0 : Number(billingResult.data.credit_limit);
+  const onCreditHold = currentBalance > creditLimit;
+  const freight = freightResult.data;
+  const shipToSnapshot = isDropship
+    ? {
+        ship_to_display_name: dropshipName,
+        address_line_1: dropshipAddressLine1,
+        address_line_2: textValue(formData, "dropship_address_line_2") || null,
+        city: dropshipCity,
+        state_province: dropshipStateProvince,
+        postal_code: dropshipPostalCode,
+        country: dropshipCountry,
+        country_code: dropshipCountry === "United States" ? "US" : null,
+        shipping_contact_email: textValue(formData, "dropship_email") || account.purchase_email || null
+      }
+    : {
+        ship_to_display_name: savedLocation!.location_name,
+        address_line_1: savedLocation!.address_line_1,
+        address_line_2: savedLocation!.address_line_2,
+        city: savedLocation!.city,
+        state_province: savedLocation!.state_province,
+        postal_code: savedLocation!.postal_code,
+        country: savedLocation!.country,
+        country_code: savedLocation!.country_code,
+        shipping_contact_email: shippingContactEmail || savedLocation!.email || account.purchase_email || null
+      };
+
+  const { data: order, error: orderError } = await supabase
+    .from("sales_order")
+    .insert({
+      acknowledgement_document_type: orderType === "quote" ? "order_acknowledgement" : onCreditHold ? "pro_forma_invoice" : "order_acknowledgement",
+      balance_at_order_entry_snapshot: currentBalance,
+      credit_hold_reason: onCreditHold ? "credit_limit_exceeded" : null,
+      credit_hold_status: onCreditHold ? "on_credit_hold" : "none",
+      credit_limit_snapshot: creditLimit,
+      customer_account_id: customerId,
+      customer_account_number_snapshot: account.account_number,
+      customer_location_id: isDropship ? null : locationId,
+      customer_name_snapshot: account.name,
+      customer_po_number: customerPoNumber,
+      invoice_required: orderType !== "quote",
+      sales_order_number: quoteNumber,
+      display_order_type: orderType === "display" ? (displayOrderType as "primary_showroom_display" | "non_primary_display" | "other_display") : null,
+      display_tracking_required: orderType === "display",
+      ground_carrier_account_number_snapshot: freight?.default_ground_carrier_account_number ?? null,
+      ground_carrier_snapshot: freight?.default_ground_carrier ?? null,
+      ground_freight_terms_snapshot: freight?.ground_freight_terms ?? "prepaid",
+      is_dropship: isDropship,
+      legacy_account_id_snapshot: account.legacy_account_id,
+      ltl_carrier_account_number_snapshot: freight?.default_ltl_carrier_account_number ?? null,
+      ltl_carrier_snapshot: freight?.default_ltl_carrier ?? null,
+      ltl_freight_terms_snapshot: freight?.ltl_freight_terms ?? "prepaid",
+      notes,
+      order_date: orderDate,
+      order_source: orderSource as "manual",
+      order_type: orderType as "regular" | "display" | "quote",
+      payment_terms_snapshot: billingResult.data?.payment_terms ?? null,
+      ship_to_display_name_snapshot: isDropship ? dropshipName : savedLocation!.location_name,
+      ship_to_snapshot_json: shipToSnapshot,
+      ship_to_type: isDropship ? "dropship" : "saved_location",
+      status: "open",
+      shipping_readiness_status: "not_ready"
+    })
+    .select("id")
+    .single();
+
+  if (orderError || !order) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(orderError?.message ?? "Order could not be created.")}`);
+  }
+
+  const lineRows = effectiveLines.map((line, index) => {
+    const product = productById.get(line.productId)!;
+    const unitPrice = Number(line.unitPrice);
+    const discountPercent = Number(line.discountPercent);
+    const defaultPrice = Number(product.default_price ?? 0);
+    const defaultDiscount = Number(account.default_discount_percent ?? 0);
+    const priceOverridden = Math.abs(unitPrice - defaultPrice) > 0.001;
+    const discountOverridden = Math.abs(discountPercent - defaultDiscount) > 0.001;
+
+    return {
+      brand_id_snapshot: product.brand_id,
+      brand_name_snapshot: product.brand?.name ?? "Not set",
+      discount_override_reason: discountOverridden ? "Order-entry override" : null,
+      discount_overridden: discountOverridden,
+      discount_percent: discountPercent,
+      line_number: index + 1,
+      price_override_reason: priceOverridden ? "Order-entry override" : null,
+      price_overridden: priceOverridden,
+      product_id: line.productId,
+      product_name_snapshot: product.name,
+      product_sku_snapshot: product.sku,
+      quantity_ordered: Number(line.quantity),
+      sales_order_id: order.id,
+      unit_price: unitPrice
+    };
+  });
+
+  const { error: linesError } = await supabase.from("sales_order_line").insert(lineRows);
+  if (linesError) {
+    await supabase.from("sales_order").delete().eq("id", order.id);
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(linesError.message)}`);
+  }
+
+  redirect(`/?module=orders&order=${order.id}&notice=${encodeURIComponent(orderType === "quote" ? "Quote created." : "Order created.")}`);
+}
+
+async function updateSalesOrderAction(formData: FormData) {
+  "use server";
+
+  const orderId = textValue(formData, "order_id");
+  const customerId = textValue(formData, "customer_id");
+  const fallbackUrl = `/?module=orders&order=${orderId}&order_action=edit`;
+
+  if (!orderId || !customerId) {
+    redirect(`/?module=orders&error=${encodeURIComponent("The order could not be identified.")}`);
+  }
+
+  const customerPoNumber = textValue(formData, "customer_po_number");
+  const requestedStatus = textValue(formData, "order_status");
+  let requestedNewLines: { discountPercent: number; productId: string; quantity: number; unitPrice: number }[] = [];
+  try {
+    requestedNewLines = JSON.parse(textValue(formData, "new_order_lines") || "[]") as typeof requestedNewLines;
+  } catch {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("New order lines could not be read.")}`);
+  }
+  if (!customerPoNumber) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Enter a customer PO number.")}`);
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data: currentOrder, error: orderReadError } = await supabase
+    .from("sales_order")
+    .select("id, status, bill_to_snapshot_json, customer_location_id, is_dropship")
+    .eq("id", orderId)
+    .eq("customer_account_id", customerId)
+    .maybeSingle();
+
+  if (orderReadError || !currentOrder) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(orderReadError?.message ?? "Order not found.")}`);
+  }
+  if (!["open", "partially_shipped", "pending", "hold"].includes(currentOrder.status)) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Only open, partially shipped, pending, or held orders can be edited.")}`);
+  }
+  if (!["open", "pending", "hold", "void"].includes(requestedStatus)) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Select a valid order status.")}`);
+  }
+  if (currentOrder.status === "partially_shipped" && requestedStatus === "void") {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("A partially shipped order cannot be voided.")}`);
+  }
+
+  const shippingAddressSelection = textValue(formData, "shipping_address_selection");
+  const shipToMode = shippingAddressSelection === "current"
+    ? (currentOrder.is_dropship ? "dropship" : "saved_location")
+    : "saved_location";
+  const selectedLocationId = shippingAddressSelection === "current"
+    ? currentOrder.customer_location_id ?? ""
+    : shippingAddressSelection;
+  const billingAddressSelection = textValue(formData, "billing_address_selection");
+  const selectedBillingLocationId = billingAddressSelection === "current" ? "" : billingAddressSelection;
+  const dropshipName = textValue(formData, "dropship_name");
+  const dropshipAddressLine1 = textValue(formData, "dropship_address_line_1");
+  const dropshipCity = textValue(formData, "dropship_city");
+  const dropshipStateProvince = textValue(formData, "dropship_state_province");
+  const dropshipPostalCode = textValue(formData, "dropship_postal_code");
+  const dropshipEmail = textValue(formData, "dropship_email") || null;
+  let orderAddressUpdate: Database["public"]["Tables"]["sales_order"]["Update"] = {};
+
+  if (shipToMode === "dropship") {
+    const manualShipToBlank = !dropshipName && !dropshipAddressLine1 && !dropshipCity && !dropshipStateProvince && !dropshipPostalCode;
+    if (manualShipToBlank && currentOrder.is_dropship) {
+      orderAddressUpdate = {};
+    } else if (!dropshipName || !dropshipAddressLine1 || !dropshipCity || !dropshipStateProvince || !dropshipPostalCode) {
+      redirect(`${fallbackUrl}&error=${encodeURIComponent("Complete the current Ship-to address.")}`);
+    } else {
+      orderAddressUpdate = {
+      customer_location_id: null,
+      is_dropship: true,
+      ship_to_display_name_snapshot: dropshipName,
+      ship_to_snapshot_json: {
+        address_line_1: dropshipAddressLine1,
+        address_line_2: textValue(formData, "dropship_address_line_2") || null,
+        city: dropshipCity,
+        country: textValue(formData, "dropship_country") || "United States",
+        country_code: null,
+        postal_code: dropshipPostalCode,
+        shipping_contact_email: dropshipEmail,
+        ship_to_display_name: dropshipName,
+        state_province: dropshipStateProvince
+      },
+      ship_to_type: "dropship"
+      };
+    }
+  } else {
+    if (!selectedLocationId) redirect(`${fallbackUrl}&error=${encodeURIComponent("Select a saved shipping address.")}`);
+    const { data: savedLocation, error: savedLocationError } = await supabase
+      .from("customer_location")
+      .select("id, location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code")
+      .eq("id", selectedLocationId)
+      .eq("customer_account_id", customerId)
+      .eq("is_shipping_address", true)
+      .eq("status", "active")
+      .maybeSingle();
+    if (savedLocationError || !savedLocation) redirect(`${fallbackUrl}&error=${encodeURIComponent(savedLocationError?.message ?? "The saved shipping address is not available.")}`);
+    if (!dropshipName || !dropshipAddressLine1 || !dropshipCity || !dropshipStateProvince || !dropshipPostalCode) {
+      redirect(`${fallbackUrl}&error=${encodeURIComponent("Complete the selected shipping address details.")}`);
+    }
+    orderAddressUpdate = {
+      customer_location_id: savedLocation.id,
+      is_dropship: false,
+      ship_to_display_name_snapshot: dropshipName,
+      ship_to_snapshot_json: {
+        address_line_1: dropshipAddressLine1,
+        address_line_2: textValue(formData, "dropship_address_line_2") || null,
+        city: dropshipCity,
+        country: textValue(formData, "dropship_country") || "United States",
+        country_code: savedLocation.country_code,
+        postal_code: dropshipPostalCode,
+        shipping_contact_email: dropshipEmail,
+        ship_to_display_name: dropshipName,
+        state_province: dropshipStateProvince
+      },
+      ship_to_type: "saved_location"
+    };
+  }
+
+  const billingAddressMode = billingAddressSelection === "current" ? "current" : "saved";
+  if (billingAddressMode === "current") {
+    const billingName = textValue(formData, "billing_name");
+    const billingAddressLine1 = textValue(formData, "billing_address_line_1");
+    const billingCity = textValue(formData, "billing_city");
+    const billingStateProvince = textValue(formData, "billing_state_province");
+    const billingPostalCode = textValue(formData, "billing_postal_code");
+    const manualBillingBlank = !billingName && !billingAddressLine1 && !billingCity && !billingStateProvince && !billingPostalCode;
+    if (manualBillingBlank) {
+      orderAddressUpdate.bill_to_snapshot_json = currentOrder.bill_to_snapshot_json;
+    } else if (!billingName || !billingAddressLine1 || !billingCity || !billingStateProvince || !billingPostalCode) {
+      redirect(`${fallbackUrl}&error=${encodeURIComponent("Complete the current billing address.")}`);
+    } else {
+      orderAddressUpdate.bill_to_snapshot_json = {
+      address_line_1: billingAddressLine1,
+      address_line_2: textValue(formData, "billing_address_line_2") || null,
+      bill_to_display_name: billingName,
+      billing_email: textValue(formData, "billing_email") || null,
+      city: billingCity,
+      country: textValue(formData, "billing_country") || "United States",
+      country_code: null,
+      postal_code: billingPostalCode,
+      state_province: billingStateProvince
+      };
+    }
+  } else if (selectedBillingLocationId) {
+    const { data: billingLocation, error: billingLocationError } = await supabase
+      .from("customer_location")
+      .select("location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code")
+      .eq("id", selectedBillingLocationId)
+      .eq("customer_account_id", customerId)
+      .eq("is_billing_address", true)
+      .eq("status", "active")
+      .maybeSingle();
+    if (billingLocationError || !billingLocation) redirect(`${fallbackUrl}&error=${encodeURIComponent(billingLocationError?.message ?? "The billing address is not available.")}`);
+    const billingName = textValue(formData, "billing_name");
+    const billingAddressLine1 = textValue(formData, "billing_address_line_1");
+    const billingCity = textValue(formData, "billing_city");
+    const billingStateProvince = textValue(formData, "billing_state_province");
+    const billingPostalCode = textValue(formData, "billing_postal_code");
+    if (!billingName || !billingAddressLine1 || !billingCity || !billingStateProvince || !billingPostalCode) {
+      redirect(`${fallbackUrl}&error=${encodeURIComponent("Complete the selected billing address details.")}`);
+    }
+    orderAddressUpdate.bill_to_snapshot_json = {
+      address_line_1: billingAddressLine1,
+      address_line_2: textValue(formData, "billing_address_line_2") || null,
+      bill_to_display_name: billingName,
+      billing_email: textValue(formData, "billing_email") || null,
+      city: billingCity,
+      country: textValue(formData, "billing_country") || "United States",
+      country_code: billingLocation.country_code,
+      postal_code: billingPostalCode,
+      state_province: billingStateProvince
+    };
+  }
+
+  const { data: currentLines, error: linesReadError } = await supabase
+    .from("sales_order_line")
+    .select("id, line_number, quantity_shipped")
+    .eq("sales_order_id", orderId)
+    .order("line_number", { ascending: true });
+
+  if (linesReadError) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(linesReadError.message)}`);
+  }
+
+  const lineIds = formData
+    .getAll("line_id")
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+  const currentLineById = new Map((currentLines ?? []).map((line) => [line.id, line]));
+  const deleteLineIds = new Set(
+    formData
+      .getAll("delete_line_id")
+      .map((value) => String(value).trim())
+      .filter(Boolean)
+  );
+
+  if (lineIds.length === 0 || lineIds.some((lineId) => !currentLineById.has(lineId))) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("One or more order lines could not be found.")}`);
+  }
+
+  if (deleteLineIds.size === lineIds.length) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("An order must keep at least one line.")}`);
+  }
+
+  for (const lineId of lineIds) {
+    const currentLine = currentLineById.get(lineId)!;
+    const quantityShipped = Number(currentLine.quantity_shipped ?? 0);
+
+    if (deleteLineIds.has(lineId)) {
+      if (quantityShipped > 0) {
+        redirect(`${fallbackUrl}&error=${encodeURIComponent("A shipped line cannot be removed.")}`);
+      }
+      const { error } = await supabase.from("sales_order_line").delete().eq("id", lineId).eq("sales_order_id", orderId);
+      if (error) redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
+      continue;
+    }
+
+    if (quantityShipped > 0) continue;
+
+    const quantity = Number(textValue(formData, `quantity_${lineId}`));
+    const unitPrice = Number(textValue(formData, `unit_price_${lineId}`));
+    const discountPercent = Number(textValue(formData, `discount_percent_${lineId}`));
+    if (!Number.isInteger(quantity) || quantity < quantityShipped || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100) {
+      redirect(`${fallbackUrl}&error=${encodeURIComponent("Use a whole quantity, a non-negative price, and a discount between 0% and 100%.")}`);
+    }
+
+    const { error } = await supabase
+      .from("sales_order_line")
+      .update({
+        discount_override_reason: "Order edit override",
+        discount_overridden: true,
+        discount_percent: discountPercent,
+        price_override_reason: "Order edit override",
+        price_overridden: true,
+        quantity_ordered: quantity,
+        unit_price: unitPrice
+      })
+      .eq("id", lineId)
+      .eq("sales_order_id", orderId);
+    if (error) redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
+  }
+
+  const validNewLines = requestedNewLines.filter(
+    (line) => line.productId && Number.isInteger(line.quantity) && line.quantity > 0 && Number.isFinite(line.unitPrice) && line.unitPrice >= 0 && Number.isFinite(line.discountPercent) && line.discountPercent >= 0 && line.discountPercent <= 100
+  );
+  if (validNewLines.length !== requestedNewLines.length) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Each new item needs a whole quantity, a non-negative price, and a discount between 0% and 100%.")}`);
+  }
+
+  if (validNewLines.length > 0) {
+    const { data: products, error: productsError } = await supabase
+      .from("product")
+      .select("id, sku, name, default_price, brand_id, brand(name)")
+      .in("id", validNewLines.map((line) => line.productId));
+    if (productsError || (products ?? []).length !== validNewLines.length) {
+      redirect(`${fallbackUrl}&error=${encodeURIComponent(productsError?.message ?? "One or more new items are not available.")}`);
+    }
+
+    const productById = new Map((products ?? []).map((product) => [product.id, product]));
+    const nextLineNumber = Math.max(0, ...(currentLines ?? []).map((line) => Number(line.line_number))) + 1;
+    const newLineRows = validNewLines.map((line, index) => {
+      const product = productById.get(line.productId)!;
+      return {
+        brand_id_snapshot: product.brand_id,
+        brand_name_snapshot: product.brand?.name ?? "Not set",
+        discount_override_reason: "Order edit override",
+        discount_overridden: true,
+        discount_percent: line.discountPercent,
+        line_number: nextLineNumber + index,
+        price_override_reason: "Order edit override",
+        price_overridden: true,
+        product_id: product.id,
+        product_name_snapshot: product.name,
+        product_sku_snapshot: product.sku,
+        quantity_ordered: line.quantity,
+        sales_order_id: orderId,
+        unit_price: line.unitPrice
+      };
+    });
+    const { error: insertLinesError } = await supabase.from("sales_order_line").insert(newLineRows);
+    if (insertLinesError) redirect(`${fallbackUrl}&error=${encodeURIComponent(insertLinesError.message)}`);
+  }
+
+  const salesRepSelection = textValue(formData, "sales_rep_selection");
+  const [salesRepId, salesRepAgencyId] = salesRepSelection ? salesRepSelection.split("|") : [null, null];
+  if (salesRepId && salesRepAgencyId) {
+    const { data: salesRep, error: salesRepError } = await supabase
+      .from("sales_rep")
+      .select("id")
+      .eq("id", salesRepId)
+      .eq("sales_rep_agency_id", salesRepAgencyId)
+      .eq("status", "active")
+      .maybeSingle();
+    if (salesRepError || !salesRep) redirect(`${fallbackUrl}&error=${encodeURIComponent(salesRepError?.message ?? "The selected sales rep is not available.")}`);
+  }
+
+  const territoryId = textValue(formData, "territory_id") || null;
+  const shippingPriority = textValue(formData, "shipping_priority") === "highest" ? "highest" : "normal";
+  const orderUpdate: Database["public"]["Tables"]["sales_order"]["Update"] = {
+    ...orderAddressUpdate,
+    customer_po_number: customerPoNumber,
+    notes: textValue(formData, "notes") || null,
+    status: requestedStatus as Database["public"]["Enums"]["sales_order_status"],
+    sales_rep_agency_id_snapshot: salesRepAgencyId,
+    sales_rep_id_snapshot: salesRepId,
+    shipping_priority: shippingPriority,
+    territory_id_snapshot: territoryId
+  };
+
+  const { error: orderUpdateError } = await supabase
+    .from("sales_order")
+    .update(orderUpdate)
+    .eq("id", orderId)
+    .eq("customer_account_id", customerId);
+  if (orderUpdateError) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(orderUpdateError.message)}`);
+  }
+
+  redirect(`/?module=orders&order=${orderId}&notice=${encodeURIComponent("Order updated.")}`);
+}
+
+async function convertQuoteToOrderAction(formData: FormData) {
+  "use server";
+
+  const orderId = textValue(formData, "order_id");
+  const fallbackUrl = `/?module=orders&order=${orderId}`;
+  if (!orderId) {
+    redirect(`/?module=orders&error=${encodeURIComponent("The quote could not be identified.")}`);
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data: quote, error: quoteError } = await supabase
+    .from("sales_order")
+    .select(
+      "id, acknowledgement_document_type, balance_at_order_entry_snapshot, bill_to_snapshot_json, credit_hold_reason, credit_hold_status, credit_limit_snapshot, currency, customer_account_id, customer_account_number_snapshot, customer_location_id, customer_name_snapshot, customer_po_number, discount_percent_snapshot, display_order_type, display_tracking_required, dropship_fee_amount, dropship_fee_override, dropship_fee_override_reason, freight_amount, freight_review_required, ground_carrier_account_number_snapshot, ground_carrier_snapshot, ground_freight_terms_snapshot, is_dropship, legacy_account_id_snapshot, ltl_carrier_account_number_snapshot, ltl_carrier_snapshot, ltl_freight_terms_snapshot, notes, order_contact_snapshot_json, order_date, order_type, payment_terms_snapshot, primary_showroom_enrollment_id, requested_ship_date, sales_rep_agency_id_snapshot, sales_rep_id_snapshot, ship_to_display_name_snapshot, ship_to_snapshot_json, ship_to_type, status, tax_amount, territory_id_snapshot"
+    )
+    .eq("id", orderId)
+    .maybeSingle();
+  if (quoteError || !quote) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(quoteError?.message ?? "Quote not found.")}`);
+  }
+  if (quote.order_type !== "quote" || quote.status !== "open") {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Only an open quote can be converted to an order.")}`);
+  }
+
+  const dateToken = String(quote.order_date ?? new Date().toISOString().slice(0, 10)).replaceAll("-", "");
+  let salesOrderNumber = "";
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = `SO${dateToken}-${String(Math.floor(Math.random() * 10000)).padStart(4, "0")}`;
+    const { data: existing, error: existingError } = await supabase
+      .from("sales_order")
+      .select("id")
+      .eq("sales_order_number", candidate)
+      .maybeSingle();
+    if (existingError) {
+      redirect(`${fallbackUrl}&error=${encodeURIComponent(existingError.message)}`);
+    }
+    if (!existing) {
+      salesOrderNumber = candidate;
+      break;
+    }
+  }
+  if (!salesOrderNumber) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("A unique sales order number could not be generated. Please try again.")}`);
+  }
+
+  const { data: quoteLines, error: quoteLinesError } = await supabase
+    .from("sales_order_line")
+    .select(
+      "brand_id_snapshot, brand_name_snapshot, discount_override_reason, discount_overridden, discount_percent, display_counts_toward_primary_showroom, display_discount_percent_snapshot, display_exclusion_reason, estimated_ship_date, line_number, notes, price_override_reason, price_overridden, product_eligibility_snapshot, product_id, product_name_snapshot, product_sellability_snapshot, product_sku_snapshot, product_status_snapshot, quantity_ordered, requested_ship_date, restricted_product_override, restricted_product_override_reason, unit_price"
+    )
+    .eq("sales_order_id", quote.id)
+    .order("line_number");
+  if (quoteLinesError || !quoteLines?.length) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(quoteLinesError?.message ?? "The quote has no lines to convert.")}`);
+  }
+
+  // Mark the quote first so its customer PO number is released for the new active order.
+  const { data: convertedQuote, error: quoteUpdateError } = await supabase
+    .from("sales_order")
+    .update({ status: "converted", shipping_readiness_status: "not_ready" })
+    .eq("id", quote.id)
+    .eq("order_type", "quote")
+    .eq("status", "open")
+    .select("id")
+    .maybeSingle();
+  if (quoteUpdateError || !convertedQuote) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(quoteUpdateError?.message ?? "The quote was already converted or is no longer open.")}`);
+  }
+
+  const { data: convertedOrder, error: convertedOrderError } = await supabase
+    .from("sales_order")
+    .insert({
+      acknowledgement_document_type: "order_acknowledgement",
+      balance_at_order_entry_snapshot: quote.balance_at_order_entry_snapshot,
+      bill_to_snapshot_json: quote.bill_to_snapshot_json,
+      credit_hold_reason: quote.credit_hold_status === "on_credit_hold" ? quote.credit_hold_reason : null,
+      credit_hold_status: quote.credit_hold_status,
+      credit_limit_snapshot: quote.credit_limit_snapshot,
+      converted_from_quote_id: quote.id,
+      currency: quote.currency,
+      customer_account_id: quote.customer_account_id,
+      customer_account_number_snapshot: quote.customer_account_number_snapshot,
+      customer_location_id: quote.customer_location_id,
+      customer_name_snapshot: quote.customer_name_snapshot,
+      customer_po_number: quote.customer_po_number,
+      discount_percent_snapshot: quote.discount_percent_snapshot,
+      display_order_type: null,
+      display_tracking_required: false,
+      dropship_fee_amount: quote.dropship_fee_amount,
+      dropship_fee_override: quote.dropship_fee_override,
+      dropship_fee_override_reason: quote.dropship_fee_override_reason,
+      freight_amount: quote.freight_amount,
+      freight_review_required: quote.freight_review_required,
+      ground_carrier_account_number_snapshot: quote.ground_carrier_account_number_snapshot,
+      ground_carrier_snapshot: quote.ground_carrier_snapshot,
+      ground_freight_terms_snapshot: quote.ground_freight_terms_snapshot,
+      invoice_required: true,
+      is_dropship: quote.is_dropship,
+      legacy_account_id_snapshot: quote.legacy_account_id_snapshot,
+      ltl_carrier_account_number_snapshot: quote.ltl_carrier_account_number_snapshot,
+      ltl_carrier_snapshot: quote.ltl_carrier_snapshot,
+      ltl_freight_terms_snapshot: quote.ltl_freight_terms_snapshot,
+      notes: quote.notes,
+      order_contact_snapshot_json: quote.order_contact_snapshot_json,
+      order_date: quote.order_date,
+      order_source: "converted",
+      order_type: "regular",
+      payment_terms_snapshot: quote.payment_terms_snapshot,
+      primary_showroom_enrollment_id: null,
+      sales_order_number: salesOrderNumber,
+      sales_rep_agency_id_snapshot: quote.sales_rep_agency_id_snapshot,
+      sales_rep_id_snapshot: quote.sales_rep_id_snapshot,
+      ship_to_display_name_snapshot: quote.ship_to_display_name_snapshot,
+      ship_to_snapshot_json: quote.ship_to_snapshot_json,
+      ship_to_type: quote.ship_to_type,
+      status: "open",
+      shipping_readiness_status: "not_ready",
+      tax_amount: quote.tax_amount,
+      territory_id_snapshot: quote.territory_id_snapshot
+    })
+    .select("id")
+    .single();
+  if (convertedOrderError || !convertedOrder) {
+    await supabase.from("sales_order").update({ status: "open" }).eq("id", quote.id);
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(convertedOrderError?.message ?? "The sales order could not be created.")}`);
+  }
+
+  const { error: lineCopyError } = await supabase.from("sales_order_line").insert(
+    quoteLines.map((line) => ({
+      ...line,
+      sales_order_id: convertedOrder.id
+    }))
+  );
+  if (lineCopyError) {
+    await supabase.from("sales_order").delete().eq("id", convertedOrder.id);
+    await supabase.from("sales_order").update({ status: "open" }).eq("id", quote.id);
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(lineCopyError.message)}`);
+  }
+
+  redirect(`/?module=orders&order=${convertedOrder.id}&notice=${encodeURIComponent(`Quote converted to sales order ${salesOrderNumber}.`)}`);
+}
+
+async function setShippingPriorityAction(formData: FormData) {
+  "use server";
+
+  const orderId = textValue(formData, "order_id");
+  const priority = textValue(formData, "shipping_priority") === "highest" ? "highest" : "normal";
+  if (!orderId) redirect("/?module=shipping&error=The%20order%20could%20not%20be%20identified.");
+
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase
+    .from("sales_order")
+    .update({ shipping_priority: priority })
+    .eq("id", orderId)
+    .in("status", ["open", "partially_shipped"]);
+  if (error) redirect(`/?module=shipping&error=${encodeURIComponent(error.message)}`);
+
+  redirect(`/?module=shipping&notice=${encodeURIComponent(priority === "highest" ? "Order moved to Highest shipping priority." : "Order returned to Normal shipping priority.")}`);
+}
+
+async function createPendingShipmentAction(formData: FormData) {
+  "use server";
+
+  const orderId = textValue(formData, "order_id");
+  const fallbackUrl = `/?module=shipment-create&order=${orderId}`;
+  if (!orderId) redirect("/?module=shipping&error=The%20order%20could%20not%20be%20identified.");
+
+  const supabase = createSupabaseAdminClient();
+  const [orderResult, linesResult] = await Promise.all([
+    supabase
+      .from("sales_order")
+      .select("id, customer_account_id, customer_location_id, sales_order_number, customer_po_number, order_type, status, credit_hold_status, is_dropship, ship_to_type, ship_to_snapshot_json")
+      .eq("id", orderId)
+      .maybeSingle(),
+    supabase
+      .from("sales_order_line")
+      .select("id, product_id, brand_id_snapshot, brand_name_snapshot, product_sku_snapshot, product_name_snapshot, quantity_ordered, quantity_shipped, quantity_cancelled, unit_price, discount_percent")
+      .eq("sales_order_id", orderId)
+  ]);
+
+  const failure = [orderResult, linesResult].find((result) => result.error);
+  if (failure?.error) redirect(`${fallbackUrl}&error=${encodeURIComponent(failure.error.message)}`);
+  const order = orderResult.data;
+  if (!order || order.order_type === "quote" || !["open", "partially_shipped"].includes(order.status) || order.credit_hold_status === "on_credit_hold") {
+    redirect(`${fallbackUrl}&error=This%20order%20is%20not%20eligible%20to%20ship.`);
+  }
+
+  const orderLines = linesResult.data ?? [];
+  const productIds = [...new Set(orderLines.map((line) => line.product_id))];
+  const [inventoryResult, boxesResult] = productIds.length ? await Promise.all([
+    supabase
+      .from("inventory_balance")
+      .select("id, product_id, product_packing_box_id, warehouse_id, warehouse_location_id, quantity_available")
+      .in("product_id", productIds)
+      .eq("inventory_condition", "regular")
+      .gt("quantity_available", 0),
+    supabase
+      .from("product_packing_box")
+      .select("id, product_id, box_sequence, box_label, box_length, box_width, box_height, net_weight, gross_weight")
+      .in("product_id", productIds)
+      .eq("is_active", true)
+      .eq("is_required_for_sale", true)
+  ]) : [{ data: [], error: null }, { data: [], error: null }];
+  const inventoryError = inventoryResult.error ?? boxesResult.error;
+  if (inventoryError) redirect(`${fallbackUrl}&error=${encodeURIComponent(inventoryError.message)}`);
+
+  const inventoryByProduct = new Map<string, typeof inventoryResult.data>();
+  for (const inventory of inventoryResult.data ?? []) {
+    const rows = inventoryByProduct.get(inventory.product_id) ?? [];
+    rows.push(inventory);
+    inventoryByProduct.set(inventory.product_id, rows);
+  }
+  const boxesByProduct = new Map<string, typeof boxesResult.data>();
+  for (const box of boxesResult.data ?? []) {
+    const rows = boxesByProduct.get(box.product_id) ?? [];
+    rows.push(box);
+    boxesByProduct.set(box.product_id, rows);
+  }
+
+  const selectedLines = orderLines.flatMap((line) => {
+    const requiredBoxes = boxesByProduct.get(line.product_id) ?? [];
+    const allocations = (inventoryByProduct.get(line.product_id) ?? []).flatMap((inventory) => {
+      const usesRequiredBoxes = requiredBoxes.length > 0;
+      if (usesRequiredBoxes && (!inventory.product_packing_box_id || !requiredBoxes.some((box) => box.id === inventory.product_packing_box_id))) return [];
+      if (!usesRequiredBoxes && inventory.product_packing_box_id) return [];
+      const quantity = Number(textValue(formData, `shipment_balance_${line.id}_${inventory.id}`) || 0);
+      return quantity > 0 ? [{ ...inventory, quantity }] : [];
+    });
+    if (!allocations.length) return [];
+
+    const quantityByBox = new Map<string, number>();
+    for (const allocation of allocations) {
+      quantityByBox.set(allocation.product_packing_box_id!, (quantityByBox.get(allocation.product_packing_box_id!) ?? 0) + allocation.quantity);
+    }
+    const requestedQuantity = requiredBoxes.length
+      ? quantityByBox.get(requiredBoxes[0].id) ?? 0
+      : allocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
+    const remainingQuantity = Math.max(0, Number(line.quantity_ordered) - Number(line.quantity_shipped) - Number(line.quantity_cancelled ?? 0));
+    return [{ ...line, allocations, requiredBoxes, requestedQuantity, remainingQuantity, quantityByBox }];
+  });
+
+  if (!selectedLines.length) redirect(`${fallbackUrl}&error=Choose%20a%20warehouse%20location%20and%20quantity%20for%20at%20least%20one%20item.`);
+  const invalidLine = selectedLines.find((line) => (
+    !line.brand_id_snapshot
+    || !Number.isInteger(line.requestedQuantity)
+    || line.requestedQuantity <= 0
+    || line.requestedQuantity > line.remainingQuantity
+    || line.allocations.some((allocation) => !Number.isInteger(allocation.quantity) || allocation.quantity > Number(allocation.quantity_available))
+    || (line.requiredBoxes.length > 0 && line.requiredBoxes.some((box) => (line.quantityByBox.get(box.id) ?? 0) !== line.requestedQuantity))
+  ));
+  if (invalidLine) redirect(`${fallbackUrl}&error=${encodeURIComponent(`Check the box/location quantities for ${invalidLine.product_sku_snapshot}. Every required box must have the same shipment quantity.`)}`);
+
+  const shippingType = textValue(formData, "shipping_type");
+  const carrier = textValue(formData, "carrier") || null;
+  const masterTrackingNumber = textValue(formData, "master_tracking_number") || null;
+  const notes = textValue(formData, "shipment_notes") || null;
+  const freightCostText = textValue(formData, "freight_cost");
+  const freightChargeText = textValue(formData, "shipping_fee");
+  const freightCost = freightCostText === "" ? 0 : Number(freightCostText);
+  const isFreeFreight = formData.get("is_free_freight") === "on";
+  const shippingFee = isFreeFreight ? 0 : (freightChargeText === "" ? freightCost : Number(freightChargeText));
+  if (!Number.isFinite(freightCost) || freightCost < 0 || !Number.isFinite(shippingFee) || shippingFee < 0) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Freight cost and customer freight charge must be valid non-negative amounts.")}`);
+  }
+  const { data: shipment, error: shipmentError } = await supabase
+    .from("freight_shipment")
+    .insert({
+      carrier,
+      customer_account_id: order.customer_account_id,
+      freight_cost: freightCost,
+      is_dropship: order.is_dropship,
+      master_tracking_number: masterTrackingNumber,
+      notes,
+      ship_to_location_id: order.customer_location_id,
+      ship_to_snapshot_json: order.ship_to_snapshot_json,
+      ship_to_type: order.ship_to_type as Database["public"]["Enums"]["sales_order_ship_to_type"],
+      shipping_type: shippingType ? shippingType as Database["public"]["Enums"]["shipping_type"] : null,
+      status: "pending"
+    })
+    .select("id, freight_shipment_number")
+    .single();
+  if (shipmentError || !shipment) redirect(`${fallbackUrl}&error=${encodeURIComponent(shipmentError?.message ?? "The shipment could not be created.")}`);
+
+  const { data: packingList, error: packingListError } = await supabase
+    .from("packing_list")
+    .insert({
+      customer_account_id: order.customer_account_id,
+      customer_location_id: order.customer_location_id,
+      customer_po_number_snapshot: order.customer_po_number,
+      allocated_freight_cost: freightCost,
+      freight_shipment_id: shipment.id,
+      is_dropship: order.is_dropship,
+      notes,
+      sales_order_id: order.id,
+      sales_order_number_snapshot: order.sales_order_number,
+      ship_to_snapshot_json: order.ship_to_snapshot_json,
+      ship_to_type: order.ship_to_type as Database["public"]["Enums"]["sales_order_ship_to_type"],
+      shipping_type_snapshot: shippingType ? shippingType as Database["public"]["Enums"]["shipping_type"] : null,
+      shipping_fee: shippingFee,
+      status: "draft"
+    })
+    .select("id, packing_list_number")
+    .single();
+  if (packingListError || !packingList) {
+    await supabase.from("freight_shipment").delete().eq("id", shipment.id);
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(packingListError?.message ?? "The packing list could not be created.")}`);
+  }
+
+  const { data: packingLines, error: packingLinesError } = await supabase.from("packing_list_line").insert(selectedLines.map((line) => ({
+    brand_id_snapshot: String(line.brand_id_snapshot),
+    brand_name_snapshot: line.brand_name_snapshot,
+    discount_percent_snapshot: Number(line.discount_percent),
+    packing_list_id: packingList.id,
+    product_id: line.product_id,
+    product_name_snapshot: line.product_name_snapshot,
+    product_sku_snapshot: line.product_sku_snapshot,
+    quantity_ordered_snapshot: Number(line.quantity_ordered),
+    quantity_previously_shipped_snapshot: Number(line.quantity_shipped),
+    quantity_shipped: line.requestedQuantity,
+    sales_order_line_id: line.id,
+    unit_price_snapshot: Number(line.unit_price)
+  }))).select("id, sales_order_line_id");
+  if (packingLinesError) {
+    await supabase.from("packing_list").delete().eq("id", packingList.id);
+    await supabase.from("freight_shipment").delete().eq("id", shipment.id);
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(packingLinesError.message)}`);
+  }
+
+  const packingLineIdByOrderLine = new Map((packingLines ?? []).map((line) => [line.sales_order_line_id, line.id]));
+  const boxById = new Map((boxesResult.data ?? []).map((box) => [box.id, box]));
+  const boxAllocationRows = selectedLines.flatMap((line) => line.allocations.flatMap((allocation) => {
+    const packingListLineId = packingLineIdByOrderLine.get(line.id);
+    const productPackingBoxId = allocation.product_packing_box_id;
+    if (!packingListLineId) return [];
+    const box = productPackingBoxId ? boxById.get(productPackingBoxId) : null;
+    return [{
+      box_height_snapshot: box?.box_height ?? null,
+      box_label_snapshot: box?.box_label ?? "No packing box",
+      box_length_snapshot: box?.box_length ?? null,
+      box_quantity_shipped: allocation.quantity,
+      box_sequence_snapshot: box?.box_sequence ?? 1,
+      box_width_snapshot: box?.box_width ?? null,
+      gross_weight_snapshot: box?.gross_weight ?? null,
+      inventory_balance_id: allocation.id,
+      net_weight_snapshot: box?.net_weight ?? null,
+      packing_list_line_id: packingListLineId,
+      product_id: line.product_id,
+      product_packing_box_id: productPackingBoxId,
+      warehouse_id: allocation.warehouse_id,
+      warehouse_location_id: allocation.warehouse_location_id
+    }];
+  }));
+  const { error: boxAllocationError } = await supabase.from("packing_list_line_box").insert(boxAllocationRows);
+  if (boxAllocationError) {
+    await supabase.from("packing_list").delete().eq("id", packingList.id);
+    await supabase.from("freight_shipment").delete().eq("id", shipment.id);
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(boxAllocationError.message)}`);
+  }
+
+  const shipmentDocuments = formData
+    .getAll("shipping_document_files")
+    .filter((value): value is File => value instanceof File && value.size > 0);
+  const shipmentDocumentType = textValue(formData, "shipping_document_type") || "other";
+  for (const shipmentDocument of shipmentDocuments) {
+    const safeName = shipmentDocument.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storageBucket = "customer-attachments";
+    const storagePath = `shipping/${shipment.id}/${Date.now()}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from(storageBucket).upload(storagePath, new Uint8Array(await shipmentDocument.arrayBuffer()), {
+      contentType: shipmentDocument.type || "application/octet-stream",
+      upsert: false
+    });
+    if (uploadError) redirect(`${fallbackUrl}&shipment=${shipment.id}&error=${encodeURIComponent(`Shipment was created, but ${shipmentDocument.name} could not be uploaded: ${uploadError.message}`)}`);
+
+    const { data: attachment, error: attachmentError } = await supabase
+      .from("attachment")
+      .insert({
+        category: `shipping_${shipmentDocumentType}`,
+        content_type: shipmentDocument.type || null,
+        entity_id: shipment.id,
+        entity_type: "freight_shipment",
+        file_size: shipmentDocument.size,
+        original_file_name: shipmentDocument.name,
+        storage_bucket: storageBucket,
+        storage_path: storagePath
+      })
+      .select("id")
+      .single();
+    if (attachmentError || !attachment) redirect(`${fallbackUrl}&shipment=${shipment.id}&error=${encodeURIComponent(attachmentError?.message ?? `Shipment was created, but ${shipmentDocument.name} could not be recorded.`)}`);
+
+    if (shipmentDocumentType === "bol") {
+      const { error: bolError } = await supabase.from("freight_shipment").update({ bol_document_file_id: attachment.id }).eq("id", shipment.id);
+      if (bolError) redirect(`${fallbackUrl}&shipment=${shipment.id}&error=${encodeURIComponent(bolError.message)}`);
+    }
+  }
+
+  redirect(`${fallbackUrl}&shipment=${shipment.id}&notice=${encodeURIComponent(`Pending shipment ${shipment.freight_shipment_number} and draft packing list ${packingList.packing_list_number} were created.`)}`);
+}
+
+async function confirmPendingShipmentAction(formData: FormData) {
+  "use server";
+
+  const orderId = textValue(formData, "order_id");
+  const shipmentId = textValue(formData, "shipment_id");
+  const fallbackUrl = `/?module=shipment-create&order=${orderId}&shipment=${shipmentId}`;
+  if (!orderId || !shipmentId) redirect("/?module=shipping&error=The%20shipment%20could%20not%20be%20identified.");
+  const supabase = createSupabaseAdminClient();
+  const { data: shipment, error: shipmentError } = await supabase
+    .from("freight_shipment")
+    .select("carrier, master_tracking_number")
+    .eq("id", shipmentId)
+    .maybeSingle();
+  if (shipmentError || !shipment) redirect(`${fallbackUrl}&error=${encodeURIComponent(shipmentError?.message ?? "The shipment could not be found.")}`);
+  if (!shipment.carrier?.trim() || !shipment.master_tracking_number?.trim()) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Enter both Carrier and Master Tracking No. in Shipment Header before confirming the shipment.")}`);
+  }
+  const { error } = await supabase.rpc("confirm_freight_shipment", {
+    p_freight_shipment_id: shipmentId,
+    p_ship_date: new Date().toISOString().slice(0, 10)
+  });
+  if (error) redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
+  redirect(`/?module=shipment-detail&shipment=${shipmentId}&notice=${encodeURIComponent("Shipment posted. Inventory and shipped quantities were updated.")}`);
+}
+
+async function createInvoicesFromPackingListAction(formData: FormData) {
+  "use server";
+
+  const packingListId = textValue(formData, "packing_list_id");
+  const invoiceDate = textValue(formData, "invoice_date") || new Date().toISOString().slice(0, 10);
+  const paymentTerms = textValue(formData, "payment_terms") || "Upon Receipt";
+  const paymentDays = Number(textValue(formData, "payment_days"));
+  const customerFreightCharge = Number(textValue(formData, "customer_freight_charge"));
+  const fallbackUrl = `/?module=invoice-create&packing_list=${packingListId}`;
+  if (!packingListId) redirect("/?module=invoices&error=The%20packing%20list%20could%20not%20be%20identified.");
+  if (!Number.isInteger(paymentDays) || paymentDays < 0) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Payment days must be a whole number of zero or greater.")}`);
+  }
+  if (!Number.isFinite(customerFreightCharge) || customerFreightCharge < 0) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Customer freight charge must be zero or greater.")}`);
+  }
+
+  const brandIds = formData.getAll("brand_id").map(String).filter(Boolean);
+  const freightAllocations = Object.fromEntries(brandIds.map((brandId) => [brandId, Number(textValue(formData, `freight_${brandId}`) || 0)])) as Record<string, number>;
+  const dropshipAllocations = Object.fromEntries(brandIds.map((brandId) => [brandId, Number(textValue(formData, `dropship_${brandId}`) || 0)]));
+  const taxAllocations = Object.fromEntries(brandIds.map((brandId) => [brandId, Number(textValue(formData, `tax_${brandId}`) || 0)]));
+  if (brandIds.length === 1) freightAllocations[brandIds[0]] = customerFreightCharge;
+
+  if ([...Object.values(freightAllocations), ...Object.values(dropshipAllocations), ...Object.values(taxAllocations)].some((amount) => !Number.isFinite(amount) || amount < 0)) {
+    redirect(`${fallbackUrl}&error=Freight%2C%20drop-ship%2C%20and%20tax%20amounts%20must%20be%20zero%20or%20greater.`);
+  }
+  if (brandIds.length > 1 && Object.values(freightAllocations).reduce((total, amount) => total + amount, 0) !== customerFreightCharge) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Manual brand freight allocations must equal the customer freight charge.")}`);
+  }
+
+  const { data, error } = await createSupabaseAdminClient().rpc("create_invoices_from_packing_list_with_terms", {
+    p_packing_list_id: packingListId,
+    p_invoice_date: invoiceDate,
+    p_brand_freight_allocations: freightAllocations,
+    p_brand_dropship_allocations: dropshipAllocations,
+    p_brand_tax_allocations: taxAllocations,
+    p_payment_terms: paymentTerms,
+    p_payment_days: paymentDays,
+    p_customer_freight_charge: customerFreightCharge
+  });
+  if (error) redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
+
+  const invoiceIds = Array.isArray(data) ? data.map(String).filter(Boolean) : [];
+  if (invoiceIds.length === 0) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("No invoices were created from this packing list.")}`);
+  }
+  redirect(`/?module=invoice-created&invoice_ids=${encodeURIComponent(invoiceIds.join(","))}`);
+}
+
+async function recordInvoicePaymentAction(formData: FormData) {
+  "use server";
+
+  const invoiceId = textValue(formData, "invoice_id");
+  const fallbackUrl = `/?module=ar&invoice=${invoiceId}`;
+  const paymentDate = textValue(formData, "payment_date") || new Date().toISOString().slice(0, 10);
+  const paymentMethod = (textValue(formData, "payment_method") || "check") as Database["public"]["Enums"]["customer_payment_method"];
+  const customerPaymentAmount = Number(textValue(formData, "customer_payment_amount") || 0);
+  const creditMemoId = textValue(formData, "credit_memo_id") || undefined;
+  const creditMemoAmount = Number(textValue(formData, "credit_memo_amount") || 0);
+  const waiverAmount = Number(textValue(formData, "waiver_amount") || 0);
+  const waiverReason = textValue(formData, "waiver_reason") || undefined;
+  const referenceNumber = textValue(formData, "reference_number") || undefined;
+  const memo = textValue(formData, "memo") || undefined;
+  const paymentDocuments = formData
+    .getAll("payment_document_files")
+    .filter((value): value is File => value instanceof File && value.size > 0);
+
+  if (!invoiceId) redirect("/?module=invoices&financial_tab=active&error=The%20invoice%20could%20not%20be%20identified.");
+  if (!Number.isFinite(customerPaymentAmount) || customerPaymentAmount < 0 || !Number.isFinite(creditMemoAmount) || creditMemoAmount < 0 || !Number.isFinite(waiverAmount) || waiverAmount < 0 || customerPaymentAmount + creditMemoAmount + waiverAmount <= 0) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Enter a customer payment, credit memo, waiver amount, or a combination.")}`);
+  }
+  if (waiverAmount > 0 && !waiverReason?.trim()) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Enter a reason for the waived amount.")}`);
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data: settlement, error } = await supabase.rpc("record_invoice_settlement_with_waiver", {
+    p_credit_memo_amount: creditMemoAmount,
+    p_credit_memo_id: creditMemoId,
+    p_customer_payment_amount: customerPaymentAmount,
+    p_customer_invoice_id: invoiceId,
+    p_memo: memo,
+    p_payment_date: paymentDate,
+    p_payment_method: paymentMethod,
+    p_reference_number: referenceNumber,
+    p_waiver_amount: waiverAmount,
+    p_waiver_reason: waiverReason
+  });
+
+  if (error) redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
+  const settlementResult = settlement as { payment_id?: string | null } | null;
+  const paymentId = settlementResult?.payment_id ?? null;
+  if (paymentDocuments.length > 0 && !paymentId) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Supporting documents can be attached only when a customer payment amount is due.")}`);
+  }
+  if (paymentId) {
+    for (const [index, paymentDocument] of paymentDocuments.entries()) {
+      const safeName = paymentDocument.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const storageBucket = "customer-attachments";
+      const storagePath = `payments/${paymentId}/${Date.now()}-${index}-${safeName}`;
+      const { error: uploadError } = await supabase.storage.from(storageBucket).upload(
+        storagePath,
+        new Uint8Array(await paymentDocument.arrayBuffer()),
+        { contentType: paymentDocument.type || "application/octet-stream", upsert: false }
+      );
+
+      if (uploadError) {
+        redirect(`${fallbackUrl}&error=${encodeURIComponent(`Payment was recorded, but ${paymentDocument.name} could not be uploaded: ${uploadError.message}`)}`);
+      }
+
+      const { error: attachmentError } = await supabase.from("attachment").insert({
+        category: "payment_supporting_document",
+        content_type: paymentDocument.type || null,
+        entity_id: paymentId,
+        entity_type: "customer_payment",
+        file_size: paymentDocument.size,
+        original_file_name: paymentDocument.name,
+        storage_bucket: storageBucket,
+        storage_path: storagePath
+      });
+      if (attachmentError) {
+        redirect(`${fallbackUrl}&error=${encodeURIComponent(`Payment was recorded, but ${paymentDocument.name} could not be linked: ${attachmentError.message}`)}`);
+      }
+    }
+  }
+  redirect(`/?module=invoices&financial_tab=active&notice=${encodeURIComponent(`Settlement recorded and applied to invoice ${invoiceId}.`)}`);
+}
+
+async function prepareInvoiceConfirmationAction(formData: FormData) {
+  "use server";
+
+  const packingListId = textValue(formData, "packing_list_id");
+  const invoiceDate = textValue(formData, "invoice_date") || new Date().toISOString().slice(0, 10);
+  const paymentTerms = textValue(formData, "payment_terms") || "Upon Receipt";
+  const paymentDays = Number(textValue(formData, "payment_days"));
+  const customerFreightCharge = Number(textValue(formData, "customer_freight_charge"));
+  const fallbackUrl = `/?module=invoice-create&packing_list=${packingListId}`;
+  if (!packingListId || !Number.isInteger(paymentDays) || paymentDays < 0 || !Number.isFinite(customerFreightCharge) || customerFreightCharge < 0) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Enter valid payment terms and a non-negative customer freight charge.")}`);
+  }
+
+  const brandIds = formData.getAll("brand_id").map(String).filter(Boolean);
+  const freightAllocations = Object.fromEntries(brandIds.map((brandId) => [brandId, Number(textValue(formData, `freight_${brandId}`) || 0)])) as Record<string, number>;
+  const dropshipAllocations = Object.fromEntries(brandIds.map((brandId) => [brandId, Number(textValue(formData, `dropship_${brandId}`) || 0)])) as Record<string, number>;
+  const taxAllocations = Object.fromEntries(brandIds.map((brandId) => [brandId, Number(textValue(formData, `tax_${brandId}`) || 0)])) as Record<string, number>;
+  if (brandIds.length === 1) freightAllocations[brandIds[0]] = customerFreightCharge;
+  const allAmounts = [...Object.values(freightAllocations), ...Object.values(dropshipAllocations), ...Object.values(taxAllocations)];
+  if (allAmounts.some((amount) => !Number.isFinite(amount) || amount < 0)) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Freight, drop-ship, and tax amounts must be zero or greater.")}`);
+  }
+  if (brandIds.length > 1 && Object.values(freightAllocations).reduce((total, amount) => total + amount, 0) !== customerFreightCharge) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Manual brand freight allocations must equal the customer freight charge.")}`);
+  }
+
+  const params = new URLSearchParams({
+    module: "invoice-confirm",
+    packing_list: packingListId,
+    invoice_date: invoiceDate,
+    invoice_payment_terms: paymentTerms,
+    invoice_payment_days: String(paymentDays),
+    invoice_customer_freight: String(customerFreightCharge),
+    invoice_freight_allocations: JSON.stringify(freightAllocations),
+    invoice_dropship_allocations: JSON.stringify(dropshipAllocations),
+    invoice_tax_allocations: JSON.stringify(taxAllocations)
+  });
+  redirect(`/?${params.toString()}`);
+}
+
+async function updatePackingListFreightChargeAction(formData: FormData) {
+  "use server";
+
+  const packingListId = textValue(formData, "packing_list_id");
+  const customerId = textValue(formData, "customer_id");
+  const isFreeFreight = formData.get("is_free_freight") === "on";
+  const freightCharge = isFreeFreight ? 0 : Number(textValue(formData, "shipping_fee"));
+  const returnUrl = `/?customer=${customerId}&tab=shipments`;
+  if (!packingListId || !customerId || !Number.isFinite(freightCharge) || freightCharge < 0) {
+    redirect(`${returnUrl}&error=${encodeURIComponent("Enter a valid non-negative freight charge.")}`);
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data: packingList, error: packingListError } = await supabase
+    .from("packing_list")
+    .select("id, invoice_generation_status_snapshot")
+    .eq("id", packingListId)
+    .eq("customer_account_id", customerId)
+    .maybeSingle();
+  if (packingListError || !packingList) redirect(`${returnUrl}&error=${encodeURIComponent(packingListError?.message ?? "Packing list not found.")}`);
+  if (packingList.invoice_generation_status_snapshot !== "not_invoiced") {
+    redirect(`${returnUrl}&error=${encodeURIComponent("Freight charge can only be changed before invoice creation.")}`);
+  }
+
+  const { error } = await supabase.from("packing_list").update({ shipping_fee: freightCharge }).eq("id", packingListId);
+  if (error) redirect(`${returnUrl}&error=${encodeURIComponent(error.message)}`);
+  redirect(`${returnUrl}&notice=${encodeURIComponent("Customer freight charge updated.")}`);
+}
+
+async function updatePendingPackingListLinesAction(formData: FormData) {
+  "use server";
+
+  const orderId = textValue(formData, "order_id");
+  const shipmentId = textValue(formData, "shipment_id");
+  const packingListId = textValue(formData, "packing_list_id");
+  const fallbackUrl = `/?module=shipment-create&order=${orderId}&shipment=${shipmentId}`;
+  if (!orderId || !shipmentId || !packingListId) redirect("/?module=shipping&error=The%20packing%20list%20could%20not%20be%20identified.");
+
+  const supabase = createSupabaseAdminClient();
+  const [{ data: packingList, error: packingListError }, { data: shipment, error: shipmentError }, { data: packingLines, error: packingLinesError }, { data: orderLines, error: orderLinesError }] = await Promise.all([
+    supabase.from("packing_list").select("id, status").eq("id", packingListId).eq("freight_shipment_id", shipmentId).maybeSingle(),
+    supabase.from("freight_shipment").select("id, status").eq("id", shipmentId).maybeSingle(),
+    supabase.from("packing_list_line").select("id, sales_order_line_id, product_id, product_sku_snapshot").eq("packing_list_id", packingListId),
+    supabase.from("sales_order_line").select("id, product_id, quantity_ordered, quantity_shipped, quantity_cancelled").eq("sales_order_id", orderId)
+  ]);
+  const failure = [packingListError, shipmentError, packingLinesError, orderLinesError].find(Boolean);
+  if (failure) redirect(`${fallbackUrl}&error=${encodeURIComponent(failure.message)}`);
+  if (!packingList || packingList.status !== "draft" || !shipment || !["pending", "in_progress"].includes(shipment.status)) redirect(`${fallbackUrl}&error=${encodeURIComponent("Only a pending shipment with a draft packing list can be adjusted.")}`);
+
+  const orderLineById = new Map((orderLines ?? []).map((line) => [line.id, line]));
+  const productIds = [...new Set((packingLines ?? []).map((line) => line.product_id))];
+  const packingLineIds = (packingLines ?? []).map((line) => line.id);
+  const [inventoryResult, boxesResult, allocationsResult] = productIds.length ? await Promise.all([
+    supabase.from("inventory_balance").select("id, product_id, product_packing_box_id, warehouse_id, warehouse_location_id, quantity_available").in("product_id", productIds).eq("inventory_condition", "regular"),
+    supabase.from("product_packing_box").select("id, product_id, box_sequence, box_label, box_length, box_width, box_height, net_weight, gross_weight").in("product_id", productIds).eq("is_active", true).eq("is_required_for_sale", true),
+    packingLineIds.length ? supabase.from("packing_list_line_box").select("id, packing_list_line_id, inventory_balance_id").in("packing_list_line_id", packingLineIds) : Promise.resolve({ data: [], error: null })
+  ]) : [{ data: [], error: null }, { data: [], error: null }, { data: [], error: null }];
+  if (inventoryResult.error || boxesResult.error || allocationsResult.error) redirect(`${fallbackUrl}&error=${encodeURIComponent(inventoryResult.error?.message ?? boxesResult.error?.message ?? allocationsResult.error?.message ?? "Unable to load shipment inventory.")}`);
+
+  const inventoryByProduct = new Map<string, typeof inventoryResult.data>();
+  for (const inventory of inventoryResult.data ?? []) {
+    const rows = inventoryByProduct.get(inventory.product_id) ?? [];
+    rows.push(inventory);
+    inventoryByProduct.set(inventory.product_id, rows);
+  }
+  const boxesByProduct = new Map<string, typeof boxesResult.data>();
+  for (const box of boxesResult.data ?? []) {
+    const rows = boxesByProduct.get(box.product_id) ?? [];
+    rows.push(box);
+    boxesByProduct.set(box.product_id, rows);
+  }
+  const selectedByBalanceId = new Map<string, number>();
+  const adjustments = (packingLines ?? []).map((line) => {
+    const requestedQuantity = Number(textValue(formData, `packing_quantity_${line.id}`) || 0);
+    const orderLine = orderLineById.get(line.sales_order_line_id);
+    const remainingQuantity = orderLine ? Math.max(0, Number(orderLine.quantity_ordered) - Number(orderLine.quantity_shipped) - Number(orderLine.quantity_cancelled ?? 0)) : 0;
+    const requiredBoxes = boxesByProduct.get(line.product_id) ?? [];
+    const allocations = (inventoryByProduct.get(line.product_id) ?? []).flatMap((inventory) => {
+      if (requiredBoxes.length && (!inventory.product_packing_box_id || !requiredBoxes.some((box) => box.id === inventory.product_packing_box_id))) return [];
+      if (!requiredBoxes.length && inventory.product_packing_box_id) return [];
+      const quantity = Number(textValue(formData, `packing_balance_${line.id}_${inventory.id}`) || 0);
+      if (quantity > 0) selectedByBalanceId.set(inventory.id, (selectedByBalanceId.get(inventory.id) ?? 0) + quantity);
+      return quantity > 0 ? [{ ...inventory, quantity }] : [];
+    });
+    const quantityByBox = new Map<string, number>();
+    for (const allocation of allocations) {
+      if (allocation.product_packing_box_id) quantityByBox.set(allocation.product_packing_box_id, (quantityByBox.get(allocation.product_packing_box_id) ?? 0) + allocation.quantity);
+    }
+    const allocatedQuantity = requiredBoxes.length
+      ? quantityByBox.get(requiredBoxes[0]?.id ?? "") ?? 0
+      : allocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
+    return { ...line, requestedQuantity, remainingQuantity, requiredBoxes, allocations, quantityByBox, allocatedQuantity };
+  });
+  const inventoryById = new Map((inventoryResult.data ?? []).map((inventory) => [inventory.id, inventory]));
+  const invalidLine = adjustments.find((line) => !Number.isInteger(line.requestedQuantity) || line.requestedQuantity < 0 || line.requestedQuantity > line.remainingQuantity || line.requestedQuantity !== line.allocatedQuantity || line.allocations.some((allocation) => !Number.isInteger(allocation.quantity) || allocation.quantity > Number(allocation.quantity_available)) || (line.requiredBoxes.length > 0 && line.requiredBoxes.some((box) => (line.quantityByBox.get(box.id) ?? 0) !== line.requestedQuantity)));
+  const overAllocatedBalance = [...selectedByBalanceId.entries()].find(([inventoryBalanceId, quantity]) => quantity > Number(inventoryById.get(inventoryBalanceId)?.quantity_available ?? 0));
+  if (invalidLine || overAllocatedBalance) redirect(`${fallbackUrl}&error=${encodeURIComponent(`Check the warehouse/bin quantities. Each required box for ${invalidLine?.product_sku_snapshot ?? "an item"} must have the same total as Quantity to Ship.`)}`);
+  if (!adjustments.some((line) => line.requestedQuantity > 0)) redirect(`${fallbackUrl}&error=${encodeURIComponent("At least one packing-list line must have a shipment quantity.")}`);
+
+  const existingAllocationByLineAndBalance = new Map((allocationsResult.data ?? []).filter((allocation) => allocation.inventory_balance_id).map((allocation) => [`${allocation.packing_list_line_id}:${allocation.inventory_balance_id}`, allocation]));
+  const boxById = new Map((boxesResult.data ?? []).map((box) => [box.id, box]));
+  for (const line of adjustments) {
+    if (line.requestedQuantity === 0) {
+      const { error } = await supabase.from("packing_list_line").delete().eq("id", line.id);
+      if (error) redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
+      continue;
+    }
+    const { error: lineError } = await supabase.from("packing_list_line").update({ quantity_shipped: line.requestedQuantity }).eq("id", line.id);
+    if (lineError) redirect(`${fallbackUrl}&error=${encodeURIComponent(lineError.message)}`);
+    const desiredKeys = new Set(line.allocations.map((allocation) => `${line.id}:${allocation.id}`));
+    const staleAllocationIds = (allocationsResult.data ?? []).filter((allocation) => allocation.packing_list_line_id === line.id && (!allocation.inventory_balance_id || !desiredKeys.has(`${line.id}:${allocation.inventory_balance_id}`))).map((allocation) => allocation.id);
+    if (staleAllocationIds.length) {
+      const { error } = await supabase.from("packing_list_line_box").delete().in("id", staleAllocationIds);
+      if (error) redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
+    }
+    for (const allocation of line.allocations) {
+      const key = `${line.id}:${allocation.id}`;
+      const existing = existingAllocationByLineAndBalance.get(key);
+      if (existing) {
+        const { error } = await supabase.from("packing_list_line_box").update({ box_quantity_shipped: allocation.quantity }).eq("id", existing.id);
+        if (error) redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
+        continue;
+      }
+      const box = allocation.product_packing_box_id ? boxById.get(allocation.product_packing_box_id) : null;
+      const { error } = await supabase.from("packing_list_line_box").insert({
+        box_height_snapshot: box?.box_height ?? null, box_label_snapshot: box?.box_label ?? "No packing box", box_length_snapshot: box?.box_length ?? null,
+        box_quantity_shipped: allocation.quantity, box_sequence_snapshot: box?.box_sequence ?? 1, box_width_snapshot: box?.box_width ?? null,
+        gross_weight_snapshot: box?.gross_weight ?? null, inventory_balance_id: allocation.id, net_weight_snapshot: box?.net_weight ?? null,
+        packing_list_line_id: line.id, product_id: line.product_id, product_packing_box_id: allocation.product_packing_box_id,
+        warehouse_id: allocation.warehouse_id, warehouse_location_id: allocation.warehouse_location_id
+      });
+      if (error) redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
+    }
+  }
+  redirect(`${fallbackUrl}&notice=${encodeURIComponent("Draft packing-list quantities and warehouse/bin picks updated.")}`);
+}
+
+async function addPendingPackingListLinesAction(formData: FormData) {
+  "use server";
+
+  const orderId = textValue(formData, "order_id");
+  const shipmentId = textValue(formData, "shipment_id");
+  const packingListId = textValue(formData, "packing_list_id");
+  const fallbackUrl = `/?module=shipment-create&order=${orderId}&shipment=${shipmentId}&shipment_edit=lines`;
+  if (!orderId || !shipmentId || !packingListId) redirect("/?module=shipping&error=The%20packing%20list%20could%20not%20be%20identified.");
+
+  const supabase = createSupabaseAdminClient();
+  const [packingListResult, shipmentResult, existingLinesResult, orderLinesResult] = await Promise.all([
+    supabase.from("packing_list").select("id, status").eq("id", packingListId).eq("freight_shipment_id", shipmentId).maybeSingle(),
+    supabase.from("freight_shipment").select("id, status").eq("id", shipmentId).maybeSingle(),
+    supabase.from("packing_list_line").select("sales_order_line_id").eq("packing_list_id", packingListId),
+    supabase.from("sales_order_line").select("id, product_id, brand_id_snapshot, brand_name_snapshot, product_sku_snapshot, product_name_snapshot, quantity_ordered, quantity_shipped, quantity_cancelled, unit_price, discount_percent").eq("sales_order_id", orderId)
+  ]);
+  const failure = [packingListResult, shipmentResult, existingLinesResult, orderLinesResult].find((result) => result.error);
+  if (failure?.error) redirect(`${fallbackUrl}&error=${encodeURIComponent(failure.error.message)}`);
+  if (!packingListResult.data || packingListResult.data.status !== "draft" || !shipmentResult.data || !["pending", "in_progress"].includes(shipmentResult.data.status)) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Only a pending shipment with a draft packing list can receive additional items.")}`);
+  }
+
+  const existingOrderLineIds = new Set((existingLinesResult.data ?? []).map((line) => line.sales_order_line_id));
+  const eligibleOrderLines = (orderLinesResult.data ?? []).filter((line) => !existingOrderLineIds.has(line.id) && Number(line.quantity_ordered) > Number(line.quantity_shipped) + Number(line.quantity_cancelled ?? 0));
+  const productIds = [...new Set(eligibleOrderLines.map((line) => line.product_id))];
+  const [inventoryResult, boxesResult] = productIds.length ? await Promise.all([
+    supabase.from("inventory_balance").select("id, product_id, product_packing_box_id, warehouse_id, warehouse_location_id, quantity_available").in("product_id", productIds).eq("inventory_condition", "regular").gt("quantity_available", 0),
+    supabase.from("product_packing_box").select("id, product_id, box_sequence, box_label, box_length, box_width, box_height, net_weight, gross_weight").in("product_id", productIds).eq("is_active", true).eq("is_required_for_sale", true)
+  ]) : [{ data: [], error: null }, { data: [], error: null }];
+  if (inventoryResult.error || boxesResult.error) redirect(`${fallbackUrl}&error=${encodeURIComponent(inventoryResult.error?.message ?? boxesResult.error?.message ?? "Unable to load available inventory.")}`);
+
+  const inventoryByProduct = new Map<string, typeof inventoryResult.data>();
+  for (const inventory of inventoryResult.data ?? []) {
+    const rows = inventoryByProduct.get(inventory.product_id) ?? [];
+    rows.push(inventory);
+    inventoryByProduct.set(inventory.product_id, rows);
+  }
+  const boxesByProduct = new Map<string, typeof boxesResult.data>();
+  for (const box of boxesResult.data ?? []) {
+    const rows = boxesByProduct.get(box.product_id) ?? [];
+    rows.push(box);
+    boxesByProduct.set(box.product_id, rows);
+  }
+
+  const selectedLines = eligibleOrderLines.flatMap((line) => {
+    const requiredBoxes = boxesByProduct.get(line.product_id) ?? [];
+    const allocations = (inventoryByProduct.get(line.product_id) ?? []).flatMap((inventory) => {
+      const usesRequiredBoxes = requiredBoxes.length > 0;
+      if (usesRequiredBoxes && (!inventory.product_packing_box_id || !requiredBoxes.some((box) => box.id === inventory.product_packing_box_id))) return [];
+      if (!usesRequiredBoxes && inventory.product_packing_box_id) return [];
+      const quantity = Number(textValue(formData, `additional_shipment_balance_${line.id}_${inventory.id}`) || 0);
+      return quantity > 0 ? [{ ...inventory, quantity }] : [];
+    });
+    if (!allocations.length) return [];
+    const quantityByBox = new Map<string, number>();
+    for (const allocation of allocations) {
+      if (allocation.product_packing_box_id) quantityByBox.set(allocation.product_packing_box_id, (quantityByBox.get(allocation.product_packing_box_id) ?? 0) + allocation.quantity);
+    }
+    const requestedQuantity = requiredBoxes.length ? quantityByBox.get(requiredBoxes[0].id) ?? 0 : allocations.reduce((sum, allocation) => sum + allocation.quantity, 0);
+    const remainingQuantity = Math.max(0, Number(line.quantity_ordered) - Number(line.quantity_shipped) - Number(line.quantity_cancelled ?? 0));
+    return [{ ...line, allocations, requiredBoxes, quantityByBox, requestedQuantity, remainingQuantity }];
+  });
+
+  if (!selectedLines.length) redirect(`${fallbackUrl}&error=${encodeURIComponent("Choose a warehouse/bin quantity for at least one additional item.")}`);
+  const invalidLine = selectedLines.find((line) => !line.brand_id_snapshot || !Number.isInteger(line.requestedQuantity) || line.requestedQuantity <= 0 || line.requestedQuantity > line.remainingQuantity || line.allocations.some((allocation) => !Number.isInteger(allocation.quantity) || allocation.quantity > Number(allocation.quantity_available)) || (line.requiredBoxes.length > 0 && line.requiredBoxes.some((box) => (line.quantityByBox.get(box.id) ?? 0) !== line.requestedQuantity)));
+  if (invalidLine) redirect(`${fallbackUrl}&error=${encodeURIComponent(`Check the box/location quantities for ${invalidLine.product_sku_snapshot}. Every required box must use the same shipment quantity.`)}`);
+
+  const { data: packingLines, error: packingLinesError } = await supabase.from("packing_list_line").insert(selectedLines.map((line) => ({
+    brand_id_snapshot: String(line.brand_id_snapshot),
+    brand_name_snapshot: line.brand_name_snapshot,
+    discount_percent_snapshot: Number(line.discount_percent),
+    packing_list_id: packingListId,
+    product_id: line.product_id,
+    product_name_snapshot: line.product_name_snapshot,
+    product_sku_snapshot: line.product_sku_snapshot,
+    quantity_ordered_snapshot: Number(line.quantity_ordered),
+    quantity_previously_shipped_snapshot: Number(line.quantity_shipped),
+    quantity_shipped: line.requestedQuantity,
+    sales_order_line_id: line.id,
+    unit_price_snapshot: Number(line.unit_price)
+  }))).select("id, sales_order_line_id");
+  if (packingLinesError) redirect(`${fallbackUrl}&error=${encodeURIComponent(packingLinesError.message)}`);
+
+  const packingLineIdByOrderLine = new Map((packingLines ?? []).map((line) => [line.sales_order_line_id, line.id]));
+  const boxById = new Map((boxesResult.data ?? []).map((box) => [box.id, box]));
+  const allocationRows = selectedLines.flatMap((line) => line.allocations.flatMap((allocation) => {
+    const packingListLineId = packingLineIdByOrderLine.get(line.id);
+    if (!packingListLineId) return [];
+    const box = allocation.product_packing_box_id ? boxById.get(allocation.product_packing_box_id) : null;
+    return {
+      box_height_snapshot: box?.box_height ?? null,
+      box_label_snapshot: box?.box_label ?? "No packing box",
+      box_length_snapshot: box?.box_length ?? null,
+      box_quantity_shipped: allocation.quantity,
+      box_sequence_snapshot: box?.box_sequence ?? 1,
+      box_width_snapshot: box?.box_width ?? null,
+      gross_weight_snapshot: box?.gross_weight ?? null,
+      inventory_balance_id: allocation.id,
+      net_weight_snapshot: box?.net_weight ?? null,
+      packing_list_line_id: packingListLineId,
+      product_id: line.product_id,
+      product_packing_box_id: allocation.product_packing_box_id,
+      warehouse_id: allocation.warehouse_id,
+      warehouse_location_id: allocation.warehouse_location_id
+    };
+  }));
+  const { error: allocationsError } = await supabase.from("packing_list_line_box").insert(allocationRows);
+  if (allocationsError) {
+    await supabase.from("packing_list_line").delete().eq("packing_list_id", packingListId).in("sales_order_line_id", selectedLines.map((line) => line.id));
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(allocationsError.message)}`);
+  }
+
+  redirect(`${fallbackUrl}&notice=${encodeURIComponent("Additional order items were added to the draft packing list.")}`);
+}
+
+async function updateShipmentDetailsAction(formData: FormData) {
+  "use server";
+
+  const orderId = textValue(formData, "order_id");
+  const shipmentId = textValue(formData, "shipment_id");
+  const fallbackUrl = `/?module=shipment-create&order=${orderId}&shipment=${shipmentId}`;
+  if (!orderId || !shipmentId) redirect("/?module=shipping&error=The%20shipment%20could%20not%20be%20identified.");
+
+  const freightCostText = textValue(formData, "freight_cost");
+  const freightChargeText = textValue(formData, "shipping_fee");
+  const freightCost = freightCostText === "" ? 0 : Number(freightCostText);
+  const isFreeFreight = formData.get("is_free_freight") === "on";
+  const shippingFee = isFreeFreight ? 0 : (freightChargeText === "" ? freightCost : Number(freightChargeText));
+  if (!Number.isFinite(freightCost) || freightCost < 0 || !Number.isFinite(shippingFee) || shippingFee < 0) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Freight cost and customer freight charge must be valid non-negative amounts.")}`);
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase
+    .from("freight_shipment")
+    .update({
+      carrier: textValue(formData, "carrier") || null,
+      freight_cost: freightCost,
+      master_tracking_number: textValue(formData, "master_tracking_number") || null,
+      notes: textValue(formData, "shipment_notes") || null,
+      shipping_type: (textValue(formData, "shipping_type") || null) as Database["public"]["Enums"]["shipping_type"] | null
+    })
+    .eq("id", shipmentId);
+  if (error) redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
+  const { error: packingListError } = await supabase
+    .from("packing_list")
+    .update({ allocated_freight_cost: freightCost, shipping_fee: shippingFee })
+    .eq("freight_shipment_id", shipmentId)
+    .eq("status", "draft")
+    .eq("invoice_generation_status_snapshot", "not_invoiced");
+  if (packingListError) redirect(`${fallbackUrl}&error=${encodeURIComponent(packingListError.message)}`);
+  redirect(`${fallbackUrl}&notice=${encodeURIComponent("Shipment details updated.")}`);
+}
+
+async function uploadShipmentDocumentAction(formData: FormData) {
+  "use server";
+
+  const orderId = textValue(formData, "order_id");
+  const shipmentId = textValue(formData, "shipment_id");
+  const documentType = textValue(formData, "shipping_document_type") || "other";
+  const shipmentDocument = formData.get("shipping_document_file");
+  const fallbackUrl = `/?module=shipment-create&order=${orderId}&shipment=${shipmentId}`;
+  if (!orderId || !shipmentId || !(shipmentDocument instanceof File) || shipmentDocument.size === 0) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Choose a shipping document to upload.")}`);
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data: shipment, error: shipmentError } = await supabase.from("freight_shipment").select("id").eq("id", shipmentId).maybeSingle();
+  if (shipmentError || !shipment) redirect(`${fallbackUrl}&error=${encodeURIComponent(shipmentError?.message ?? "Shipment not found.")}`);
+
+  const safeName = shipmentDocument.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storageBucket = "customer-attachments";
+  const storagePath = `shipping/${shipmentId}/${Date.now()}-${safeName}`;
+  const { error: uploadError } = await supabase.storage.from(storageBucket).upload(storagePath, new Uint8Array(await shipmentDocument.arrayBuffer()), {
+    contentType: shipmentDocument.type || "application/octet-stream",
+    upsert: false
+  });
+  if (uploadError) redirect(`${fallbackUrl}&error=${encodeURIComponent(uploadError.message)}`);
+
+  const { data: attachment, error: attachmentError } = await supabase
+    .from("attachment")
+    .insert({
+      category: `shipping_${documentType}`,
+      content_type: shipmentDocument.type || null,
+      entity_id: shipmentId,
+      entity_type: "freight_shipment",
+      file_size: shipmentDocument.size,
+      original_file_name: shipmentDocument.name,
+      storage_bucket: storageBucket,
+      storage_path: storagePath
+    })
+    .select("id")
+    .single();
+  if (attachmentError || !attachment) redirect(`${fallbackUrl}&error=${encodeURIComponent(attachmentError?.message ?? "Document record could not be created.")}`);
+
+  if (documentType === "bol") {
+    const { error: bolError } = await supabase.from("freight_shipment").update({ bol_document_file_id: attachment.id }).eq("id", shipmentId);
+    if (bolError) redirect(`${fallbackUrl}&error=${encodeURIComponent(bolError.message)}`);
+  }
+  redirect(`${fallbackUrl}&notice=${encodeURIComponent("Shipping document uploaded.")}`);
 }
 
 async function deleteCustomersAction(formData: FormData) {
@@ -1740,30 +3443,54 @@ async function updateProductInventoryAction(formData: FormData) {
     return inventoryConditions.includes(value as (typeof inventoryConditions)[number]) ? (value as (typeof inventoryConditions)[number]) : "regular";
   };
   const redirectWithError = (message: string) => redirect(`${editUrl}&error=${encodeURIComponent(message)}`);
+  const resolveUnspecifiedPickLocation = async (preferredWarehouseId: string | null) => {
+    let fallbackQuery = supabase
+      .from("warehouse_location")
+      .select("id, warehouse_id")
+      .eq("is_active", true)
+      .eq("is_pickable", true)
+      .eq("location_code", "UNSPECIFIED-PICK")
+      .order("warehouse_id", { ascending: true })
+      .limit(1);
+
+    if (preferredWarehouseId) {
+      fallbackQuery = fallbackQuery.eq("warehouse_id", preferredWarehouseId);
+    }
+
+    const { data: fallbackLocation, error } = await fallbackQuery.maybeSingle();
+    if (error || !fallbackLocation) {
+      redirectWithError(
+        preferredWarehouseId
+          ? "The selected warehouse does not have an Unspecified Pick Location. Apply the Unspecified Pick Location migration, or select a saved bin."
+          : "No Unspecified Pick Location is available. Apply the Unspecified Pick Location migration, or select a saved warehouse/bin."
+      );
+    }
+
+    return fallbackLocation!;
+  };
   const resolveLocation = async (rawCode: string | null, warehouseId: string | null) => {
     const locationCode = rawCode?.split("/")[0]?.trim() ?? "";
 
     if (!locationCode) {
-      return { locationId: null, warehouseId };
+      const fallbackLocation = await resolveUnspecifiedPickLocation(warehouseId);
+      return { locationId: fallbackLocation.id, warehouseId: fallbackLocation.warehouse_id };
     }
 
-    let request = supabase
+    const { data: locations, error } = await supabase
       .from("warehouse_location")
       .select("id, warehouse_id")
       .eq("is_active", true)
       .eq("location_code", locationCode);
 
-    if (warehouseId) {
-      request = request.eq("warehouse_id", warehouseId);
-    }
-
-    const { data, error } = await request.maybeSingle();
-
-    if (error || !data) {
+    const matchingWarehouseLocation = locations?.find((location) => location.warehouse_id === warehouseId);
+    const location = matchingWarehouseLocation ?? (locations?.length === 1 ? locations[0] : null);
+    if (error || !location) {
       redirectWithError(`Inventory location "${locationCode}" was not found. Please enter an active warehouse/bin location code.`);
     }
 
-    return { locationId: data!.id, warehouseId: warehouseId ?? data!.warehouse_id };
+    // A bin uniquely identifies its warehouse in the normal warehouse workflow.
+    // Let the selected bin correct a stale warehouse selection rather than rejecting the move.
+    return { locationId: location!.id, warehouseId: location!.warehouse_id };
   };
 
   const deletedBalanceIds = new Set(formData.getAll("delete_balance_ids").map((value) => String(value).trim()).filter(Boolean));
@@ -1902,21 +3629,9 @@ async function updateProductInventoryAction(formData: FormData) {
       let locationId = target.default_warehouse_location_id;
 
       if (!warehouseId || !locationId) {
-        const { data: fallbackLocation, error: fallbackLocationError } = await supabase
-          .from("warehouse_location")
-          .select("id, warehouse_id")
-          .eq("is_active", true)
-          .eq("is_pickable", true)
-          .order("location_code", { ascending: true })
-          .limit(1)
-          .maybeSingle();
-
-        if (fallbackLocationError || !fallbackLocation) {
-          redirectWithError("No active pickable warehouse/bin location was found for inventory update.");
-        }
-
-        warehouseId = warehouseId ?? fallbackLocation!.warehouse_id;
-        locationId = locationId ?? fallbackLocation!.id;
+        const fallbackLocation = await resolveUnspecifiedPickLocation(warehouseId);
+        warehouseId = warehouseId ?? fallbackLocation.warehouse_id;
+        locationId = locationId ?? fallbackLocation.id;
       }
 
       let existingBalanceQuery = supabase
@@ -2219,6 +3934,7 @@ async function updateProductPartsAction(formData: FormData) {
         .select("id, warehouse_id")
         .eq("is_active", true)
         .eq("is_pickable", true)
+        .eq("location_code", "UNSPECIFIED-PICK")
         .order("location_code", { ascending: true })
         .limit(1)
         .maybeSingle();
@@ -2499,6 +4215,45 @@ async function updateBillingCreditAction(formData: FormData) {
   const paymentDays = Number(formData.get("payment_days") ?? 0);
   const paymentTerms = optionalText("payment_terms") ?? "Prepaid / No Credit";
   const defaultStatementEmail = optionalText("default_statement_email");
+  const billingLocationId = optionalText("billing_location_id");
+  const billingLocationName = optionalText("billing_location_name") ?? "Billing Address";
+  const billingAddressLine1 = optionalText("address_line_1");
+  const billingAddressLine2 = optionalText("address_line_2");
+  const billingCity = optionalText("city");
+  const billingStateProvince = optionalText("state_province");
+  const billingPostalCode = optionalText("postal_code");
+  const billingCountryCode = optionalText("country_code") ?? "USA";
+  const billingCountry = countryOptions.find((option) => option.code === billingCountryCode)?.name ?? "United States";
+  const billingAddressEntered = Boolean(billingAddressLine1 || billingAddressLine2 || billingCity || billingStateProvince || billingPostalCode);
+
+  if ((billingLocationId || billingAddressEntered) && (!billingAddressLine1 || !billingCity || !billingStateProvince || !billingPostalCode)) {
+    redirect(`/?module=edit-billing-credit&customer=${customerId}&error=${encodeURIComponent("Complete the billing address: address line 1, city, state/province, and postal code are required.")}`);
+  }
+
+  if (billingLocationId || billingAddressEntered) {
+    const billingAddressPayload = {
+      address_line_1: billingAddressLine1,
+      address_line_2: billingAddressLine2,
+      city: billingCity,
+      country: billingCountry,
+      country_code: billingCountryCode,
+      is_billing_address: true,
+      location_name: billingLocationName,
+      location_type: "ship_to" as const,
+      postal_code: billingPostalCode,
+      state_province: billingStateProvince,
+      status: "active" as const
+    };
+
+    const billingLocationResult = billingLocationId
+      ? await supabase.from("customer_location").update(billingAddressPayload).eq("id", billingLocationId).eq("customer_account_id", customerId)
+      : await supabase.from("customer_location").insert({ ...billingAddressPayload, customer_account_id: customerId });
+
+    if (billingLocationResult.error) {
+      redirect(`/?module=edit-billing-credit&customer=${customerId}&error=${encodeURIComponent(billingLocationResult.error.message)}`);
+    }
+  }
+
   const profile = {
     credit_limit: creditLimit,
     credit_limit_source: creditLimit === null ? "system_default" : "customer_override",
@@ -2562,6 +4317,7 @@ async function addLocationAction(formData: FormData) {
       country_code: countryCode,
       customer_account_id: customerId,
       default_ship_to_order_channel: formData.get("is_default_ship_to") === "on" ? "manual" : null,
+      email: optionalText("location_contact_email"),
       is_billing_address: formData.get("is_billing_address") === "on",
       is_default_ship_to: formData.get("is_default_ship_to") === "on",
       is_shipping_address: formData.get("is_shipping_address") === "on",
@@ -2627,6 +4383,7 @@ async function updateLocationAction(formData: FormData) {
       country,
       country_code: countryCode,
       default_ship_to_order_channel: formData.get("is_default_ship_to") === "on" ? "manual" : null,
+      email: optionalText("location_contact_email"),
       is_billing_address: formData.get("is_billing_address") === "on",
       is_default_ship_to: formData.get("is_default_ship_to") === "on",
       is_shipping_address: formData.get("is_shipping_address") === "on",
@@ -3647,6 +5404,7 @@ async function getProductDetail(productId: string): Promise<ProductDetail | null
     const location = locationById.get(balance.warehouse_location_id);
     const quantityOnHand = Number(balance.quantity_on_hand);
     const quantityAllocated = Number(balance.quantity_allocated);
+    const quantityAvailable = Number(balance.quantity_available);
 
     return {
       box_label: box?.box_label ?? null,
@@ -3656,7 +5414,7 @@ async function getProductDetail(productId: string): Promise<ProductDetail | null
       location_code: location?.location_code ?? "Not set",
       product_packing_box_id: balance.product_packing_box_id,
       quantity_allocated: quantityAllocated,
-      quantity_available: Math.max(quantityOnHand - quantityAllocated, 0),
+      quantity_available: quantityAvailable,
       quantity_on_hand: quantityOnHand,
       warehouse_id: balance.warehouse_id,
       warehouse_location_id: balance.warehouse_location_id,
@@ -3805,19 +5563,20 @@ async function getCustomerDashboard(customerId: string) {
     supabase
       .from("sales_order")
       .select(
-        "id, sales_order_number, customer_po_number, order_date, order_source, order_type, status, shipping_readiness_status, credit_hold_status, total_amount"
+        "id, sales_order_number, customer_po_number, order_date, created_at, order_source, order_type, status, shipping_readiness_status, credit_hold_status, total_amount, converted_from_quote_id"
       )
       .eq("customer_account_id", customerId)
       .order("order_date", { ascending: false })
-      .limit(8),
+      .limit(100),
     supabase
       .from("customer_invoice")
       .select(
-        "id, invoice_number, brand_name_snapshot, invoice_date, due_date, invoice_status, payment_status, total_amount, balance_due"
+        "id, invoice_number, sales_order_id, brand_name_snapshot, invoice_date, due_date, invoice_status, payment_status, total_amount, balance_due, sales_order(customer_po_number)"
       )
       .eq("customer_account_id", customerId)
       .order("invoice_date", { ascending: false })
-      .limit(8),
+      .order("created_at", { ascending: false })
+      .limit(1000),
     supabase
       .from("credit_memo")
       .select("id, credit_memo_number, brand_name_snapshot, issue_date, reason_code, status, total_credit_amount, amount_applied, amount_remaining")
@@ -3826,7 +5585,7 @@ async function getCustomerDashboard(customerId: string) {
       .limit(8),
     supabase
       .from("packing_list")
-      .select("id, packing_list_number, customer_po_number_snapshot, status, invoice_generation_status_snapshot, shipping_fee, ship_date")
+      .select("id, packing_list_number, sales_order_id, customer_po_number_snapshot, status, invoice_generation_status_snapshot, shipping_fee, allocated_freight_cost, freight_shipment_id, ship_date")
       .eq("customer_account_id", customerId)
       .order("created_at", { ascending: false })
       .limit(8),
@@ -3891,6 +5650,94 @@ async function getCustomerDashboard(customerId: string) {
     throw new Error(failed.error.message);
   }
 
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const { data: last30DayOrders, error: last30DayOrdersError } = await supabase
+    .from("sales_order")
+    .select("total_amount, order_type")
+    .eq("customer_account_id", customerId)
+    .neq("status", "deleted")
+    .gte("order_date", thirtyDaysAgo.toISOString().slice(0, 10));
+  if (last30DayOrdersError) {
+    throw new Error(last30DayOrdersError.message);
+  }
+  const ordersLast30DaysTotal = (last30DayOrders ?? []).filter((order) => order.order_type !== "quote").reduce((sum, order) => sum + Number(order.total_amount ?? 0), 0);
+
+  const orderIds = (ordersResult.data ?? []).map((order) => order.id);
+  const orderLinesResult = orderIds.length
+    ? await supabase
+        .from("sales_order_line")
+        .select("sales_order_id, product_id, product_sku_snapshot, quantity_ordered, quantity_shipped, quantity_cancelled, quantity_cleared")
+        .in("sales_order_id", orderIds)
+    : { data: [], error: null };
+  const invoiceIds = (invoicesResult.data ?? []).map((invoice) => invoice.id);
+  const invoiceLinesResult = invoiceIds.length
+    ? await supabase
+        .from("customer_invoice_line")
+        .select("customer_invoice_id, product_sku_snapshot")
+        .in("customer_invoice_id", invoiceIds)
+    : { data: [], error: null };
+  if (orderLinesResult.error) {
+    throw new Error(orderLinesResult.error.message);
+  }
+  if (invoiceLinesResult.error) {
+    throw new Error(invoiceLinesResult.error.message);
+  }
+  const { data: orderPackingLists, error: orderPackingListsError } = orderIds.length
+    ? await supabase.from("packing_list").select("sales_order_id, freight_shipment_id").in("sales_order_id", orderIds).not("freight_shipment_id", "is", null)
+    : { data: [], error: null };
+  if (orderPackingListsError) {
+    throw new Error(orderPackingListsError.message);
+  }
+  const shipmentIds = [...new Set((orderPackingLists ?? []).map((packingList) => packingList.freight_shipment_id).filter(Boolean))];
+  const { data: pendingShipments, error: pendingShipmentsError } = shipmentIds.length
+    ? await supabase.from("freight_shipment").select("id, status").in("id", shipmentIds).in("status", ["pending", "in_progress"])
+    : { data: [], error: null };
+  if (pendingShipmentsError) {
+    throw new Error(pendingShipmentsError.message);
+  }
+  const pendingShipmentIds = new Set((pendingShipments ?? []).map((shipment) => shipment.id));
+  const shippingInProgressOrderIds = new Set((orderPackingLists ?? []).filter((packingList) => packingList.freight_shipment_id && pendingShipmentIds.has(packingList.freight_shipment_id)).map((packingList) => packingList.sales_order_id));
+  const orderProductIds = [...new Set((orderLinesResult.data ?? []).map((line) => line.product_id).filter(Boolean))];
+  const inventoryResult = orderProductIds.length
+    ? await supabase.from("inventory_sku_summary").select("product_id, sellable_quantity").in("product_id", orderProductIds)
+    : { data: [], error: null };
+  if (inventoryResult.error) {
+    throw new Error(inventoryResult.error.message);
+  }
+  const inventoryByProduct = new Map((inventoryResult.data ?? []).map((item) => [item.product_id, Number(item.sellable_quantity ?? 0)]));
+  const shippingByOrder = new Map<string, { shipped: number; total: number }>();
+  const readyToShipOrderIds = new Set<string>();
+  const orderSearchSkus = new Map<string, string[]>();
+  const invoiceSearchSkus = new Map<string, string[]>();
+  for (const line of invoiceLinesResult.data ?? []) {
+    const skus = invoiceSearchSkus.get(line.customer_invoice_id) ?? [];
+    if (line.product_sku_snapshot) {
+      skus.push(line.product_sku_snapshot);
+    }
+    invoiceSearchSkus.set(line.customer_invoice_id, skus);
+  }
+  for (const orderId of orderIds) {
+    const lines = (orderLinesResult.data ?? []).filter((line) => line.sales_order_id === orderId);
+    let readyToShip = 0;
+    orderSearchSkus.set(orderId, lines.map((line) => line.product_sku_snapshot).filter(Boolean));
+    shippingByOrder.set(orderId, {
+      shipped: lines.reduce((sum, line) => sum + Number(line.quantity_shipped ?? 0), 0),
+      total: lines.reduce((sum, line) => sum + Number(line.quantity_ordered ?? 0), 0)
+    });
+    for (const line of lines) {
+      const remaining = Math.max(0, Number(line.quantity_ordered ?? 0) - Number(line.quantity_shipped ?? 0) - Number(line.quantity_cancelled ?? 0) - Number(line.quantity_cleared ?? 0));
+      readyToShip += Math.min(remaining, inventoryByProduct.get(line.product_id) ?? 0);
+    }
+    if (readyToShip > 0) readyToShipOrderIds.add(orderId);
+  }
+
+  const convertedOrderByQuoteId = new Map(
+    (ordersResult.data ?? [])
+      .filter((order) => order.converted_from_quote_id)
+      .map((order) => [order.converted_from_quote_id!, { id: order.id, sales_order_number: order.sales_order_number }])
+  );
+
   return {
     billing: billingResult.data as BillingProfile | null,
     attachments: (attachmentsResult.data ?? []) as CustomerAttachment[],
@@ -3899,8 +5746,17 @@ async function getCustomerDashboard(customerId: string) {
     customer: customerResult.data as CustomerAccount,
     freightPolicies: (freightResult.data ?? []) as FreightPolicy[],
     invoices: (invoicesResult.data ?? []) as CustomerInvoice[],
+    invoiceSearchSkus: Object.fromEntries(invoiceSearchSkus),
     locations: (locationsResult.data ?? []) as CustomerLocation[],
-    orders: (ordersResult.data ?? []) as SalesOrder[],
+    orders: (ordersResult.data ?? []).map((order) => ({
+      ...order,
+      converted_order: order.order_type === "quote" ? convertedOrderByQuoteId.get(order.id) ?? null : null,
+      shipping_in_progress: shippingInProgressOrderIds.has(order.id),
+      shipping_quantity: shippingByOrder.get(order.id) ?? { shipped: 0, total: 0 }
+    })) as SalesOrder[],
+    orderSearchSkus: Object.fromEntries(orderSearchSkus),
+    ordersLast30DaysTotal,
+    readyToShipOrderCount: (ordersResult.data ?? []).filter((order) => order.order_type !== "quote" && order.status !== "closed" && order.status !== "deleted" && readyToShipOrderIds.has(order.id)).length,
     packingLists: (packingListsResult.data ?? []) as PackingList[],
     primaryShowrooms: (primaryShowroomsResult.data ?? []) as PrimaryShowroomEnrollment[],
     rgas: (rgasResult.data ?? []) as Rga[],
@@ -3908,7 +5764,1569 @@ async function getCustomerDashboard(customerId: string) {
   };
 }
 
-function StatusBadge({ tone = "neutral", value }: { tone?: "good" | "neutral" | "primary" | "warn"; value: string }) {
+async function getOrderEntryData(customerId: string) {
+  const supabase = createSupabaseAdminClient();
+  const [customerResult, locationsResult, accessoryResult] = await Promise.all([
+    supabase
+      .from("customer_account")
+      .select("id, name, default_discount_percent")
+      .eq("id", customerId)
+      .single(),
+    supabase
+      .from("customer_location")
+      .select("id, location_name, address_line_1, city, state_province, country_code, email, is_default_ship_to")
+      .eq("customer_account_id", customerId)
+      .eq("is_shipping_address", true)
+      .eq("status", "active")
+      .order("is_default_ship_to", { ascending: false })
+      .order("location_name", { ascending: true }),
+    supabase.from("product_category").select("id").or("category_code.eq.accessory,name.ilike.Accessory")
+  ]);
+
+  const initialFailure = [customerResult, locationsResult, accessoryResult].find((result) => result.error);
+  if (initialFailure?.error) {
+    throw new Error(initialFailure.error.message);
+  }
+
+  if (!customerResult.data) return null;
+
+  const accessoryIds = (accessoryResult.data ?? []).map((category) => category.id);
+  let productRequest = supabase
+    .from("product")
+    .select("id, sku, name, default_price, brand(name)")
+    .eq("status", "active")
+    .eq("sellability_status", "sellable")
+    .order("sku", { ascending: true })
+    .limit(1000);
+
+  if (accessoryIds.length > 0) {
+    productRequest = productRequest.not("product_category_id", "in", `(${accessoryIds.join(",")})`);
+  }
+
+  const { data: products, error: productsError } = await productRequest;
+  if (productsError) throw new Error(productsError.message);
+
+  const productIds = (products ?? []).map((product) => product.id);
+  const partProductRequest = accessoryIds.length
+    ? supabase
+        .from("product")
+        .select("id, sku, name, default_price, brand(name)")
+        .eq("status", "active")
+        .eq("sellability_status", "sellable")
+        .in("product_category_id", accessoryIds)
+        .order("sku", { ascending: true })
+        .limit(1000)
+    : null;
+  const [inventoryResult, partProductsResult, partLinksResult] = await Promise.all([
+    productIds.length
+      ? supabase.from("inventory_sku_summary").select("product_id, sellable_quantity").in("product_id", productIds)
+      : Promise.resolve({ data: [], error: null }),
+    partProductRequest ?? Promise.resolve({ data: [], error: null }),
+    supabase
+      .from("product_part")
+      .select("component_product_id, parent_product_id, part_role")
+      .eq("is_active", true)
+  ]);
+  const inventory = inventoryResult.data;
+  const inventoryError = inventoryResult.error;
+  if (inventoryError) throw new Error(inventoryError.message);
+  if (partProductsResult.error) throw new Error(partProductsResult.error.message);
+  if (partLinksResult.error) throw new Error(partLinksResult.error.message);
+
+  const partProductIds = (partProductsResult.data ?? []).map((part) => part.id);
+  const { data: partInventory, error: partInventoryError } = partProductIds.length
+    ? await supabase.from("inventory_sku_summary").select("product_id, sellable_quantity").in("product_id", partProductIds)
+    : { data: [], error: null };
+  if (partInventoryError) throw new Error(partInventoryError.message);
+
+  const inventoryByProduct = new Map(
+    [...(inventory ?? []), ...(partInventory ?? [])].map((item) => [item.product_id, Number(item.sellable_quantity ?? 0)])
+  );
+  const productOptions: OrderProductOption[] = (products ?? []).map((product) => ({
+    brandName: product.brand?.name ?? "Not set",
+    defaultPrice: Number(product.default_price ?? 0),
+    id: product.id,
+    inventory: inventoryByProduct.get(product.id) ?? 0,
+    name: product.name,
+    sku: product.sku
+  }));
+  const partLinksByComponentId = new Map<string, { parentProductId: string; role: string | null }[]>();
+  (partLinksResult.data ?? []).forEach((link) => {
+    partLinksByComponentId.set(link.component_product_id, [
+      ...(partLinksByComponentId.get(link.component_product_id) ?? []),
+      { parentProductId: link.parent_product_id, role: link.part_role }
+    ]);
+  });
+  const partOptions: OrderPartOption[] = (partProductsResult.data ?? []).map((part) => {
+    const links = partLinksByComponentId.get(part.id) ?? [];
+    return {
+      brandName: part.brand?.name ?? "Not set",
+      defaultPrice: Number(part.default_price ?? 0),
+      id: part.id,
+      inventory: inventoryByProduct.get(part.id) ?? 0,
+      name: part.name,
+      parentProductIds: links.map((link) => link.parentProductId),
+      parentRoles: links.map((link) => link.role).filter(Boolean) as string[],
+      sku: part.sku
+    };
+  });
+  const shipToOptions: OrderShipToOption[] = (locationsResult.data ?? []).map((location) => ({
+    address: [location.address_line_1, location.city, location.state_province, location.country_code].filter(Boolean).join(", "),
+    email: location.email,
+    id: location.id,
+    isDefault: location.is_default_ship_to,
+    name: location.location_name
+  }));
+
+  return { customer: customerResult.data, partOptions, products: productOptions, shipToOptions };
+}
+
+async function NewOrderPage({ customerId, error, locationId }: { customerId?: string; error?: string; locationId?: string }) {
+  if (!customerId) {
+    return <ModulePlaceholder moduleName="Choose a customer account before entering a new order" />;
+  }
+
+  const data = await getOrderEntryData(customerId);
+  if (!data) return <ModulePlaceholder moduleName="Customer account not found" />;
+
+  return (
+    <section className="dashboard-panel">
+      <section className="form-header">
+        <div>
+          <span className="eyebrow">Order Entry</span>
+          <Link className="context-parent-link" href={`/?customer=${customerId}`}>{data.customer.name}</Link>
+          <h2>Enter New Order</h2>
+        </div>
+      </section>
+      {error ? <p className="form-alert">{error}</p> : null}
+      <OrderEntryForm
+        accountName={data.customer.name}
+        customerId={customerId}
+        defaultDiscountPercent={Number(data.customer.default_discount_percent ?? 0)}
+        defaultLocationId={locationId}
+        parts={data.partOptions}
+        products={data.products}
+        saveAction={createSalesOrderAction}
+        shipToOptions={data.shipToOptions}
+      />
+    </section>
+  );
+}
+
+async function getSalesOrderDetail(orderId: string): Promise<SalesOrderDetail | null> {
+  const supabase = createSupabaseAdminClient();
+  const [orderResult, linesResult] = await Promise.all([
+    supabase
+      .from("sales_order")
+      .select("id, customer_account_id, customer_location_id, sales_order_number, customer_po_number, customer_name_snapshot, order_date, requested_ship_date, order_source, order_type, status, shipping_readiness_status, credit_hold_status, is_dropship, ship_to_type, ship_to_display_name_snapshot, ship_to_snapshot_json, bill_to_snapshot_json, shipping_priority, sales_rep_agency_id_snapshot, sales_rep_id_snapshot, territory_id_snapshot, subtotal_amount, freight_amount, tax_amount, total_amount, notes")
+      .eq("id", orderId)
+      .maybeSingle(),
+    supabase
+      .from("sales_order_line")
+      .select("id, line_number, product_id, product_sku_snapshot, product_name_snapshot, brand_name_snapshot, quantity_ordered, quantity_shipped, quantity_cancelled, quantity_cleared, unit_price, discount_percent, line_total, line_status")
+      .eq("sales_order_id", orderId)
+      .order("line_number", { ascending: true })
+  ]);
+
+  const failure = [orderResult, linesResult].find((result) => result.error);
+  if (failure?.error) throw new Error(failure.error.message);
+  if (!orderResult.data) return null;
+
+  const convertedOrderResult = orderResult.data.order_type === "quote"
+    ? await supabase
+        .from("sales_order")
+        .select("id, sales_order_number")
+        .eq("converted_from_quote_id", orderId)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (convertedOrderResult.error) throw new Error(convertedOrderResult.error.message);
+
+  const productIds = [...new Set((linesResult.data ?? []).map((line) => line.product_id))];
+  const inventoryResult = productIds.length
+    ? await supabase.from("inventory_sku_summary").select("product_id, sellable_quantity").in("product_id", productIds)
+    : { data: [], error: null };
+  if (inventoryResult.error) throw new Error(inventoryResult.error.message);
+  const inventoryByProduct = new Map((inventoryResult.data ?? []).map((item) => [item.product_id, Number(item.sellable_quantity ?? 0)]));
+
+  return {
+    ...orderResult.data,
+    converted_order: convertedOrderResult.data,
+    lines: (linesResult.data ?? []).map((line) => ({
+      ...line,
+      available_inventory: inventoryByProduct.get(line.product_id) ?? 0,
+      line_total: Number(line.line_total ?? 0)
+    }))
+  } as unknown as SalesOrderDetail;
+}
+
+async function getInvoiceQueuePackingLists() {
+  const supabase = createSupabaseAdminClient();
+  const { data: packingLists, error: packingListsError } = await supabase
+    .from("packing_list")
+    .select("id, packing_list_number, customer_account_id, customer_po_number_snapshot, sales_order_number_snapshot, status, invoice_generation_status_snapshot, shipping_fee, allocated_freight_cost, dropship_fee_amount, ship_date, created_at")
+    .eq("invoice_required", true)
+    .eq("invoice_generation_status_snapshot", "not_invoiced")
+    .in("status", ["shipped", "invoiced"])
+    .order("ship_date", { ascending: true });
+  if (packingListsError) throw new Error(packingListsError.message);
+
+  const customerIds = [...new Set((packingLists ?? []).map((packingList) => packingList.customer_account_id))];
+  const packingListIds = (packingLists ?? []).map((packingList) => packingList.id);
+  const [customersResult, linesResult, billingProfilesResult] = await Promise.all([
+    customerIds.length ? supabase.from("customer_account").select("id, name").in("id", customerIds) : Promise.resolve({ data: [], error: null }),
+    packingListIds.length ? supabase.from("packing_list_line").select("packing_list_id, brand_id_snapshot, brand_name_snapshot, line_total").in("packing_list_id", packingListIds) : Promise.resolve({ data: [], error: null }),
+    customerIds.length ? supabase.from("customer_billing_profile").select("customer_account_id, payment_terms, payment_days").in("customer_account_id", customerIds).eq("is_active", true) : Promise.resolve({ data: [], error: null })
+  ]);
+  if (customersResult.error || linesResult.error || billingProfilesResult.error) throw new Error(customersResult.error?.message ?? linesResult.error?.message ?? billingProfilesResult.error?.message ?? "Unable to load invoice work.");
+
+  const customersById = new Map((customersResult.data ?? []).map((customer) => [customer.id, customer.name]));
+  const billingProfilesByCustomerId = new Map((billingProfilesResult.data ?? []).map((profile) => [profile.customer_account_id, profile]));
+  const brandSummariesByPackingList = new Map<string, InvoiceBrandSummary[]>();
+  for (const line of linesResult.data ?? []) {
+    const summaries = brandSummariesByPackingList.get(line.packing_list_id) ?? [];
+    const summary = summaries.find((item) => item.brand_id === line.brand_id_snapshot);
+    if (summary) summary.subtotal_amount += Number(line.line_total ?? 0);
+    else summaries.push({ brand_id: line.brand_id_snapshot, brand_name: line.brand_name_snapshot, subtotal_amount: Number(line.line_total ?? 0) });
+    brandSummariesByPackingList.set(line.packing_list_id, summaries);
+  }
+
+  return (packingLists ?? []).map((packingList) => ({
+    ...packingList,
+    customer_name: customersById.get(packingList.customer_account_id) ?? "Unknown customer",
+    payment_days: billingProfilesByCustomerId.get(packingList.customer_account_id)?.payment_days ?? 0,
+    payment_terms: billingProfilesByCustomerId.get(packingList.customer_account_id)?.payment_terms ?? "Prepaid / No Credit",
+    brandSummaries: brandSummariesByPackingList.get(packingList.id) ?? []
+  }));
+}
+
+async function InvoiceQueuePage({ error, financialTab, financialFilters, notice }: { error?: string; financialTab?: string; financialFilters: { page?: string; pageSize?: string; query?: string; advanced?: string; dateFrom?: string; dateTo?: string; status?: string; customer?: string; skus?: string }; notice?: string }) {
+  const packingLists = await getInvoiceQueuePackingLists();
+  return (
+    <section className="dashboard-panel">
+      <section className="record-hero">
+        <div>
+          <Link className="subtle-link" href="/">ERP Dashboard</Link>
+          <div className="record-title-row"><h2>Financial Dashboard</h2></div>
+          <p>Financial work is organized by invoice and payment status.</p>
+        </div>
+      </section>
+      {error ? <div className="form-alert">{decodeURIComponent(error)}</div> : null}
+      {notice ? <div className="notice-banner">{decodeURIComponent(notice)}</div> : null}
+      <FinancialDashboardTabs financialFilters={financialFilters} financialTab={financialTab} packingLists={packingLists} />
+    </section>
+  );
+}
+
+type FinancialInvoice = CustomerInvoice & {
+  customer_name_snapshot: string;
+  customer_account_id: string;
+  created_at: string;
+  sales_order?: { customer_po_number: string | null } | null;
+};
+type FinancialPayment = { id: string; payment_number: string; customer_account_id: string; payment_date: string; payment_method: string; reference_number: string | null; amount_received: number; amount_applied: number; amount_unapplied: number; status: string; created_at: string };
+type FinancialPaymentApplication = { customer_payment_id: string; customer_invoice_id: string; amount_applied: number; applied_date: string; application_status: string };
+
+async function FinancialDashboardTabs({ financialFilters, financialTab, packingLists }: { financialFilters: { page?: string; pageSize?: string; query?: string; advanced?: string; dateFrom?: string; dateTo?: string; status?: string; customer?: string; skus?: string }; financialTab?: string; packingLists: Awaited<ReturnType<typeof getInvoiceQueuePackingLists>> }) {
+  const supabase = createSupabaseAdminClient();
+  const today = new Date().toISOString().slice(0, 10);
+  const [{ data: invoices, error: invoicesError }, { data: payments, error: paymentsError }, { data: paymentApplications, error: paymentApplicationsError }] = await Promise.all([
+    supabase.from("customer_invoice").select("id, invoice_number, sales_order_id, brand_name_snapshot, customer_name_snapshot, customer_account_id, invoice_date, due_date, invoice_status, payment_status, total_amount, balance_due, created_at, sales_order(customer_po_number)").neq("invoice_status", "void").order("invoice_date", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("customer_payment").select("id, payment_number, customer_account_id, payment_date, payment_method, reference_number, amount_received, amount_applied, amount_unapplied, status, created_at").order("payment_date", { ascending: false }).order("created_at", { ascending: false }),
+    supabase.from("customer_payment_application").select("customer_payment_id, customer_invoice_id, amount_applied, applied_date, application_status").eq("application_status", "posted")
+  ]);
+  if (invoicesError) throw new Error(invoicesError.message);
+  if (paymentsError) throw new Error(paymentsError.message);
+  if (paymentApplicationsError) throw new Error(paymentApplicationsError.message);
+
+  const invoiceIds = (invoices ?? []).map((invoice) => invoice.id);
+  const { data: invoiceLines, error: invoiceLinesError } = invoiceIds.length
+    ? await supabase.from("customer_invoice_line").select("customer_invoice_id, product_sku_snapshot").in("customer_invoice_id", invoiceIds)
+    : { data: [], error: null };
+  if (invoiceLinesError) throw new Error(invoiceLinesError.message);
+
+  const customerIds = [...new Set([
+    ...(payments ?? []).map((payment) => payment.customer_account_id),
+    ...(invoices ?? []).map((invoice) => invoice.customer_account_id)
+  ])];
+  const { data: financialCustomers, error: financialCustomersError } = customerIds.length
+    ? await supabase.from("customer_account").select("id, name, account_number").in("id", customerIds)
+    : { data: [], error: null };
+  if (financialCustomersError) throw new Error(financialCustomersError.message);
+  const paymentCustomerNames = new Map((financialCustomers ?? []).map((customer) => [customer.id, customer.name]));
+  const customerAccountNumbers = new Map((financialCustomers ?? []).map((customer) => [customer.id, customer.account_number]));
+  const allInvoices = (invoices ?? []) as FinancialInvoice[];
+  const invoiceSkusById = new Map<string, string[]>();
+  for (const line of invoiceLines ?? []) {
+    const skus = invoiceSkusById.get(line.customer_invoice_id) ?? [];
+    if (line.product_sku_snapshot) skus.push(line.product_sku_snapshot);
+    invoiceSkusById.set(line.customer_invoice_id, skus);
+  }
+  const allPayments = (payments ?? []) as FinancialPayment[];
+  const invoiceById = new Map(allInvoices.map((invoice) => [invoice.id, invoice]));
+  const paymentApplicationsByPaymentId = new Map<string, FinancialPaymentApplication[]>();
+  for (const application of (paymentApplications ?? []) as FinancialPaymentApplication[]) {
+    const applications = paymentApplicationsByPaymentId.get(application.customer_payment_id) ?? [];
+    applications.push(application);
+    paymentApplicationsByPaymentId.set(application.customer_payment_id, applications);
+  }
+  const activeInvoices = allInvoices.filter((invoice) => invoice.payment_status !== "paid" && Number(invoice.balance_due) > 0);
+  const overdueInvoices = activeInvoices.filter((invoice) => Boolean(invoice.due_date) && invoice.due_date! < today);
+  const paidInvoices = allInvoices.filter((invoice) => invoice.payment_status === "paid");
+  const financialInvoiceQuery = (financialFilters.query ?? "").trim().toLowerCase();
+  const financialInvoiceDateFrom = financialFilters.dateFrom ?? "";
+  const financialInvoiceDateTo = financialFilters.dateTo ?? "";
+  const financialInvoiceStatus = ["unpaid", "partially_paid", "paid"].includes(financialFilters.status ?? "") ? financialFilters.status ?? "" : "";
+  const financialInvoiceCustomer = (financialFilters.customer ?? "").trim().toLowerCase();
+  const financialInvoiceSkus = (financialFilters.skus ?? "").split(",").map((sku) => sku.trim().toLowerCase()).filter(Boolean);
+  const filterFinancialInvoices = (invoiceList: FinancialInvoice[]) => invoiceList.filter((invoice) => {
+    if (financialInvoiceDateFrom && invoice.invoice_date < financialInvoiceDateFrom) return false;
+    if (financialInvoiceDateTo && invoice.invoice_date > financialInvoiceDateTo) return false;
+    if (financialInvoiceStatus && invoice.payment_status !== financialInvoiceStatus) return false;
+    if (financialInvoiceCustomer && ![invoice.customer_name_snapshot, customerAccountNumbers.get(invoice.customer_account_id), invoice.customer_account_id]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(financialInvoiceCustomer))) return false;
+    if (financialInvoiceSkus.length && !financialInvoiceSkus.some((requestedSku) => (invoiceSkusById.get(invoice.id) ?? []).some((invoiceSku) => invoiceSku.toLowerCase().includes(requestedSku)))) return false;
+    if (!financialInvoiceQuery) return true;
+    return [invoice.invoice_number, invoice.customer_name_snapshot, invoice.brand_name_snapshot, invoice.invoice_status, invoice.payment_status, ...(invoiceSkusById.get(invoice.id) ?? [])]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(financialInvoiceQuery));
+  });
+  const newestUninvoiced = [...packingLists].sort((left, right) => `${right.ship_date ?? ""}${right.created_at ?? ""}`.localeCompare(`${left.ship_date ?? ""}${left.created_at ?? ""}`));
+  const tabs = [
+    { key: "uninvoiced", label: "Uninvoiced Packing Lists", count: newestUninvoiced.length },
+    { key: "active", label: "Active Invoices", count: activeInvoices.length },
+    { key: "overdue", label: "Overdue Invoices", count: overdueInvoices.length },
+    { key: "paid", label: "Paid Invoices", count: paidInvoices.length },
+    { key: "payments", label: "Payments", count: allPayments.length }
+  ];
+  const selectedTab = tabs.some((tab) => tab.key === financialTab) ? financialTab! : "uninvoiced";
+
+  return <>
+    <nav className="tab-nav financial-tab-nav" aria-label="Financial dashboard lists">{tabs.map((tab) => <Link aria-current={tab.key === selectedTab ? "page" : undefined} href={`/?module=invoices&financial_tab=${tab.key}`} key={tab.key}>{tab.label} ({numberFormatter.format(tab.count)})</Link>)}</nav>
+    {selectedTab === "uninvoiced" ? <section className="record-section">
+      <h3>Uninvoiced Packing Lists</h3>
+      {newestUninvoiced.length === 0 ? <div className="empty-state">No shipped packing lists are awaiting invoice creation.</div> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Packing List</th><th>Customer</th><th>Customer PO</th><th>Ship Date</th><th>Brands</th><th>Shipped Product Total</th><th>Freight</th><th>Action</th></tr></thead><tbody>{newestUninvoiced.map((packingList) => <tr key={packingList.id}><td>{packingList.packing_list_number}</td><td>{packingList.customer_name}</td><td>{packingList.customer_po_number_snapshot}</td><td>{dateLabel(packingList.ship_date)}</td><td>{packingList.brandSummaries.map((brand) => brand.brand_name).join(", ")}</td><td>{money(packingList.brandSummaries.reduce((total, brand) => total + brand.subtotal_amount, 0))}</td><td>{money(packingList.shipping_fee)}</td><td><Link className="small-action" href={`/?module=invoice-create&packing_list=${packingList.id}`}>Create Invoice</Link></td></tr>)}</tbody></table></div>}
+    </section> : null}
+    {selectedTab === "active" ? <section className="record-section">
+      <h3>Active Invoices</h3>
+      <FinancialInvoiceTable emptyText="No unpaid invoices." filters={financialFilters} invoices={filterFinancialInvoices(activeInvoices)} tab="active" />
+    </section> : null}
+    {selectedTab === "overdue" ? <section className="record-section">
+      <h3>Overdue Invoices</h3>
+      <FinancialInvoiceTable emptyText="No overdue invoices." filters={financialFilters} invoices={filterFinancialInvoices(overdueInvoices)} tab="overdue" />
+    </section> : null}
+    {selectedTab === "paid" ? <section className="record-section">
+      <h3>Paid Invoices</h3>
+      <FinancialInvoiceTable emptyText="No paid invoices." filters={financialFilters} invoices={filterFinancialInvoices(paidInvoices)} tab="paid" />
+    </section> : null}
+    {selectedTab === "payments" ? <section className="record-section">
+      <h3>Payment Transactions</h3>
+      {allPayments.length === 0 ? <div className="empty-state">No payment transactions have been recorded.</div> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Payment No.</th><th>Paid Invoice No.</th><th>Customer</th><th>Payment Date</th><th>Method</th><th>Received</th><th>Status</th></tr></thead><tbody>{allPayments.map((payment) => {
+        const applications = paymentApplicationsByPaymentId.get(payment.id) ?? [];
+        return <tr key={payment.id}><td><Link className="table-link" href={`/?module=payment-detail&payment=${payment.id}`}>{payment.payment_number}</Link></td><td>{applications.length ? applications.map((application, index) => {
+          const invoice = invoiceById.get(application.customer_invoice_id);
+          return invoice ? <span key={application.customer_invoice_id}>{index ? ", " : ""}<Link className="table-link" href={`/?module=invoice-document&invoice=${invoice.id}`}>{invoice.invoice_number}</Link></span> : null;
+        }) : "Not applied"}</td><td>{paymentCustomerNames.get(payment.customer_account_id) ?? "Unknown customer"}</td><td>{dateLabel(payment.payment_date)}</td><td>{label(payment.payment_method)}</td><td>{money(Number(payment.amount_received))}</td><td><StatusBadge tone={payment.status === "fully_applied" ? "good" : payment.status === "voided" ? "danger" : "primary"} value={payment.status} /></td></tr>;
+      })}</tbody></table></div>}
+    </section> : null}
+  </>;
+}
+
+function FinancialInvoiceTable({ emptyText, filters, invoices, tab }: { emptyText: string; filters: { page?: string; pageSize?: string; query?: string; advanced?: string; dateFrom?: string; dateTo?: string; status?: string; customer?: string; skus?: string }; invoices: FinancialInvoice[]; tab: "active" | "overdue" | "paid" }) {
+  const pageSize = [10, 20, 30, 50, 100].includes(Number(filters.pageSize)) ? Number(filters.pageSize) : 10;
+  const totalPages = Math.max(1, Math.ceil(invoices.length / pageSize));
+  const currentPage = Math.min(totalPages, Math.max(1, Number(filters.page ?? 1) || 1));
+  const pageRows = invoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const pageHref = (page: number) => `/?module=invoices&financial_tab=${tab}&financial_page=${page}&financial_page_size=${pageSize}${filters.query ? `&financial_q=${encodeURIComponent(filters.query)}` : ""}${filters.advanced === "1" ? "&financial_advanced=1" : ""}${filters.dateFrom ? `&financial_date_from=${encodeURIComponent(filters.dateFrom)}` : ""}${filters.dateTo ? `&financial_date_to=${encodeURIComponent(filters.dateTo)}` : ""}${filters.status ? `&financial_status=${encodeURIComponent(filters.status)}` : ""}${filters.customer ? `&financial_customer=${encodeURIComponent(filters.customer)}` : ""}${filters.skus ? `&financial_skus=${encodeURIComponent(filters.skus)}` : ""}`;
+
+  return <>
+    <FinancialInvoiceControls advanced={filters.advanced === "1"} customer={filters.customer ?? ""} dateFrom={filters.dateFrom ?? ""} dateTo={filters.dateTo ?? ""} pageSize={pageSize} query={filters.query ?? ""} skus={filters.skus ?? ""} status={filters.status ?? ""} tab={tab} />
+    {invoices.length === 0 ? <div className="empty-state">{emptyText}</div> : <><div className="table-wrap"><table className="data-table"><thead><tr><th>Invoice No.</th><th>Customer</th><th>Brand</th><th>Invoice Date</th><th>Due Date</th><th>Invoice Total</th><th>Balance Due</th><th>Payment Status</th></tr></thead><tbody>{pageRows.map((invoice) => <tr key={invoice.id}><td><Link className="table-link" href={`/?module=invoice-document&invoice=${invoice.id}`}>{invoice.invoice_number}</Link>{invoice.sales_order?.customer_po_number ? <span className="invoice-po-reference">PO <Link className="table-link" href={`/?module=orders&order=${invoice.sales_order_id}`}>{invoice.sales_order.customer_po_number}</Link></span> : null}</td><td><Link className="table-link" href={`/?customer=${invoice.customer_account_id}&tab=invoices`}>{invoice.customer_name_snapshot}</Link></td><td>{invoice.brand_name_snapshot}</td><td>{dateLabel(invoice.invoice_date)}</td><td>{dateLabel(invoice.due_date)}</td><td>{money(Number(invoice.total_amount))}</td><td>{money(Number(invoice.balance_due))}</td><td>{invoice.payment_status === "unpaid" ? <Link className="small-action" href={`/?module=ar&invoice=${invoice.id}`}>Make Payment</Link> : <StatusBadge tone={invoice.payment_status === "paid" ? "good" : "warn"} value={invoice.payment_status} />}</td></tr>)}</tbody></table></div>{totalPages > 1 ? <nav className="list-pagination" aria-label="Invoice pages"><Link href={pageHref(Math.max(1, currentPage - 1))}>Previous</Link><span>Page {currentPage} of {totalPages}</span><Link href={pageHref(Math.min(totalPages, currentPage + 1))}>Next</Link></nav> : null}</>}
+  </>;
+}
+
+async function PaymentEntryPage({ error, invoiceId, notice }: { error?: string; invoiceId?: string; notice?: string }) {
+  if (!invoiceId) return <ModulePlaceholder moduleName="Choose an unpaid invoice to record a payment" />;
+  const supabase = createSupabaseAdminClient();
+  const { data: invoice, error: invoiceError } = await supabase
+    .from("customer_invoice")
+    .select("id, customer_account_id, brand_id, invoice_number, brand_name_snapshot, customer_name_snapshot, invoice_date, due_date, total_amount, balance_due, payment_status, invoice_status")
+    .eq("id", invoiceId)
+    .maybeSingle();
+
+  if (invoiceError) throw new Error(invoiceError.message);
+  if (!invoice) return <ModulePlaceholder moduleName="Invoice not found" />;
+
+  const balanceDue = Number(invoice.balance_due ?? 0);
+  const canRecordPayment = invoice.invoice_status !== "void" && balanceDue > 0;
+  const { data: availableCreditMemos, error: creditMemoError } = await supabase
+    .from("credit_memo")
+    .select("id, credit_memo_number, issue_date, amount_remaining")
+    .eq("customer_account_id", invoice.customer_account_id)
+    .eq("brand_id", invoice.brand_id)
+    .in("status", ["posted", "partially_applied"])
+    .gt("amount_remaining", 0)
+    .order("issue_date", { ascending: false });
+  if (creditMemoError) throw new Error(creditMemoError.message);
+  const creditMemos = (availableCreditMemos ?? []).map((memo) => ({
+    id: memo.id,
+    creditMemoNumber: memo.credit_memo_number,
+    availableAmount: Number(memo.amount_remaining ?? 0),
+    issueDate: dateLabel(memo.issue_date)
+  }));
+
+  return <section className="dashboard-panel">
+    <section className="record-hero">
+      <div>
+        <Link className="subtle-link" href="/?module=invoices&financial_tab=active">Active Invoices</Link>
+        <div className="record-title-row"><h2>Make Payment</h2></div>
+        <p>{invoice.customer_name_snapshot} / Invoice {invoice.invoice_number} / {invoice.brand_name_snapshot}</p>
+      </div>
+    </section>
+    {error ? <div className="form-alert">{decodeURIComponent(error)}</div> : null}
+    {notice ? <div className="form-notice">{decodeURIComponent(notice)}</div> : null}
+    <section className="payment-invoice-summary">
+      <div><span>Invoice Total</span><strong>{money(Number(invoice.total_amount))}</strong></div>
+      <div><span>Balance Due</span><strong>{money(balanceDue)}</strong></div>
+      <div><span>Invoice Date</span><strong>{dateLabel(invoice.invoice_date)}</strong></div>
+      <div><span>Due Date</span><strong>{dateLabel(invoice.due_date)}</strong></div>
+    </section>
+    {!canRecordPayment ? <div className="empty-state">This invoice does not have an amount remaining to pay.</div> : <form action={recordInvoicePaymentAction} className="customer-form">
+      <input name="invoice_id" type="hidden" value={invoice.id} />
+      <PaymentSettlementFields balanceDue={balanceDue} creditMemos={creditMemos} />
+      <div className="form-actions"><button className="primary-action" type="submit">Record Settlement</button><Link className="secondary-action" href="/?module=invoices&financial_tab=active">Cancel</Link></div>
+    </form>}
+  </section>;
+}
+
+async function PaymentDetailPage({ paymentId }: { paymentId?: string }) {
+  if (!paymentId) return <ModulePlaceholder moduleName="Payment not found" />;
+  const supabase = createSupabaseAdminClient();
+  const [{ data: payment, error: paymentError }, { data: applications, error: applicationsError }, { data: attachments }] = await Promise.all([
+    supabase.from("customer_payment").select("id, payment_number, customer_account_id, payment_date, payment_method, reference_number, amount_received, amount_applied, amount_unapplied, memo, status, posted_at, created_at").eq("id", paymentId).maybeSingle(),
+    supabase.from("customer_payment_application").select("id, customer_invoice_id, amount_applied, line_waive_amount, applied_date, application_status, notes").eq("customer_payment_id", paymentId).order("created_at", { ascending: false }),
+    supabase.from("attachment").select("id, original_file_name, category, storage_bucket, storage_path, uploaded_at").eq("entity_type", "customer_payment").eq("entity_id", paymentId).eq("is_active", true).order("uploaded_at", { ascending: false })
+  ]);
+  if (paymentError) throw new Error(paymentError.message);
+  if (applicationsError) throw new Error(applicationsError.message);
+  if (!payment) return <ModulePlaceholder moduleName="Payment not found" />;
+
+  const invoiceIds = [...new Set((applications ?? []).map((application) => application.customer_invoice_id))];
+  const [{ data: invoices, error: invoicesError }, { data: customer, error: customerError }] = await Promise.all([
+    invoiceIds.length ? supabase.from("customer_invoice").select("id, invoice_number, brand_name_snapshot, invoice_date, total_amount, balance_due").in("id", invoiceIds) : Promise.resolve({ data: [], error: null }),
+    supabase.from("customer_account").select("id, name").eq("id", payment.customer_account_id).maybeSingle()
+  ]);
+  if (invoicesError) throw new Error(invoicesError.message);
+  if (customerError) throw new Error(customerError.message);
+  const invoiceById = new Map((invoices ?? []).map((invoice) => [invoice.id, invoice]));
+  const documents = await Promise.all((attachments ?? []).map(async (attachment) => {
+    const { data } = await supabase.storage.from(attachment.storage_bucket).createSignedUrl(attachment.storage_path, 60 * 60);
+    return { ...attachment, downloadUrl: data?.signedUrl ?? null };
+  }));
+
+  return <section className="dashboard-panel">
+    <section className="record-hero">
+      <div>
+        <Link className="subtle-link" href="/?module=invoices&financial_tab=payments">Payment List</Link>
+        <div className="record-title-row"><h2>Payment {payment.payment_number}</h2><StatusBadge tone={payment.status === "fully_applied" ? "good" : payment.status === "voided" ? "danger" : "primary"} value={payment.status} /></div>
+        <p>{customer ? <Link className="context-parent-link" href={`/?customer=${customer.id}&tab=invoices`}>{customer.name}</Link> : "Customer"}</p>
+      </div>
+    </section>
+    <section className="payment-invoice-summary">
+      <div><span>Payment Date</span><strong>{dateLabel(payment.payment_date)}</strong></div>
+      <div><span>Payment Method</span><strong>{label(payment.payment_method)}</strong></div>
+      <div><span>Received</span><strong>{money(Number(payment.amount_received))}</strong></div>
+      <div><span>Applied</span><strong>{money(Number(payment.amount_applied))}</strong></div>
+      <div><span>Unapplied</span><strong>{money(Number(payment.amount_unapplied))}</strong></div>
+    </section>
+    <section className="detail-section shipment-workspace-section">
+      <article className="data-section"><div className="section-title"><h3>Payment Details</h3></div><dl className="record-details"><div><dt>Reference No.</dt><dd>{payment.reference_number || "Not set"}</dd></div><div><dt>Recorded</dt><dd>{timestampLabel(payment.posted_at ?? payment.created_at)}</dd></div><div><dt>Memo</dt><dd>{payment.memo || "None"}</dd></div></dl></article>
+      <article className="data-section"><div className="section-title"><h3>Supporting Documents</h3><span>{documents.length}</span></div><div className="compact-list">{documents.length === 0 ? <EmptyState text="No supporting documents were attached." /> : documents.map((document) => <div className="compact-row" key={document.id}><div><strong>{document.original_file_name}</strong><span>{label(document.category ?? "payment document")} | {timestampLabel(document.uploaded_at)}</span></div>{document.downloadUrl ? <a className="text-action" href={document.downloadUrl}>Download</a> : <span>Unavailable</span>}</div>)}</div></article>
+      <article className="data-section full-width-field"><div className="section-title"><h3>Applied Invoices</h3></div>{(applications ?? []).length === 0 ? <EmptyState text="This payment has not been applied to an invoice." /> : <div className="table-wrap"><table className="data-table"><thead><tr><th>Invoice No.</th><th>Brand</th><th>Invoice Date</th><th>Applied Date</th><th>Payment Applied</th><th>Waived</th><th>Balance Due</th></tr></thead><tbody>{(applications ?? []).map((application) => {
+        const invoice = invoiceById.get(application.customer_invoice_id);
+        return <tr key={application.id}><td>{invoice ? <Link className="table-link" href={`/?module=invoice-document&invoice=${invoice.id}`}>{invoice.invoice_number}</Link> : "Unavailable"}</td><td>{invoice?.brand_name_snapshot ?? "-"}</td><td>{dateLabel(invoice?.invoice_date)}</td><td>{dateLabel(application.applied_date)}</td><td>{money(Number(application.amount_applied))}</td><td>{money(Number(application.line_waive_amount))}</td><td>{money(Number(invoice?.balance_due ?? 0))}</td></tr>;
+      })}</tbody></table></div>}</article>
+    </section>
+  </section>;
+}
+
+async function InvoiceCreatePage({ error, packingListId }: { error?: string; packingListId?: string }) {
+  const packingLists = await getInvoiceQueuePackingLists();
+  const packingList = packingLists.find((item) => item.id === packingListId);
+  if (!packingList) return <section className="dashboard-panel"><div className="form-alert">This packing list is not available for invoice creation.</div><Link className="secondary-action" href="/?module=invoices">Back to Invoice Work Queue</Link></section>;
+  const multipleBrands = packingList.brandSummaries.length > 1;
+
+  return (
+    <section className="dashboard-panel">
+      <section className="record-hero">
+        <div>
+          <Link className="subtle-link" href="/?module=invoices">Invoice Work Queue</Link>
+          <div className="record-title-row"><h2>Invoice Setup</h2></div>
+          <p>{packingList.packing_list_number} / {packingList.customer_name} / Customer PO {packingList.customer_po_number_snapshot}</p>
+        </div>
+      </section>
+      {error ? <div className="form-alert">{decodeURIComponent(error)}</div> : null}
+      <form action={prepareInvoiceConfirmationAction} className="customer-form">
+        <input name="packing_list_id" type="hidden" value={packingList.id} />
+        <fieldset>
+          <legend>Invoice Date</legend>
+          <div className="form-grid"><label>Invoice Date<input defaultValue={new Date().toISOString().slice(0, 10)} name="invoice_date" required type="date" /></label></div>
+        </fieldset>
+        <InvoiceTermsAndFreightFields
+          actualFreightCost={Number(packingList.allocated_freight_cost ?? 0)}
+          defaultCustomerFreightCharge={Number(packingList.shipping_fee ?? 0)}
+          defaultPaymentDays={Number(packingList.payment_days ?? 0)}
+          defaultPaymentTerms={packingList.payment_terms ?? "Prepaid / No Credit"}
+          shipDate={packingList.ship_date}
+        />
+        <fieldset>
+          <legend>Brand Invoice Allocation</legend>
+          {multipleBrands ? <p className="fieldset-note">Freight and drop-ship charges must be manually allocated across the brand invoices. Tax is entered manually for each brand invoice.</p> : <p className="fieldset-note">One invoice will be created for this brand. Freight is taken from the packing list; enter tax manually if applicable.</p>}
+          <div className="table-wrap"><table className="editable-table"><thead><tr><th>Brand</th><th>Shipped Product Total</th><th>Freight</th><th>Drop-ship Fee</th><th>Tax</th></tr></thead><tbody>
+            {packingList.brandSummaries.map((brand) => (
+              <tr key={brand.brand_id}>
+                <td>{brand.brand_name}<input name="brand_id" type="hidden" value={brand.brand_id} /></td>
+                <td>{money(brand.subtotal_amount)}</td>
+                <td>{multipleBrands ? <input defaultValue={0} min={0} name={`freight_${brand.brand_id}`} step="0.01" type="number" /> : <>Uses customer freight charge<input name={`freight_${brand.brand_id}`} type="hidden" value={packingList.shipping_fee ?? 0} /></>}</td>
+                <td><input defaultValue={multipleBrands ? 0 : packingList.dropship_fee_amount} min={0} name={`dropship_${brand.brand_id}`} step="0.01" type="number" /></td>
+                <td><input defaultValue={0} min={0} name={`tax_${brand.brand_id}`} step="0.01" type="number" /></td>
+              </tr>
+            ))}
+          </tbody></table></div>
+        </fieldset>
+        <div className="form-actions"><button type="submit">Continue to Invoice Confirmation</button><Link className="secondary-action secondary-action--light" href="/?module=invoices">Cancel</Link></div>
+      </form>
+    </section>
+  );
+}
+
+async function InvoiceConfirmationPage({
+  customerFreightCharge,
+  dropshipAllocations: rawDropshipAllocations,
+  freightAllocations: rawFreightAllocations,
+  invoiceDate,
+  packingListId,
+  paymentDays: rawPaymentDays,
+  paymentTerms,
+  taxAllocations: rawTaxAllocations
+}: {
+  customerFreightCharge?: string;
+  dropshipAllocations?: string;
+  freightAllocations?: string;
+  invoiceDate?: string;
+  packingListId?: string;
+  paymentDays?: string;
+  paymentTerms?: string;
+  taxAllocations?: string;
+}) {
+  const packingLists = await getInvoiceQueuePackingLists();
+  const packingList = packingLists.find((item) => item.id === packingListId);
+  const paymentDays = Number(rawPaymentDays);
+  const freightCharge = Number(customerFreightCharge);
+  const freightAllocations = parseInvoiceAllocations(rawFreightAllocations);
+  const dropshipAllocations = parseInvoiceAllocations(rawDropshipAllocations);
+  const taxAllocations = parseInvoiceAllocations(rawTaxAllocations);
+  const setupUrl = `/?module=invoice-create&packing_list=${packingListId}`;
+  if (!packingList || !Number.isInteger(paymentDays) || paymentDays < 0 || !Number.isFinite(freightCharge) || freightCharge < 0 || !freightAllocations || !dropshipAllocations || !taxAllocations) {
+    return <section className="dashboard-panel"><div className="form-alert">The invoice setup could not be confirmed. Return to invoice setup and try again.</div><Link className="secondary-action" href={setupUrl}>Back to Invoice Setup</Link></section>;
+  }
+
+  const dueDate = invoiceDueDate(packingList.ship_date, paymentDays, invoiceDate || new Date().toISOString().slice(0, 10));
+  const multipleBrands = packingList.brandSummaries.length > 1;
+  return (
+    <section className="dashboard-panel">
+      <section className="record-hero">
+        <div>
+          <Link className="subtle-link" href={setupUrl}>Back to Invoice Setup</Link>
+          <div className="record-title-row"><h2>Confirm Brand-specific Invoice{multipleBrands ? "s" : ""}</h2></div>
+          <p>{packingList.packing_list_number} / {packingList.customer_name} / Customer PO {packingList.customer_po_number_snapshot}</p>
+        </div>
+      </section>
+      <section className="invoice-confirmation-summary">
+        <div><span>Shipment Date</span><strong>{dateLabel(packingList.ship_date)}</strong></div>
+        <div><span>Payment Terms</span><strong>{paymentTerms || "Upon Receipt"}</strong></div>
+        <div><span>Invoice Due Date</span><strong>{dateLabel(dueDate)}</strong></div>
+        <div><span>Customer Freight Charge</span><strong>{money(freightCharge)}</strong></div>
+        <p className="fieldset-note">Every brand-specific invoice from this shipment will use the same due date. To change freight, tax, payment terms, or any allocation, return to Invoice Setup.</p>
+      </section>
+      <section className="invoice-confirmation-review">
+        <h3>Brand Invoice Review</h3>
+        <div className="table-wrap"><table><thead><tr><th>Brand</th><th>Shipped Product Total</th><th>Freight</th><th>Drop-ship Fee</th><th>Tax</th><th>Invoice Total</th></tr></thead><tbody>
+          {packingList.brandSummaries.map((brand) => {
+            const freight = Number(freightAllocations[brand.brand_id] ?? 0);
+            const dropship = Number(dropshipAllocations[brand.brand_id] ?? 0);
+            const tax = Number(taxAllocations[brand.brand_id] ?? 0);
+            return <tr key={brand.brand_id}><td>{brand.brand_name}</td><td>{money(brand.subtotal_amount)}</td><td>{money(freight)}</td><td>{money(dropship)}</td><td>{money(tax)}</td><td>{money(brand.subtotal_amount + freight + dropship + tax)}</td></tr>;
+          })}
+        </tbody></table></div>
+      </section>
+      <form action={createInvoicesFromPackingListAction} className="form-actions">
+        <input name="packing_list_id" type="hidden" value={packingList.id} />
+        <input name="invoice_date" type="hidden" value={invoiceDate || new Date().toISOString().slice(0, 10)} />
+        <input name="payment_terms" type="hidden" value={paymentTerms || "Upon Receipt"} />
+        <input name="payment_days" type="hidden" value={paymentDays} />
+        <input name="customer_freight_charge" type="hidden" value={freightCharge} />
+        {packingList.brandSummaries.map((brand) => <Fragment key={brand.brand_id}><input name="brand_id" type="hidden" value={brand.brand_id} /><input name={`freight_${brand.brand_id}`} type="hidden" value={freightAllocations[brand.brand_id] ?? 0} /><input name={`dropship_${brand.brand_id}`} type="hidden" value={dropshipAllocations[brand.brand_id] ?? 0} /><input name={`tax_${brand.brand_id}`} type="hidden" value={taxAllocations[brand.brand_id] ?? 0} /></Fragment>)}
+        <button className="primary-action" type="submit">Create Brand-specific Invoice{multipleBrands ? "s" : ""}</button>
+        <Link className="secondary-action secondary-action--light" href={setupUrl}>Back to Invoice Setup</Link>
+      </form>
+    </section>
+  );
+}
+
+async function InvoiceCreatedPage({ invoiceIds }: { invoiceIds?: string }) {
+  const ids = (invoiceIds ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+  if (ids.length === 0) return <ModulePlaceholder moduleName="Invoices not found" />;
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("customer_invoice")
+    .select("id, invoice_number, brand_name_snapshot, customer_name_snapshot, invoice_date, due_date, freight_amount, total_amount, invoice_status, email_status")
+    .in("id", ids);
+  if (error) throw new Error(error.message);
+
+  const invoicesById = new Map((data ?? []).map((invoice) => [invoice.id, invoice]));
+  const invoices = ids.flatMap((id) => {
+    const invoice = invoicesById.get(id);
+    return invoice ? [invoice] : [];
+  });
+  if (invoices.length === 0) return <ModulePlaceholder moduleName="Invoices not found" />;
+
+  return (
+    <section className="dashboard-panel">
+      <section className="record-hero">
+        <div>
+          <Link className="subtle-link" href="/?module=invoices">Back to Invoice Work Queue</Link>
+          <div className="record-title-row"><h2>Brand-specific Invoices Created</h2></div>
+          <p>{invoices[0].customer_name_snapshot}</p>
+        </div>
+      </section>
+      <div className="success-banner">{invoices.length} brand-specific invoice{invoices.length === 1 ? "" : "s"} created successfully.</div>
+      <div className="table-wrap"><table><thead><tr><th>Invoice No.</th><th>Brand</th><th>Invoice Date</th><th>Due Date</th><th>Freight</th><th>Total</th><th>Actions</th></tr></thead><tbody>
+        {invoices.map((invoice) => <tr key={invoice.id}>
+          <td><Link className="text-action" href={`/?module=invoice-document&invoice=${invoice.id}`}>{invoice.invoice_number}</Link></td>
+          <td>{invoice.brand_name_snapshot}</td>
+          <td>{dateLabel(invoice.invoice_date)}</td>
+          <td>{dateLabel(invoice.due_date)}</td>
+          <td>{money(Number(invoice.freight_amount))}</td>
+          <td>{money(Number(invoice.total_amount))}</td>
+          <td><Link className="text-action" href={`/?module=invoice-document&invoice=${invoice.id}`}>View / Download / Email</Link></td>
+        </tr>)}
+      </tbody></table></div>
+    </section>
+  );
+}
+
+async function InvoiceDocumentPage({ invoiceId }: { invoiceId?: string }) {
+  if (!invoiceId) return <ModulePlaceholder moduleName="Invoice not found" />;
+  const supabase = createSupabaseAdminClient();
+  const [{ data: invoice, error: invoiceError }, { data: lines, error: linesError }] = await Promise.all([
+    supabase.from("customer_invoice").select("id, invoice_number, brand_name_snapshot, customer_name_snapshot, customer_account_id, sales_order_id, invoice_date, due_date, payment_terms_snapshot, bill_to_snapshot_json, ship_to_snapshot_json, subtotal_amount, freight_amount, dropship_fee_amount, tax_amount, total_amount, balance_due").eq("id", invoiceId).maybeSingle(),
+    supabase.from("customer_invoice_line").select("id, product_sku_snapshot, product_name_snapshot, quantity_invoiced, unit_price, discount_percent, line_total").eq("customer_invoice_id", invoiceId).order("created_at")
+  ]);
+  if (invoiceError) throw new Error(invoiceError.message);
+  if (linesError) throw new Error(linesError.message);
+  if (!invoice) return <ModulePlaceholder moduleName="Invoice not found" />;
+
+  const [{ data: customer, error: customerError }, { data: salesOrder, error: salesOrderError }] = await Promise.all([
+    supabase.from("customer_account").select("billing_email").eq("id", invoice.customer_account_id).maybeSingle(),
+    supabase.from("sales_order").select("id, customer_po_number").eq("id", invoice.sales_order_id).maybeSingle()
+  ]);
+  if (customerError) throw new Error(customerError.message);
+  if (salesOrderError) throw new Error(salesOrderError.message);
+
+  return <section className="quote-document-page">
+    <div className="quote-document-controls print-hidden">
+      <Link className="secondary-action" href="/?module=invoices">Back to Invoice Work Queue</Link>
+      <InvoiceDocumentControls invoiceNumber={invoice.invoice_number} recipientEmail={customer?.billing_email} />
+    </div>
+    <article className="quote-document">
+      <header className="quote-document-header"><div><span className="eyebrow">{invoice.brand_name_snapshot}</span><h2>Invoice</h2></div><dl>
+        <div><dt>Invoice No.</dt><dd>{invoice.invoice_number}</dd></div><div><dt>Customer PO</dt><dd>{salesOrder ? <Link className="invoice-document-order-link" href={`/?module=orders&order=${salesOrder.id}`}>{salesOrder.customer_po_number}</Link> : "Not set"}</dd></div><div><dt>Invoice Date</dt><dd>{dateLabel(invoice.invoice_date)}</dd></div><div><dt>Due Date</dt><dd>{dateLabel(invoice.due_date)}</dd></div><div><dt>Payment Terms</dt><dd>{invoice.payment_terms_snapshot || "Upon Receipt"}</dd></div>
+      </dl></header>
+      <section className="quote-document-addresses"><div><span>Bill To</span>{addressSnapshotLines(invoice.bill_to_snapshot_json as Record<string, unknown>, invoice.customer_name_snapshot).map((line, index) => <strong key={`bill-${line}-${index}`}>{line}</strong>)}</div><div><span>Ship To</span>{addressSnapshotLines(invoice.ship_to_snapshot_json as Record<string, unknown>).map((line, index) => <strong key={`ship-${line}-${index}`}>{line}</strong>)}</div></section>
+      <table className="quote-document-table"><thead><tr><th>SKU</th><th>Item</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Line Total</th></tr></thead><tbody>{(lines ?? []).map((line) => <tr key={line.id}><td>{line.product_sku_snapshot}</td><td>{line.product_name_snapshot}</td><td>{numberFormatter.format(Number(line.quantity_invoiced))}</td><td>{money(Number(line.unit_price))}</td><td>{Number(line.discount_percent)}%</td><td>{money(Number(line.line_total))}</td></tr>)}</tbody></table>
+      <dl className="invoice-document-totals"><div><dt>Product Total</dt><dd>{money(Number(invoice.subtotal_amount))}</dd></div><div><dt>Freight</dt><dd>{money(Number(invoice.freight_amount))}</dd></div><div><dt>Drop-ship Fee</dt><dd>{money(Number(invoice.dropship_fee_amount))}</dd></div><div><dt>Tax</dt><dd>{money(Number(invoice.tax_amount))}</dd></div><div><dt>Invoice Total</dt><dd>{money(Number(invoice.total_amount))}</dd></div><div><dt>Balance Due</dt><dd>{money(Number(invoice.balance_due))}</dd></div></dl>
+    </article>
+  </section>;
+}
+
+async function OrdersOverview({ error, notice, orderAction, orderAdvanced, orderCustomer, orderCustomerName, orderDateFrom, orderDateTo, orderDir, orderId, orderPage, orderPageSize, orderQuery, orderReady, orderRep, orderSku, orderSort, orderStatus, orderTerritory, quoteMode = false, returnCustomerId }: { error?: string; notice?: string; orderAction?: string; orderAdvanced?: string; orderCustomer?: string; orderCustomerName?: string; orderDateFrom?: string; orderDateTo?: string; orderDir?: string; orderId?: string; orderPage?: string; orderPageSize?: string; orderQuery?: string; orderReady?: string; orderRep?: string; orderSku?: string; orderSort?: string; orderStatus?: string; orderTerritory?: string; quoteMode?: boolean; returnCustomerId?: string }) {
+  const supabase = createSupabaseAdminClient();
+  if (orderId) {
+    const order = await getSalesOrderDetail(orderId);
+    if (!order) return <ModulePlaceholder moduleName="Order not found" />;
+    if (orderAction === "edit") {
+      const [orderEntryData, locationsResult, salesRepOptions, territoryOptions] = await Promise.all([
+        getOrderEntryData(order.customer_account_id),
+        supabase
+          .from("customer_location")
+          .select("id, location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, email, is_billing_address, is_default_ship_to, is_shipping_address")
+          .eq("customer_account_id", order.customer_account_id)
+          .eq("status", "active")
+          .order("location_name", { ascending: true }),
+        getSalesRepOptions(),
+        getTerritoryOptions()
+      ]);
+      if (locationsResult.error) throw new Error(locationsResult.error.message);
+      const addressOptions: OrderAddressOption[] = (locationsResult.data ?? []).map((location) => ({
+        address: [location.address_line_1, location.address_line_2, location.city, location.state_province, location.postal_code, location.country].filter(Boolean).join(", "),
+        addressLine1: location.address_line_1,
+        addressLine2: location.address_line_2,
+        city: location.city,
+        country: location.country,
+        countryCode: location.country_code,
+        email: location.email,
+        id: location.id,
+        isDefault: location.is_default_ship_to,
+        name: location.location_name,
+        postalCode: location.postal_code,
+        stateProvince: location.state_province
+      }));
+      return <EditOrderPage billingAddressOptions={addressOptions.filter((location) => (locationsResult.data ?? []).find((item) => item.id === location.id)?.is_billing_address)} defaultDiscountPercent={Number(orderEntryData?.customer.default_discount_percent ?? 0)} error={error} order={order} parts={orderEntryData?.partOptions ?? []} products={orderEntryData?.products ?? []} salesRepOptions={salesRepOptions} shipToOptions={addressOptions.filter((location) => (locationsResult.data ?? []).find((item) => item.id === location.id)?.is_shipping_address)} territoryOptions={territoryOptions} />;
+    }
+    return <OrderDetailPage order={order} returnCustomerId={returnCustomerId} />;
+  }
+
+  let ordersQuery = supabase
+    .from("sales_order")
+    .select("id, customer_account_id, sales_order_number, customer_po_number, customer_name_snapshot, order_date, created_at, order_source, order_type, status, shipping_readiness_status, credit_hold_status, sales_rep_id_snapshot, territory_id_snapshot, total_amount");
+  if (orderStatus !== "deleted") ordersQuery = ordersQuery.neq("status", "deleted");
+  if (orderStatus) ordersQuery = ordersQuery.eq("status", orderStatus as "open" | "closed" | "deleted" | "draft" | "cancelled" | "shipped" | "partially_shipped" | "pending" | "hold" | "void");
+  if (orderCustomer) ordersQuery = ordersQuery.eq("customer_account_id", orderCustomer);
+  if (orderDateFrom) ordersQuery = ordersQuery.gte("order_date", orderDateFrom);
+  if (orderDateTo) ordersQuery = ordersQuery.lte("order_date", orderDateTo);
+  const { data, error: ordersError } = await ordersQuery.order("order_date", { ascending: false }).limit(100);
+  if (ordersError) throw new Error(ordersError.message);
+
+  const backToCustomerId = orderCustomer ?? null;
+  const orderIds = (data ?? []).map((order) => order.id);
+  const orderLinesResult = orderIds.length
+    ? await supabase
+        .from("sales_order_line")
+        .select("sales_order_id, product_id, product_sku_snapshot, quantity_ordered, quantity_shipped, quantity_cancelled, quantity_cleared")
+        .in("sales_order_id", orderIds)
+    : { data: [], error: null };
+  if (orderLinesResult.error) throw new Error(orderLinesResult.error.message);
+
+  const { data: orderPackingLists, error: orderPackingListsError } = orderIds.length
+    ? await supabase.from("packing_list").select("sales_order_id, freight_shipment_id").in("sales_order_id", orderIds).not("freight_shipment_id", "is", null)
+    : { data: [], error: null };
+  if (orderPackingListsError) throw new Error(orderPackingListsError.message);
+  const shipmentIds = [...new Set((orderPackingLists ?? []).map((packingList) => packingList.freight_shipment_id).filter(Boolean))];
+  const { data: pendingShipments, error: pendingShipmentsError } = shipmentIds.length
+    ? await supabase.from("freight_shipment").select("id").in("id", shipmentIds).in("status", ["pending", "in_progress"])
+    : { data: [], error: null };
+  if (pendingShipmentsError) throw new Error(pendingShipmentsError.message);
+  const pendingShipmentIds = new Set((pendingShipments ?? []).map((shipment) => shipment.id));
+  const shippingInProgressOrderIds = new Set((orderPackingLists ?? []).filter((packingList) => packingList.freight_shipment_id && pendingShipmentIds.has(packingList.freight_shipment_id)).map((packingList) => packingList.sales_order_id));
+
+  const orderProductIds = [...new Set((orderLinesResult.data ?? []).map((line) => line.product_id))];
+  const inventoryResult = orderProductIds.length
+    ? await supabase.from("inventory_sku_summary").select("product_id, sellable_quantity, next_incoming_eta").in("product_id", orderProductIds)
+    : { data: [], error: null };
+  if (inventoryResult.error) throw new Error(inventoryResult.error.message);
+  const inventoryByProduct = new Map((inventoryResult.data ?? []).map((item) => [item.product_id, item]));
+  const orderShipping = new Map<string, { backorders: number; nextEta: string | null; ordered: number; readyToShip: number }>();
+  for (const orderId of orderIds) {
+    const lines = (orderLinesResult.data ?? []).filter((line) => line.sales_order_id === orderId);
+    const ordered = lines.reduce((sum, line) => sum + Number(line.quantity_ordered ?? 0), 0);
+    let backorders = 0;
+    let readyToShip = 0;
+    let nextEta: string | null = null;
+    for (const line of lines) {
+      const remaining = Math.max(0, Number(line.quantity_ordered ?? 0) - Number(line.quantity_shipped ?? 0) - Number(line.quantity_cancelled ?? 0) - Number(line.quantity_cleared ?? 0));
+      const inventory = inventoryByProduct.get(line.product_id);
+      const available = Number(inventory?.sellable_quantity ?? 0);
+      readyToShip += Math.min(remaining, available);
+      backorders += Math.max(0, remaining - available);
+      if (remaining > available && inventory?.next_incoming_eta && (!nextEta || inventory.next_incoming_eta < nextEta)) {
+        nextEta = inventory.next_incoming_eta;
+      }
+    }
+    orderShipping.set(orderId, { backorders, nextEta, ordered, readyToShip });
+  }
+  const [territoryResult, repResult] = await Promise.all([
+    orderTerritory ? supabase.from("territory").select("id, name") : Promise.resolve({ data: [], error: null }),
+    orderRep ? supabase.from("sales_rep").select("id, name") : Promise.resolve({ data: [], error: null })
+  ]);
+  if (territoryResult.error) throw new Error(territoryResult.error.message);
+  if (repResult.error) throw new Error(repResult.error.message);
+  const territoryQuery = (orderTerritory ?? "").trim().toLowerCase();
+  const repQuery = (orderRep ?? "").trim().toLowerCase();
+  const territoryIds = new Set((territoryResult.data ?? []).filter((territory) => territory.name.toLowerCase().includes(territoryQuery) || territory.id.toLowerCase().includes(territoryQuery)).map((territory) => territory.id));
+  const repIds = new Set((repResult.data ?? []).filter((rep) => rep.name.toLowerCase().includes(repQuery) || rep.id.toLowerCase().includes(repQuery)).map((rep) => rep.id));
+  const quickSearch = (orderCustomerName ?? "").trim().toLowerCase();
+  const orderSearch = (orderSku ?? "").trim().toLowerCase();
+  const quickQuery = (orderQuery ?? "").trim().toLowerCase();
+  const allOrders = (data ?? []).filter((order) => {
+    const matchesQuoteMode = quoteMode ? order.order_type === "quote" : order.order_type !== "quote";
+    const matchesReady = orderReady !== "true" || (orderShipping.get(order.id)?.readyToShip ?? 0) > 0;
+    const matchesCustomer = !quickSearch || order.customer_name_snapshot.toLowerCase().includes(quickSearch);
+    const matchesSku = !orderSearch || (orderLinesResult.data ?? []).some((line) => line.sales_order_id === order.id && String(line.product_sku_snapshot ?? "").toLowerCase().includes(orderSearch));
+    const matchesQuick = !quickQuery || [order.sales_order_number, order.customer_po_number, order.customer_name_snapshot].some((value) => String(value ?? "").toLowerCase().includes(quickQuery)) || (orderLinesResult.data ?? []).some((line) => line.sales_order_id === order.id && String(line.product_sku_snapshot ?? "").toLowerCase().includes(quickQuery));
+    const matchesTerritory = !territoryQuery || territoryIds.has(String(order.territory_id_snapshot ?? ""));
+    const matchesRep = !repQuery || repIds.has(String(order.sales_rep_id_snapshot ?? ""));
+    return matchesQuoteMode && matchesReady && matchesCustomer && matchesSku && matchesQuick && matchesTerritory && matchesRep;
+  });
+  const activeSort = orderSort === "order_date" || orderSort === "ready_to_ship" ? orderSort : "priority";
+  const activeDirection = orderDir === "asc" ? "asc" : "desc";
+  const sortedOrders = [...allOrders].sort((left, right) => {
+    if (activeSort === "order_date") {
+      const comparison = left.order_date.localeCompare(right.order_date);
+      return activeDirection === "asc" ? comparison : -comparison;
+    }
+    if (activeSort === "ready_to_ship") {
+      const comparison = (orderShipping.get(left.id)?.readyToShip ?? 0) - (orderShipping.get(right.id)?.readyToShip ?? 0);
+      if (comparison !== 0) return activeDirection === "asc" ? comparison : -comparison;
+      return left.order_date.localeCompare(right.order_date);
+    }
+    const leftReady = (orderShipping.get(left.id)?.readyToShip ?? 0) > 0 ? 1 : 0;
+    const rightReady = (orderShipping.get(right.id)?.readyToShip ?? 0) > 0 ? 1 : 0;
+    if (leftReady !== rightReady) return rightReady - leftReady;
+    return left.order_date.localeCompare(right.order_date);
+  });
+  const pageSize = [10, 20, 30].includes(Number(orderPageSize)) ? Number(orderPageSize) : 10;
+  const totalPages = Math.max(1, Math.ceil(sortedOrders.length / pageSize));
+  const currentPage = Math.min(totalPages, Math.max(1, Number(orderPage ?? 1) || 1));
+  const pageOrders = sortedOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const openOrderTotal = allOrders.reduce((sum, order) => sum + Number(order.total_amount ?? 0), 0);
+  const readyOrderCount = allOrders.filter((order) => (orderShipping.get(order.id)?.readyToShip ?? 0) > 0).length;
+  const orderFilterParams = [
+    orderStatus ? `order_status=${encodeURIComponent(orderStatus)}` : "",
+    orderCustomer ? `order_customer=${encodeURIComponent(orderCustomer)}` : "",
+    orderReady === "true" ? "order_ready=true" : "",
+    orderPageSize ? `order_page_size=${pageSize}` : "",
+    orderQuery ? `order_q=${encodeURIComponent(orderQuery)}` : "",
+    orderCustomerName ? `order_customer_name=${encodeURIComponent(orderCustomerName)}` : "",
+    orderDateFrom ? `order_date_from=${encodeURIComponent(orderDateFrom)}` : "",
+    orderDateTo ? `order_date_to=${encodeURIComponent(orderDateTo)}` : "",
+    orderSku ? `order_sku=${encodeURIComponent(orderSku)}` : "",
+    orderTerritory ? `order_territory=${encodeURIComponent(orderTerritory)}` : "",
+    orderRep ? `order_rep=${encodeURIComponent(orderRep)}` : ""
+  ].filter(Boolean).join("&");
+  const moduleKey = quoteMode ? "quotes" : "orders";
+  const pageHref = (page: number) => `/?module=${moduleKey}${orderFilterParams ? `&${orderFilterParams}` : ""}&order_page=${page}&order_sort=${activeSort}&order_dir=${activeDirection}`;
+  const sortHref = (sort: "order_date" | "ready_to_ship") => {
+    const nextDirection = activeSort === sort && activeDirection === "asc" ? "desc" : "asc";
+    return `/?module=${moduleKey}${orderFilterParams ? `&${orderFilterParams}` : ""}&order_page=1&order_sort=${sort}&order_dir=${nextDirection}`;
+  };
+
+  return (
+    <section className="dashboard-panel">
+      <section className="list-header-panel list-header-panel--compact">
+        <div>
+          {backToCustomerId ? <Link className="context-parent-link" href={`/?customer=${backToCustomerId}`}>Back to Dashboard</Link> : null}
+          {backToCustomerId ? <span className="orders-context-customer">{data?.[0]?.customer_name_snapshot}</span> : <Link className="context-parent-link" href="/">ERP Dashboard</Link>}
+          <h2>{quoteMode ? "Quotes" : orderReady === "true" ? "Ready to Ship Orders" : orderStatus === "open" ? "Open Orders" : "Orders"}</h2>
+        </div>
+      </section>
+      {notice ? <p className="form-alert form-alert--success">{notice}</p> : null}
+      <OrdersOverviewControls
+        advanced={orderAdvanced === "true" || Boolean(orderCustomerName || orderDateFrom || orderDateTo || orderSku || orderTerritory || orderRep || orderStatus)}
+        moduleKey={moduleKey}
+        pageSize={pageSize}
+        values={{ q: orderQuery ?? "", dateFrom: orderDateFrom ?? "", dateTo: orderDateTo ?? "", customer: orderCustomerName ?? "", sku: orderSku ?? "", territory: orderTerritory ?? "", rep: orderRep ?? "", status: orderStatus ?? "" }}
+      />
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead><tr><th>Sales Order</th><th>Customer PO</th>{!orderCustomer ? <th>Customer</th> : null}<th><Link className="table-link" href={sortHref("order_date")}>Order Date {activeSort === "order_date" ? (activeDirection === "asc" ? "↑" : "↓") : "↕"}</Link></th><th>Source</th><th>Type</th><th>Ordered</th><th><Link className="table-link" href={sortHref("ready_to_ship")}>Ready to Ship {activeSort === "ready_to_ship" ? (activeDirection === "asc" ? "↑" : "↓") : "↕"}</Link></th><th>Backorders</th><th>Total</th><th>Shipping Status</th><th>Order Status</th></tr></thead>
+          <tbody>
+            {pageOrders.map((order) => (
+              <tr key={order.id}>
+                <td><Link className="table-link" href={`/?module=orders&order=${order.id}`}>{order.sales_order_number}</Link></td>
+                <td>{order.customer_po_number}</td>{!orderCustomer ? <td>{order.customer_name_snapshot}</td> : null}<td>{order.order_date}</td><td>{label(order.order_source)}</td><td>{label(order.order_type)}</td>
+                <td>{numberFormatter.format(orderShipping.get(order.id)?.ordered ?? 0)}</td><td>{numberFormatter.format(orderShipping.get(order.id)?.readyToShip ?? 0)}</td><td>{(orderShipping.get(order.id)?.backorders ?? 0) > 0 ? `${numberFormatter.format(orderShipping.get(order.id)?.backorders ?? 0)} : ${dateLabel(orderShipping.get(order.id)?.nextEta)}` : "No B/O"}</td><td>{money(Number(order.total_amount ?? 0))}</td><td><StatusBadge {...shippingStatus({ shipped: (orderLinesResult.data ?? []).filter((line) => line.sales_order_id === order.id).reduce((sum, line) => sum + Number(line.quantity_shipped ?? 0), 0), total: orderShipping.get(order.id)?.ordered ?? 0 }, shippingInProgressOrderIds.has(order.id))} /></td><td><StatusBadge {...orderLifecycleStatus(order.status)} /></td>
+              </tr>
+            ))}
+            {allOrders.length === 0 ? <tr><td colSpan={orderCustomer ? 11 : 12}><EmptyState text="No orders have been entered yet." /></td></tr> : null}
+          </tbody>
+        </table>
+      </div>
+      {totalPages > 1 ? <nav className="pagination" aria-label="Open order pages"><Link className="secondary-action" href={pageHref(1)}>First</Link><Link className="secondary-action" href={pageHref(Math.max(1, currentPage - 1))}>Previous</Link>{Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => <Link aria-current={page === currentPage ? "page" : undefined} className={page === currentPage ? "pagination-link pagination-link--active" : "pagination-link"} href={pageHref(page)} key={page}>{page}</Link>)}<Link className="secondary-action" href={pageHref(Math.min(totalPages, currentPage + 1))}>Next</Link><Link className="secondary-action" href={pageHref(totalPages)}>Last</Link></nav> : null}
+      <p className="open-order-summary">{quoteMode ? "Total quotes" : "Total open orders"}: <strong>{numberFormatter.format(allOrders.length)}</strong> | Total amount: <strong>{money(openOrderTotal)}</strong>{quoteMode ? null : <> | Ready to ship orders: <strong>{numberFormatter.format(readyOrderCount)}</strong></>}</p>
+    </section>
+  );
+}
+
+async function ShippingDashboardPage({ error, notice, shippingTab }: { error?: string; notice?: string; shippingTab?: string }) {
+  const activeTab = ["ready", "backorders", "shipped"].includes(shippingTab ?? "") ? shippingTab! : "ready";
+  const supabase = createSupabaseAdminClient();
+  const { data: orders, error: ordersError } = await supabase
+    .from("sales_order")
+    .select("id, sales_order_number, customer_name_snapshot, customer_po_number, created_at, order_date, order_type, ship_to_display_name_snapshot, shipping_priority, status")
+    .in("status", ["open", "partially_shipped"])
+    .in("order_type", ["regular", "display", "rga_replacement"]);
+  if (ordersError) throw new Error(ordersError.message);
+
+  const orderIds = (orders ?? []).map((order) => order.id);
+  const { data: lines, error: linesError } = orderIds.length
+    ? await supabase
+        .from("sales_order_line")
+        .select("sales_order_id, product_id, product_sku_snapshot, product_name_snapshot, quantity_ordered, quantity_shipped, quantity_cancelled, quantity_cleared")
+        .in("sales_order_id", orderIds)
+    : { data: [], error: null };
+  if (linesError) throw new Error(linesError.message);
+
+  const productIds = [...new Set((lines ?? []).map((line) => line.product_id))];
+  const { data: inventory, error: inventoryError } = productIds.length
+    ? await supabase.from("inventory_sku_summary").select("product_id, sellable_quantity").in("product_id", productIds)
+    : { data: [], error: null };
+  if (inventoryError) throw new Error(inventoryError.message);
+
+  const { data: incoming, error: incomingError } = productIds.length
+    ? await supabase.from("incoming_inventory").select("product_id, expected_quantity, received_quantity, pre_allocated_quantity, expected_date").in("product_id", productIds)
+    : { data: [], error: null };
+  if (incomingError) throw new Error(incomingError.message);
+
+  const { data: shippedOrders, error: shippedOrdersError } = await supabase
+    .from("sales_order")
+    .select("id, sales_order_number, customer_name_snapshot, customer_po_number, created_at, order_date, order_type, ship_to_display_name_snapshot, status")
+    .in("status", ["partially_shipped", "shipped", "closed"])
+    .in("order_type", ["regular", "display", "rga_replacement"])
+    .order("updated_at", { ascending: false })
+    .limit(100);
+  if (shippedOrdersError) throw new Error(shippedOrdersError.message);
+
+  const availableByProduct = new Map((inventory ?? []).map((item) => [item.product_id, Number(item.sellable_quantity ?? 0)]));
+  const incomingByProduct = new Map<string, { quantity: number; eta: string | null }>();
+  for (const item of incoming ?? []) {
+    const existing = incomingByProduct.get(item.product_id) ?? { quantity: 0, eta: null };
+    const quantity = Math.max(0, Number(item.expected_quantity ?? 0) - Number(item.received_quantity ?? 0) - Number(item.pre_allocated_quantity ?? 0));
+    incomingByProduct.set(item.product_id, { quantity: existing.quantity + quantity, eta: !existing.eta || (item.expected_date && item.expected_date < existing.eta) ? item.expected_date : existing.eta });
+  }
+  const queueRows = (orders ?? [])
+    .map((order) => {
+      const orderLines = (lines ?? []).filter((line) => line.sales_order_id === order.id);
+      const orderedQuantity = orderLines.reduce((sum, line) => sum + Number(line.quantity_ordered ?? 0), 0);
+      const remainingQuantity = orderLines.reduce(
+        (sum, line) => sum + Math.max(0, Number(line.quantity_ordered ?? 0) - Number(line.quantity_shipped ?? 0) - Number(line.quantity_cancelled ?? 0) - Number(line.quantity_cleared ?? 0)),
+        0
+      );
+      const readyQuantity = orderLines.reduce((sum, line) => {
+        const remaining = Math.max(0, Number(line.quantity_ordered ?? 0) - Number(line.quantity_shipped ?? 0) - Number(line.quantity_cancelled ?? 0) - Number(line.quantity_cleared ?? 0));
+        return sum + Math.min(remaining, availableByProduct.get(line.product_id) ?? 0);
+      }, 0);
+      return { ...order, orderedQuantity, readyQuantity, remainingQuantity };
+    })
+    .filter((order) => order.readyQuantity > 0)
+    .sort((left, right) => {
+      const priorityDifference = Number(right.shipping_priority === "highest") - Number(left.shipping_priority === "highest");
+      return priorityDifference || String(left.created_at).localeCompare(String(right.created_at));
+    });
+
+  const orderById = new Map((orders ?? []).map((order) => [order.id, order]));
+  const backorderRows = (lines ?? [])
+    .map((line) => {
+      const remaining = Math.max(0, Number(line.quantity_ordered ?? 0) - Number(line.quantity_shipped ?? 0) - Number(line.quantity_cancelled ?? 0) - Number(line.quantity_cleared ?? 0));
+      const available = availableByProduct.get(line.product_id) ?? 0;
+      const incomingItem = incomingByProduct.get(line.product_id) ?? { quantity: 0, eta: null };
+      return { ...line, available, backorderQuantity: Math.max(0, remaining - available), incomingQuantity: incomingItem.quantity, eta: incomingItem.eta, order: orderById.get(line.sales_order_id) };
+    })
+    .filter((line) => line.order && line.backorderQuantity > 0)
+    .sort((left, right) => String(left.order?.created_at).localeCompare(String(right.order?.created_at)));
+
+  return (
+    <section className="dashboard-panel">
+      <section className="list-header">
+        <div>
+          <span className="eyebrow">Warehouse Shipping</span>
+          <h2>Shipping Dashboard</h2>
+          <p>All customer orders across the ERP. Highest priority ready orders appear first, then the oldest orders.</p>
+        </div>
+      </section>
+      {error ? <p className="form-alert">{error}</p> : null}
+      {notice ? <p className="form-notice">{notice}</p> : null}
+      <nav className="tab-strip shipping-dashboard-tabs" aria-label="Shipping dashboard views">
+        <Link aria-current={activeTab === "ready" ? "page" : undefined} href="/?module=shipping&shipping_tab=ready">Ready to Ship</Link>
+        <Link aria-current={activeTab === "backorders" ? "page" : undefined} href="/?module=shipping&shipping_tab=backorders">Backorders</Link>
+        <Link aria-current={activeTab === "shipped" ? "page" : undefined} href="/?module=shipping&shipping_tab=shipped">Shipped Orders</Link>
+      </nav>
+      {activeTab === "ready" ? <><div className="table-wrap">
+        <table className="data-table">
+          <thead><tr><th>Priority</th><th>Sales Order</th><th>Customer</th><th>Customer PO</th><th>Ship-to</th><th>Order Date / Time</th><th>Type</th><th>Ordered</th><th>Ready to Ship</th><th>Status</th><th>Manage</th></tr></thead>
+          <tbody>
+            {queueRows.map((order) => (
+              <tr key={order.id}>
+                <td><StatusBadge tone={order.shipping_priority === "highest" ? "warn" : "neutral"} value={order.shipping_priority === "highest" ? "Highest" : "Normal"} /></td>
+                <td><Link className="table-link" href={`/?module=orders&order=${order.id}`}>{order.sales_order_number}</Link></td>
+                <td>{order.customer_name_snapshot}</td><td>{order.customer_po_number}</td><td>{order.ship_to_display_name_snapshot}</td><td>{timestampLabel(order.created_at)}</td><td>{label(order.order_type)}</td><td>{numberFormatter.format(order.orderedQuantity)}</td><td><strong>{numberFormatter.format(order.readyQuantity)}</strong></td><td><StatusBadge tone="good" value={order.status} /></td>
+                <td><form action={setShippingPriorityAction}><input name="order_id" type="hidden" value={order.id} /><input name="shipping_priority" type="hidden" value={order.shipping_priority === "highest" ? "normal" : "highest"} /><button className="text-action text-action--button" type="submit">{order.shipping_priority === "highest" ? "Set Normal" : "Set Highest"}</button></form></td>
+              </tr>
+            ))}
+            {queueRows.length === 0 ? <tr><td colSpan={11}><EmptyState text="No orders currently have items ready to ship." /></td></tr> : null}
+          </tbody>
+        </table>
+      </div><p className="open-order-summary">Orders in queue: <strong>{numberFormatter.format(queueRows.length)}</strong> | Highest priority: <strong>{numberFormatter.format(queueRows.filter((order) => order.shipping_priority === "highest").length)}</strong></p></> : null}
+      {activeTab === "backorders" ? <><div className="table-wrap"><table className="data-table"><thead><tr><th>Sales Order</th><th>Customer</th><th>SKU</th><th>Item</th><th>Backordered</th><th>In Hand</th><th>Incoming</th><th>ETA</th></tr></thead><tbody>{backorderRows.map((line) => <tr key={`${line.sales_order_id}-${line.product_id}`}><td><Link className="table-link" href={`/?module=orders&order=${line.order!.id}`}>{line.order!.sales_order_number}</Link></td><td>{line.order!.customer_name_snapshot}</td><td>{line.product_sku_snapshot}</td><td>{line.product_name_snapshot}</td><td><strong>{numberFormatter.format(line.backorderQuantity)}</strong></td><td>{numberFormatter.format(line.available)}</td><td>{numberFormatter.format(line.incomingQuantity)}</td><td>{dateLabel(line.eta)}</td></tr>)}{backorderRows.length === 0 ? <tr><td colSpan={8}><EmptyState text="No current backorders." /></td></tr> : null}</tbody></table></div><p className="open-order-summary">Backordered line items: <strong>{numberFormatter.format(backorderRows.length)}</strong> | Total backordered quantity: <strong>{numberFormatter.format(backorderRows.reduce((sum, line) => sum + line.backorderQuantity, 0))}</strong></p></> : null}
+      {activeTab === "shipped" ? <><div className="table-wrap"><table className="data-table"><thead><tr><th>Sales Order</th><th>Customer</th><th>Customer PO</th><th>Ship-to</th><th>Order Date</th><th>Type</th><th>Status</th></tr></thead><tbody>{(shippedOrders ?? []).map((order) => <tr key={order.id}><td><Link className="table-link" href={`/?module=orders&order=${order.id}`}>{order.sales_order_number}</Link></td><td>{order.customer_name_snapshot}</td><td>{order.customer_po_number}</td><td>{order.ship_to_display_name_snapshot}</td><td>{dateLabel(order.order_date)}</td><td>{label(order.order_type)}</td><td><StatusBadge tone="good" value={order.status} /></td></tr>)}{(shippedOrders ?? []).length === 0 ? <tr><td colSpan={7}><EmptyState text="No shipped orders found." /></td></tr> : null}</tbody></table></div><p className="open-order-summary">Orders with shipments: <strong>{numberFormatter.format((shippedOrders ?? []).length)}</strong></p></> : null}
+    </section>
+  );
+}
+
+async function ShipmentCreatePage({ error, notice, orderId, shipmentId, shipmentEdit }: { error?: string; notice?: string; orderId?: string; shipmentId?: string; shipmentEdit?: string }) {
+  if (!orderId) return <ModulePlaceholder moduleName="Choose an order to create a shipment" />;
+  const order = await getSalesOrderDetail(orderId);
+  if (!order) return <ModulePlaceholder moduleName="Order not found" />;
+  const supabase = createSupabaseAdminClient();
+  const [shipmentResult, documentsResult, packingListResult] = shipmentId ? await Promise.all([
+    supabase.from("freight_shipment").select("id, freight_shipment_number, status, carrier, shipping_type, master_tracking_number, freight_cost, notes").eq("id", shipmentId).eq("customer_account_id", order.customer_account_id).maybeSingle(),
+    supabase.from("attachment").select("id, original_file_name, category, uploaded_at").eq("entity_type", "freight_shipment").eq("entity_id", shipmentId).eq("is_active", true).order("uploaded_at", { ascending: false }),
+    supabase.from("packing_list").select("id, packing_list_number, shipping_fee").eq("freight_shipment_id", shipmentId).maybeSingle()
+  ]) : [{ data: null, error: null }, { data: [], error: null }, { data: null, error: null }];
+  const shipmentFailure = [shipmentResult, documentsResult, packingListResult].find((result) => result.error);
+  if (shipmentFailure?.error) throw new Error(shipmentFailure.error.message);
+  const shipment = shipmentResult.data;
+  const packingList = packingListResult.data;
+  const { data: packingLines, error: packingLinesError } = packingList
+    ? await supabase.from("packing_list_line").select("id, sales_order_line_id, product_sku_snapshot, product_name_snapshot, brand_name_snapshot, quantity_shipped").eq("packing_list_id", packingList.id).order("product_sku_snapshot")
+    : { data: [], error: null };
+  if (packingLinesError) throw new Error(packingLinesError.message);
+  const packingLineIds = (packingLines ?? []).map((line) => line.id);
+  const { data: packingLineBoxAllocations, error: packingLineBoxAllocationsError } = packingLineIds.length
+    ? await supabase.from("packing_list_line_box").select("id, packing_list_line_id, inventory_balance_id, box_quantity_shipped").in("packing_list_line_id", packingLineIds)
+    : { data: [], error: null };
+  if (packingLineBoxAllocationsError) throw new Error(packingLineBoxAllocationsError.message);
+  const editAll = shipmentEdit === "all";
+  const editHeader = editAll || shipmentEdit === "header";
+  const editDocuments = editAll || shipmentEdit === "documents";
+  const editLines = editAll || shipmentEdit === "lines";
+  const confirmationHref = `/?module=shipment-create&order=${orderId}&shipment=${shipmentId}`;
+  const editHref = (section: "header" | "documents" | "lines" | "all") => `${confirmationHref}&shipment_edit=${section}`;
+
+  const eligibleLines = order.lines.map((line) => ({
+    ...line,
+    remainingQuantity: Math.max(0, line.quantity_ordered - line.quantity_shipped - line.quantity_cancelled)
+  })).filter((line) => line.remainingQuantity > 0);
+  const shipmentProductIds = [...new Set(eligibleLines.map((line) => line.product_id))];
+  const [availableBalancesResult, requiredBoxesResult] = shipmentProductIds.length ? await Promise.all([
+    supabase
+      .from("inventory_balance")
+      .select("id, product_id, product_packing_box_id, warehouse_id, warehouse_location_id, quantity_available")
+      .in("product_id", shipmentProductIds)
+      .eq("inventory_condition", "regular"),
+    supabase
+      .from("product_packing_box")
+      .select("id, product_id, box_sequence, box_label")
+      .in("product_id", shipmentProductIds)
+      .eq("is_active", true)
+      .eq("is_required_for_sale", true)
+      .order("box_sequence")
+  ]) : [{ data: [], error: null }, { data: [], error: null }];
+  const locationIds = [...new Set((availableBalancesResult.data ?? []).map((balance) => balance.warehouse_location_id))];
+  const warehouseIds = [...new Set((availableBalancesResult.data ?? []).map((balance) => balance.warehouse_id))];
+  const [warehousesResult, locationsResult] = await Promise.all([
+    warehouseIds.length ? supabase.from("warehouse").select("id, name").in("id", warehouseIds) : Promise.resolve({ data: [], error: null }),
+    locationIds.length ? supabase.from("warehouse_location").select("id, location_code, location_name").in("id", locationIds) : Promise.resolve({ data: [], error: null })
+  ]);
+  const shipmentDataFailure = [availableBalancesResult, requiredBoxesResult, warehousesResult, locationsResult].find((result) => result.error);
+  if (shipmentDataFailure?.error) throw new Error(shipmentDataFailure.error.message);
+  const warehouseNameById = new Map((warehousesResult.data ?? []).map((warehouse) => [warehouse.id, warehouse.name]));
+  const locationById = new Map((locationsResult.data ?? []).map((location) => [location.id, location]));
+  const boxesByShipmentProduct = new Map<string, typeof requiredBoxesResult.data>();
+  for (const box of requiredBoxesResult.data ?? []) {
+    const boxes = boxesByShipmentProduct.get(box.product_id) ?? [];
+    boxes.push(box);
+    boxesByShipmentProduct.set(box.product_id, boxes);
+  }
+  const balancesByShipmentProduct = new Map<string, typeof availableBalancesResult.data>();
+  for (const balance of availableBalancesResult.data ?? []) {
+    const balances = balancesByShipmentProduct.get(balance.product_id) ?? [];
+    balances.push(balance);
+    balancesByShipmentProduct.set(balance.product_id, balances);
+  }
+  const shipmentLines = eligibleLines.map((line) => {
+    const requiredBoxes = boxesByShipmentProduct.get(line.product_id) ?? [];
+    const balances = balancesByShipmentProduct.get(line.product_id) ?? [];
+    const locationBalances = requiredBoxes.length
+      ? requiredBoxes.map((box) => ({
+          ...box,
+          balances: balances.filter((balance) => balance.product_packing_box_id === box.id).map((balance) => ({
+            ...balance,
+            warehouseName: warehouseNameById.get(balance.warehouse_id) ?? "Warehouse",
+            location: locationById.get(balance.warehouse_location_id)
+          }))
+        }))
+      : [{
+          id: `sku-${line.product_id}`,
+          box_label: "No packing box",
+          box_sequence: 1,
+          balances: balances.filter((balance) => !balance.product_packing_box_id).map((balance) => ({
+            ...balance,
+            warehouseName: warehouseNameById.get(balance.warehouse_id) ?? "Warehouse",
+            location: locationById.get(balance.warehouse_location_id)
+          }))
+        }];
+    const readyQuantity = locationBalances.length
+      ? Math.min(...locationBalances.map((box) => box.balances.reduce((sum, balance) => sum + Number(balance.quantity_available), 0)))
+      : 0;
+    return { ...line, locationBalances, readyQuantity };
+  });
+  const packedOrderLineIds = new Set((packingLines ?? []).map((line) => line.sales_order_line_id));
+  const additionalShipmentLines = shipmentLines.filter((line) => !packedOrderLineIds.has(line.id));
+  const shipmentLineByOrderLineId = new Map(shipmentLines.map((line) => [line.id, line]));
+  const pickedQuantityByPackingLineAndBalance = new Map<string, number>();
+  for (const allocation of packingLineBoxAllocations ?? []) {
+    if (allocation.inventory_balance_id) {
+      const key = `${allocation.packing_list_line_id}:${allocation.inventory_balance_id}`;
+      pickedQuantityByPackingLineAndBalance.set(key, (pickedQuantityByPackingLineAndBalance.get(key) ?? 0) + Number(allocation.box_quantity_shipped));
+    }
+  }
+  const canCreateShipment = order.order_type !== "quote" && ["open", "partially_shipped"].includes(order.status) && order.credit_hold_status !== "on_credit_hold" && shipmentLines.length > 0;
+
+  return (
+    <section className="dashboard-panel">
+      <section className="record-hero">
+        <div>
+          <Link className="context-parent-link" href={`/?module=orders&order=${order.id}`}>Back to Order</Link>
+          <div className="record-title-row"><h2>{shipment ? "Shipment Confirmation" : "Create Shipment"}</h2><StatusBadge tone="neutral" value={order.sales_order_number} /></div>
+          <p><Link className="context-parent-link" href={`/?customer=${order.customer_account_id}`}>{order.customer_name_snapshot}</Link> | Customer PO {order.customer_po_number}</p>
+        </div>
+        {shipment ? <Link className="secondary-action" href={editHref("all")}>Full Shipment Edit</Link> : <Link className="secondary-action" href="/?module=shipping&shipping_tab=ready">Shipping Queue</Link>}
+      </section>
+      {error ? <p className="form-alert">{error}</p> : null}
+      {notice ? <p className="form-notice">{notice}</p> : null}
+      <section className="detail-section order-address-section">
+        <article className="info-panel"><h3>Ship-to Address</h3>{addressSnapshotLines(order.ship_to_snapshot_json, order.ship_to_display_name_snapshot).map((line, index) => <p className="address-line" key={`${line}-${index}`}>{line}</p>)}</article>
+        <article className="info-panel"><h3>Shipment Status</h3><p><strong>{order.shipping_priority === "highest" ? "Highest Priority" : "Normal Priority"}</strong></p><p>{order.credit_hold_status === "on_credit_hold" ? "Credit hold must be resolved before shipping." : "Draft shipment creation does not reduce inventory."}</p></article>
+      </section>
+      {shipment ? <section className="detail-section shipment-workspace-section">
+        <article className="data-section">
+          <div className="section-title"><h3>Review Pending Shipment {shipment.freight_shipment_number}</h3><div className="section-title-actions">{!editHeader ? <Link className="text-action" href={editHref("header")}>Edit</Link> : null}<StatusBadge tone="neutral" value={shipment.status} /></div></div>
+          {editHeader ? <form action={updateShipmentDetailsAction} className="customer-form compact-form"><input name="order_id" type="hidden" value={order.id} /><input name="shipment_id" type="hidden" value={shipment.id} /><div className="form-grid"><label>Carrier<input defaultValue={shipment.carrier ?? ""} name="carrier" /></label><label>Shipping Type<select defaultValue={shipment.shipping_type ?? ""} name="shipping_type"><option value="">Select later</option><option value="parcel">Ground / Parcel</option><option value="ltl">LTL Freight</option><option value="truck_freight">Truck Freight</option><option value="will_call">Pick up</option><option value="drop_ship">Drop Ship</option></select></label><ShipmentFreightFields actualCost={shipment.freight_cost ?? 0} customerCharge={packingList?.shipping_fee ?? shipment.freight_cost ?? 0} masterTrackingNumber={shipment.master_tracking_number ?? ""} /><label className="full-width-field">Internal Shipment Notes<textarea defaultValue={shipment.notes ?? ""} name="shipment_notes" rows={2} /></label></div><p className="fieldset-note">Leave Customer Freight Charge blank to use the actual freight cost. Free Freight sets only the customer charge to $0.00.</p><div className="form-actions"><button className="primary-action" type="submit">Save Header</button><Link className="secondary-action" href={confirmationHref}>Cancel</Link></div></form> : <dl className="record-details"><div><dt>Carrier</dt><dd>{shipment.carrier || "Not set"}</dd></div><div><dt>Shipping Type</dt><dd>{shipment.shipping_type ? label(shipment.shipping_type) : "Not set"}</dd></div><div><dt>Actual Freight Cost</dt><dd>{money(shipment.freight_cost)}</dd></div><div><dt>Customer Freight Charge</dt><dd>{Number(packingList?.shipping_fee ?? 0) === 0 ? "Free Freight" : money(packingList?.shipping_fee)}</dd></div><div><dt>Master Tracking No.</dt><dd>{shipment.master_tracking_number || "Not set"}</dd></div><div><dt>Internal Notes</dt><dd>{shipment.notes || "None"}</dd></div></dl>}
+        </article>
+        <article className="data-section">
+          <div className="section-title"><h3>Shipping Documents</h3><div className="section-title-actions">{!editDocuments ? <Link className="text-action" href={editHref("documents")}>Edit</Link> : null}<span>{documentsResult.data?.length ?? 0}</span></div></div>
+          {editDocuments ? <form action={uploadShipmentDocumentAction} className="attachment-upload-form"><input name="order_id" type="hidden" value={order.id} /><input name="shipment_id" type="hidden" value={shipment.id} /><label>Document<input accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png" name="shipping_document_file" type="file" /></label><label>Document Type<select defaultValue="other" name="shipping_document_type"><option value="bol">Bill of Lading (BOL)</option><option value="shipping_label">Shipping Label</option><option value="other">Other Shipping Document</option></select></label><button className="primary-action" type="submit">Add Document</button><Link className="secondary-action" href={confirmationHref}>Cancel</Link></form> : null}
+          <div className="compact-list">{(documentsResult.data ?? []).length === 0 ? <EmptyState text="No shipping documents were attached." /> : (documentsResult.data ?? []).map((document) => <div className="compact-row" key={document.id}><div><strong>{document.original_file_name}</strong><span>{label(document.category ?? "shipping document")} | {timestampLabel(document.uploaded_at)}</span></div></div>)}</div>
+        </article>
+        <article className="data-section full-width-field">
+          <div className="section-title"><h3>{packingList ? <Link className="packing-list-draft-link" href={`/?module=shipping-preparation-packing-list&preparation_packing_list=${packingList.id}`} target="_blank">Draft Packing List {packingList.packing_list_number}</Link> : "Draft Packing List"}</h3>{!editLines ? <Link className="text-action" href={editHref("lines")}>Edit</Link> : null}</div>
+          {editLines && packingList ? <>
+            <form action={updatePendingPackingListLinesAction}>
+              <input name="order_id" type="hidden" value={order.id} /><input name="shipment_id" type="hidden" value={shipment.id} /><input name="packing_list_id" type="hidden" value={packingList.id} />
+              <p className="fieldset-note">Adjust the total shipment quantity and the warehouse/bin quantity for each box. Every required box must total the same amount as Quantity to Ship.</p>
+              <div className="table-wrap"><table className="data-table"><thead><tr><th>SKU</th><th>Item</th><th>Quantity to Ship</th><th>Warehouse / Bin Picks</th></tr></thead><tbody>{(packingLines ?? []).map((line) => {
+                const shipmentLine = shipmentLineByOrderLineId.get(line.sales_order_line_id);
+                return <tr key={line.id}><td>{line.product_sku_snapshot}</td><td>{line.product_name_snapshot}</td><td><input defaultValue={Number(line.quantity_shipped)} min="0" name={`packing_quantity_${line.id}`} step="1" type="number" /></td><td>{shipmentLine?.locationBalances.length ? <details className="shipment-location-picker" open><summary><strong>{numberFormatter.format(shipmentLine.readyQuantity)} available</strong><span>Adjust locations</span></summary>{shipmentLine.locationBalances.map((box) => <section className="shipment-box-picks" key={box.id}><strong>{box.box_label === "No packing box" ? "SKU Inventory (No packing box)" : `Box ${box.box_sequence}${box.box_label ? `: ${box.box_label}` : ""}`}</strong>{box.balances.length ? <table><thead><tr><th>Warehouse</th><th>Bin</th><th>Available</th><th>Pick</th></tr></thead><tbody>{box.balances.map((balance) => <tr key={balance.id}><td>{balance.warehouseName}</td><td>{balance.location?.location_code ?? "Location"}{balance.location?.location_name ? ` - ${balance.location.location_name}` : ""}</td><td>{numberFormatter.format(Number(balance.quantity_available))}</td><td><input defaultValue={pickedQuantityByPackingLineAndBalance.get(`${line.id}:${balance.id}`) ?? 0} max={Number(balance.quantity_available)} min="0" name={`packing_balance_${line.id}_${balance.id}`} step="1" type="number" /></td></tr>)}</tbody></table> : <span className="muted-copy">No inventory location is set up for this box.</span>}</section>)}</details> : <span className="muted-copy">No regular inventory location is available.</span>}</td></tr>;
+              })}</tbody></table></div>
+              <div className="form-actions"><button className="primary-action" type="submit">Save Selected Items</button><Link className="secondary-action" href={confirmationHref}>Cancel</Link></div>
+            </form>
+            {additionalShipmentLines.length ? <form action={addPendingPackingListLinesAction} className="customer-form compact-form shipment-add-items-form">
+              <input name="order_id" type="hidden" value={order.id} /><input name="shipment_id" type="hidden" value={shipment.id} /><input name="packing_list_id" type="hidden" value={packingList.id} />
+              <fieldset>
+                <legend>Add Available Order Items</legend>
+                <p className="fieldset-note">Open Available to choose the warehouse/bin and quantity for an unpicked order item. Parts without packing boxes are picked from their SKU inventory location.</p>
+                <div className="table-wrap"><table className="data-table"><thead><tr><th>SKU</th><th>Item</th><th>Remaining</th><th>Available</th></tr></thead><tbody>{additionalShipmentLines.map((line) => <tr key={line.id}><td>{line.product_sku_snapshot}</td><td>{line.product_name_snapshot}</td><td>{numberFormatter.format(line.remainingQuantity)}</td><td><details className="shipment-location-picker"><summary><strong>{numberFormatter.format(line.readyQuantity)} available</strong><span>Pick locations</span></summary>{line.locationBalances.map((box) => <section className="shipment-box-picks" key={box.id}><strong>{box.box_label === "No packing box" ? "SKU Inventory (No packing box)" : `Box ${box.box_sequence}${box.box_label ? `: ${box.box_label}` : ""}`}</strong>{box.balances.length ? <table><thead><tr><th>Warehouse</th><th>Bin</th><th>Available</th><th>Pick</th></tr></thead><tbody>{box.balances.map((balance) => <tr key={balance.id}><td>{balance.warehouseName}</td><td>{balance.location?.location_code ?? "Location"}{balance.location?.location_name ? ` - ${balance.location.location_name}` : ""}</td><td>{numberFormatter.format(Number(balance.quantity_available))}</td><td><input defaultValue="0" max={Number(balance.quantity_available)} min="0" name={`additional_shipment_balance_${line.id}_${balance.id}`} step="1" type="number" /></td></tr>)}</tbody></table> : <span className="muted-copy">No inventory location is set up for this item.</span>}</section>)}</details></td></tr>)}</tbody></table></div>
+              </fieldset>
+              <div className="form-actions"><button className="primary-action" type="submit">Add Selected Items</button></div>
+            </form> : <p className="fieldset-note">All currently available order items are already included in this draft packing list.</p>}
+          </> : <div className="table-wrap"><table className="data-table"><thead><tr><th>SKU</th><th>Item</th><th>Quantity to Ship</th></tr></thead><tbody>{(packingLines ?? []).map((line) => <tr key={line.id}><td>{line.product_sku_snapshot}</td><td>{line.product_name_snapshot}</td><td>{numberFormatter.format(Number(line.quantity_shipped))}</td></tr>)}</tbody></table></div>}
+          <p className="fieldset-note shipment-confirmation-note">Before final confirmation, use Shipment Header Edit to enter both Carrier and Master Tracking No.</p>
+          <form action={confirmPendingShipmentAction} className="form-actions"><input name="order_id" type="hidden" value={order.id} /><input name="shipment_id" type="hidden" value={shipment.id} /><button className="primary-action" type="submit">Confirm Pending Shipment</button><Link className="secondary-action" href="/?module=shipping&shipping_tab=ready">Back to Shipping Queue</Link></form>
+        </article>
+      </section> : null}
+      {!shipment && !canCreateShipment ? <EmptyState text="This order does not currently have items available to ship." /> : null}
+      {!shipment && canCreateShipment ? (
+        <form action={createPendingShipmentAction} className="customer-form">
+          <input name="order_id" type="hidden" value={order.id} />
+          <fieldset>
+            <legend>Shipment Header</legend>
+            <div className="form-grid">
+              <label>Carrier<input name="carrier" placeholder="Optional carrier name" /></label>
+              <label>Shipping Type<select defaultValue="" name="shipping_type"><option value="">Select later</option><option value="parcel">Ground / Parcel</option><option value="ltl">LTL Freight</option><option value="truck_freight">Truck Freight</option><option value="will_call">Pick up</option><option value="drop_ship">Drop Ship</option></select></label>
+              <ShipmentFreightFields />
+              <label className="full-width-field">Internal Shipment Notes<textarea name="shipment_notes" rows={2} /></label>
+            </div>
+            <p className="fieldset-note">Leave Customer Freight Charge blank to use the actual freight cost. Free Freight sets only the customer charge to $0.00.</p>
+          </fieldset>
+          <fieldset>
+            <legend>Shipping Documents</legend>
+            <div className="form-grid">
+              <label>Documents<input accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png" multiple name="shipping_document_files" type="file" /></label>
+              <label>Document Type<select defaultValue="other" name="shipping_document_type"><option value="bol">Bill of Lading (BOL)</option><option value="shipping_label">Shipping Label</option><option value="other">Other Shipping Document</option></select></label>
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Items to Ship</legend>
+            <p className="fieldset-note">Open Available to select the warehouse/bin and quantity for each required box. The same quantity must be selected for every required box of an item.</p>
+            <div className="table-wrap"><table className="data-table"><thead><tr><th>SKU</th><th>Item</th><th>Ordered</th><th>Previously Shipped</th><th>Remaining</th><th>Available</th></tr></thead><tbody>{shipmentLines.map((line) => <tr key={line.id}><td>{line.product_sku_snapshot}</td><td>{line.product_name_snapshot}</td><td>{numberFormatter.format(line.quantity_ordered)}</td><td>{numberFormatter.format(line.quantity_shipped)}</td><td>{numberFormatter.format(line.remainingQuantity)}</td><td>{line.locationBalances.length ? <details className="shipment-location-picker"><summary><strong>{numberFormatter.format(line.readyQuantity)} available</strong><span>Pick locations</span></summary>{line.locationBalances.map((box) => <section className="shipment-box-picks" key={box.id}><strong>Box {box.box_sequence}{box.box_label ? `: ${box.box_label}` : ""}</strong>{box.balances.length ? <table><thead><tr><th>Warehouse</th><th>Bin</th><th>Available</th><th>Pick</th></tr></thead><tbody>{box.balances.map((balance) => <tr key={balance.id}><td>{balance.warehouseName}</td><td>{balance.location?.location_code ?? "Location"}{balance.location?.location_name ? ` - ${balance.location.location_name}` : ""}</td><td>{numberFormatter.format(Number(balance.quantity_available))}</td><td><input defaultValue="0" max={Number(balance.quantity_available)} min="0" name={`shipment_balance_${line.id}_${balance.id}`} step="1" type="number" /></td></tr>)}</tbody></table> : <span className="muted-copy">No inventory location is set up for this box.</span>}</section>)}</details> : <span>Set up packing boxes before shipping</span>}</td></tr>)}</tbody></table></div>
+          </fieldset>
+          <div className="form-actions"><ShipmentSubmitButton /><Link className="secondary-action" href={`/?module=orders&order=${order.id}`}>Cancel</Link></div>
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
+async function ShipmentResultPage({ notice, returnCustomerId, shipmentId }: { notice?: string; returnCustomerId?: string; shipmentId?: string }) {
+  if (!shipmentId) return <ModulePlaceholder moduleName="Shipment not found" />;
+
+  const supabase = createSupabaseAdminClient();
+  const [shipmentResult, packingListResult, documentsResult] = await Promise.all([
+    supabase.from("freight_shipment").select("id, freight_shipment_number, status, carrier, shipping_type, master_tracking_number, freight_cost, notes, ship_to_snapshot_json").eq("id", shipmentId).maybeSingle(),
+    supabase.from("packing_list").select("id, packing_list_number, sales_order_id, customer_po_number_snapshot, sales_order_number_snapshot, shipping_fee").eq("freight_shipment_id", shipmentId).maybeSingle(),
+    supabase.from("attachment").select("id, original_file_name, category, storage_bucket, storage_path, uploaded_at").eq("entity_type", "freight_shipment").eq("entity_id", shipmentId).eq("is_active", true).order("uploaded_at", { ascending: false })
+  ]);
+  const failure = [shipmentResult, packingListResult, documentsResult].find((result) => result.error);
+  if (failure?.error) throw new Error(failure.error.message);
+  if (!shipmentResult.data || !packingListResult.data) return <ModulePlaceholder moduleName="Shipment not found" />;
+
+  const shipment = shipmentResult.data;
+  const packingList = packingListResult.data;
+  const [order, packingLinesResult] = await Promise.all([
+    getSalesOrderDetail(packingList.sales_order_id),
+    supabase.from("packing_list_line").select("id, brand_name_snapshot, product_sku_snapshot, quantity_shipped").eq("packing_list_id", packingList.id).order("product_sku_snapshot")
+  ]);
+  if (packingLinesResult.error) throw new Error(packingLinesResult.error.message);
+  const documents = await Promise.all((documentsResult.data ?? []).map(async (document) => {
+    const { data, error } = await supabase.storage.from(document.storage_bucket).createSignedUrl(document.storage_path, 60 * 60);
+    return { ...document, downloadUrl: error ? null : data?.signedUrl ?? null };
+  }));
+
+  return (
+    <section className="dashboard-panel">
+      <section className="record-hero">
+        <div>
+          <Link className="context-parent-link" href={returnCustomerId ? `/?customer=${returnCustomerId}&tab=shipments` : order ? `/?module=orders&order=${order.id}` : "/?module=shipping&shipping_tab=ready"}>{returnCustomerId ? "Back to Packing Lists" : "Back to Order"}</Link>
+          <div className="record-title-row"><h2>Shipment {shipment.freight_shipment_number}</h2><StatusBadge tone="neutral" value={shipment.status} /></div>
+          <p>{order?.customer_name_snapshot ?? "Customer"} | Customer PO {packingList.customer_po_number_snapshot}</p>
+        </div>
+        <Link className="secondary-action" href="/?module=shipping&shipping_tab=ready">Shipping Queue</Link>
+      </section>
+      {notice ? <p className="form-notice">{notice}</p> : null}
+      <section className="detail-section order-address-section">
+        <article className="info-panel"><h3>Ship-to Address</h3>{addressSnapshotLines(shipment.ship_to_snapshot_json as Record<string, unknown>, order?.ship_to_display_name_snapshot).map((line, index) => <p className="address-line" key={`${line}-${index}`}>{line}</p>)}</article>
+        <article className="info-panel"><h3>Shipment Details</h3><p><strong>Carrier:</strong> {shipment.carrier || "Not set"}</p><p><strong>Shipping Type:</strong> {shipment.shipping_type ? label(shipment.shipping_type) : "Not set"}</p><p><strong>Actual Freight Cost:</strong> {money(shipment.freight_cost)}</p><p><strong>Customer Freight Charge:</strong> {Number(packingList.shipping_fee ?? 0) === 0 ? "Free Freight" : money(packingList.shipping_fee)}</p><p><strong>Master Tracking No.:</strong> {shipment.master_tracking_number || "Not set"}</p></article>
+      </section>
+      <section className="detail-section shipment-workspace-section">
+        <article className="data-section"><div className="section-title"><h3>Packing List {packingList.packing_list_number}</h3><Link className="text-action" href={`/?module=packing-list-document&packing_list=${packingList.id}`} target="_blank">Download Packing List</Link></div><div className="table-wrap"><table className="data-table"><thead><tr><th>SKU</th><th>Brand</th><th>Quantity</th></tr></thead><tbody>{(packingLinesResult.data ?? []).map((line) => <tr key={line.id}><td>{line.product_sku_snapshot}</td><td>{line.brand_name_snapshot}</td><td>{numberFormatter.format(Number(line.quantity_shipped))}</td></tr>)}</tbody></table></div></article>
+        <article className="data-section"><div className="section-title"><h3>Shipping Documents</h3><span>{documents.length}</span></div><div className="compact-list">{documents.length === 0 ? <EmptyState text="No shipping documents were attached." /> : documents.map((document) => <div className="compact-row" key={document.id}><div><strong>{document.original_file_name}</strong><span>{label(document.category ?? "shipping document")} | {timestampLabel(document.uploaded_at)}</span></div>{document.downloadUrl ? <a className="text-action" href={document.downloadUrl}>Download</a> : <span>Unavailable</span>}</div>)}</div></article>
+      </section>
+    </section>
+  );
+}
+
+async function PackingListDocumentPage({ packingListId }: { packingListId?: string }) {
+  if (!packingListId) return <ModulePlaceholder moduleName="Packing list not found" />;
+  const supabase = createSupabaseAdminClient();
+  const [packingListResult, packingLinesResult] = await Promise.all([
+    supabase.from("packing_list").select("id, packing_list_number, freight_shipment_id, sales_order_id, customer_po_number_snapshot, sales_order_number_snapshot, ship_to_snapshot_json").eq("id", packingListId).maybeSingle(),
+    supabase.from("packing_list_line").select("id, brand_name_snapshot, product_sku_snapshot, quantity_shipped").eq("packing_list_id", packingListId).order("product_sku_snapshot")
+  ]);
+  const failure = [packingListResult, packingLinesResult].find((result) => result.error);
+  if (failure?.error) throw new Error(failure.error.message);
+  if (!packingListResult.data) return <ModulePlaceholder moduleName="Packing list not found" />;
+  const packingList = packingListResult.data;
+  const packingLines = packingLinesResult.data ?? [];
+  const { data: packingBoxLines, error: packingBoxLinesError } = packingLines.length > 0
+    ? await supabase
+      .from("packing_list_line_box")
+      .select("packing_list_line_id, box_sequence_snapshot, box_label_snapshot, box_quantity_shipped")
+      .in("packing_list_line_id", packingLines.map((line) => line.id))
+      .order("box_sequence_snapshot")
+    : { data: [], error: null };
+  if (packingBoxLinesError) throw new Error(packingBoxLinesError.message);
+
+  const boxesByPackingLine = new Map<string, Array<{
+    packing_list_line_id: string;
+    box_sequence_snapshot: number;
+    box_label_snapshot: string | null;
+    box_quantity_shipped: number;
+  }>>();
+  for (const box of packingBoxLines ?? []) {
+    const lineBoxes = boxesByPackingLine.get(box.packing_list_line_id) ?? [];
+    lineBoxes.push(box);
+    boxesByPackingLine.set(box.packing_list_line_id, lineBoxes);
+  }
+  const totalItems = packingLines.reduce((total, line) => total + Number(line.quantity_shipped), 0);
+  const totalBoxes = (packingBoxLines ?? []).reduce((total, box) => total + Number(box.box_quantity_shipped), 0);
+
+  const [order, shipmentResult] = await Promise.all([
+    getSalesOrderDetail(packingList.sales_order_id),
+    packingList.freight_shipment_id
+      ? supabase.from("freight_shipment").select("carrier, master_tracking_number").eq("id", packingList.freight_shipment_id).maybeSingle()
+      : Promise.resolve({ data: null, error: null })
+  ]);
+  if (shipmentResult.error) throw new Error(shipmentResult.error.message);
+  const shipment = shipmentResult.data;
+
+  return <section className="quote-document-page"><div className="quote-document-controls"><Link className="secondary-action" href={`/?module=shipment-detail&shipment=${packingList.freight_shipment_id}`}>Back to Shipment</Link><PackingListDocumentControls /></div><article className="quote-document"><header className="quote-document-header"><div><span className="eyebrow">Terracotta Designs and Kanova &amp; Co.</span><h2>Packing List</h2></div><dl><div><dt>Packing List No.</dt><dd>{packingList.packing_list_number}</dd></div><div><dt>Sales Order No.</dt><dd>{packingList.sales_order_number_snapshot}</dd></div><div><dt>Customer PO</dt><dd>{packingList.customer_po_number_snapshot}</dd></div><div><dt>Carrier</dt><dd>{shipment?.carrier || "Not set"}</dd></div><div><dt>Master Tracking No.</dt><dd>{shipment?.master_tracking_number || "Not set"}</dd></div></dl></header><section className="quote-document-addresses"><div><span>Customer</span><strong>{order?.customer_name_snapshot ?? "Not set"}</strong></div><div><span>Ship To</span>{addressSnapshotLines(packingList.ship_to_snapshot_json as Record<string, unknown>, order?.ship_to_display_name_snapshot).map((line, index) => <strong key={`${line}-${index}`}>{line}</strong>)}</div></section><table className="quote-document-table packing-list-detail-table"><thead><tr><th>SKU</th><th>Brand</th><th>Item Qty</th><th>Box</th><th>Box Qty</th></tr></thead><tbody>{packingLines.map((line) => { const boxes = boxesByPackingLine.get(line.id) ?? []; return boxes.length > 0 ? boxes.map((box, index) => <tr className={index === 0 ? "" : "packing-list-box-row"} key={`${line.id}-${box.box_sequence_snapshot}-${index}`}><td>{index === 0 ? line.product_sku_snapshot : ""}</td><td>{index === 0 ? line.brand_name_snapshot : ""}</td><td>{index === 0 ? numberFormatter.format(Number(line.quantity_shipped)) : ""}</td><td>Box {box.box_sequence_snapshot}{box.box_label_snapshot ? `: ${box.box_label_snapshot}` : ""}</td><td>{numberFormatter.format(Number(box.box_quantity_shipped))}</td></tr>) : <tr key={line.id}><td>{line.product_sku_snapshot}</td><td>{line.brand_name_snapshot}</td><td>{numberFormatter.format(Number(line.quantity_shipped))}</td><td>Not recorded</td><td>0</td></tr>; })}</tbody></table><div className="quote-document-total packing-list-totals"><span>Total Items: <strong>{numberFormatter.format(totalItems)}</strong></span><span>Total Boxes: <strong>{numberFormatter.format(totalBoxes)}</strong></span></div></article></section>;
+}
+
+async function ShippingPreparationPackingListPage({ packingListId }: { packingListId?: string }) {
+  if (!packingListId) return <ModulePlaceholder moduleName="Draft packing list not found" />;
+  const supabase = createSupabaseAdminClient();
+  const [packingListResult, linesResult] = await Promise.all([
+    supabase.from("packing_list").select("id, packing_list_number, freight_shipment_id, sales_order_id, customer_po_number_snapshot, sales_order_number_snapshot").eq("id", packingListId).maybeSingle(),
+    supabase.from("packing_list_line").select("id, product_sku_snapshot, product_name_snapshot, brand_name_snapshot, quantity_shipped").eq("packing_list_id", packingListId).order("product_sku_snapshot")
+  ]);
+  const failure = [packingListResult, linesResult].find((result) => result.error);
+  if (failure?.error) throw new Error(failure.error.message);
+  if (!packingListResult.data) return <ModulePlaceholder moduleName="Draft packing list not found" />;
+  const packingList = packingListResult.data;
+  const lines = linesResult.data ?? [];
+  const lineIds = lines.map((line) => line.id);
+  const { data: boxAllocations, error: boxAllocationsError } = lineIds.length
+    ? await supabase.from("packing_list_line_box").select("packing_list_line_id, box_sequence_snapshot, box_label_snapshot, box_length_snapshot, box_width_snapshot, box_height_snapshot, gross_weight_snapshot, warehouse_id, warehouse_location_id, box_quantity_shipped").in("packing_list_line_id", lineIds).order("box_sequence_snapshot")
+    : { data: [], error: null };
+  if (boxAllocationsError) throw new Error(boxAllocationsError.message);
+  const warehouseIds = [...new Set((boxAllocations ?? []).map((allocation) => allocation.warehouse_id))];
+  const locationIds = [...new Set((boxAllocations ?? []).map((allocation) => allocation.warehouse_location_id))];
+  const [warehousesResult, locationsResult] = await Promise.all([
+    warehouseIds.length ? supabase.from("warehouse").select("id, name").in("id", warehouseIds) : Promise.resolve({ data: [], error: null }),
+    locationIds.length ? supabase.from("warehouse_location").select("id, location_code, location_name").in("id", locationIds) : Promise.resolve({ data: [], error: null })
+  ]);
+  const locationFailure = [warehousesResult, locationsResult].find((result) => result.error);
+  if (locationFailure?.error) throw new Error(locationFailure.error.message);
+  const lineById = new Map(lines.map((line) => [line.id, line]));
+  const warehouseById = new Map((warehousesResult.data ?? []).map((warehouse) => [warehouse.id, warehouse.name]));
+  const locationById = new Map((locationsResult.data ?? []).map((location) => [location.id, location]));
+  const preparationBoxes = boxAllocations ?? [];
+  const totalGrossWeight = preparationBoxes.reduce((total, allocation) => total + (allocation.gross_weight_snapshot === null ? 0 : Number(allocation.gross_weight_snapshot) * Number(allocation.box_quantity_shipped)), 0);
+  const totalCubicInches = preparationBoxes.reduce((total, allocation) => {
+    const dimensions = [allocation.box_length_snapshot, allocation.box_width_snapshot, allocation.box_height_snapshot];
+    return dimensions.every((value) => value !== null) ? total + Number(dimensions[0]) * Number(dimensions[1]) * Number(dimensions[2]) * Number(allocation.box_quantity_shipped) : total;
+  }, 0);
+  const totalCbm = totalCubicInches / 61023.744;
+  const shipmentMetric = (value: number) => value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+
+  return <section className="quote-document-page"><div className="quote-document-controls"><Link className="secondary-action" href={`/?module=shipment-create&order=${packingList.sales_order_id}&shipment=${packingList.freight_shipment_id}`}>Back to Pending Shipment</Link><PackingListDocumentControls /></div><article className="quote-document"><header className="quote-document-header"><div><span className="eyebrow">Warehouse Use Only</span><h2>Shipping Preparation List</h2></div><dl><div><dt>Draft Packing List No.</dt><dd>{packingList.packing_list_number}</dd></div><div><dt>Sales Order No.</dt><dd>{packingList.sales_order_number_snapshot}</dd></div><div><dt>Customer PO</dt><dd>{packingList.customer_po_number_snapshot}</dd></div></dl></header><p className="warehouse-prep-note">Use this sheet to locate and pack the selected items. It is an internal preparation document, not the customer-facing packing list.</p><table className="quote-document-table warehouse-preparation-table"><thead><tr><th>SKU / Item</th><th>Brand</th><th>Box</th><th>Box Dimensions</th><th>Gross Weight</th><th>Pieces</th><th>Warehouse / Bin</th></tr></thead><tbody>{preparationBoxes.map((allocation, index) => { const line = lineById.get(allocation.packing_list_line_id); const location = locationById.get(allocation.warehouse_location_id); const dimensions = [allocation.box_length_snapshot, allocation.box_width_snapshot, allocation.box_height_snapshot].every((value) => value !== null) ? `${allocation.box_length_snapshot} x ${allocation.box_width_snapshot} x ${allocation.box_height_snapshot} in` : "Not set"; return <tr key={`${allocation.packing_list_line_id}-${index}`}><td><strong>{line?.product_sku_snapshot ?? "SKU"}</strong><br />{line?.product_name_snapshot ?? "Item"}</td><td>{line?.brand_name_snapshot ?? "Not set"}</td><td>Box {allocation.box_sequence_snapshot}{allocation.box_label_snapshot ? `: ${allocation.box_label_snapshot}` : ""}</td><td>{dimensions}</td><td>{allocation.gross_weight_snapshot === null ? "Not set" : `${allocation.gross_weight_snapshot} lb`}</td><td>{numberFormatter.format(Number(allocation.box_quantity_shipped))}</td><td>{warehouseById.get(allocation.warehouse_id) ?? "Warehouse"}<br />{location?.location_code ?? "Location"}{location?.location_name ? ` - ${location.location_name}` : ""}</td></tr>; })}{preparationBoxes.length === 0 ? <tr><td colSpan={7}>No warehouse/bin picks have been selected for this draft packing list.</td></tr> : null}</tbody></table><div className="quote-document-total preparation-list-totals"><span>Total Gross Weight: <strong>{shipmentMetric(totalGrossWeight)} lb</strong></span><span>Total Volume: <strong>{shipmentMetric(totalCubicInches)} cu in ({shipmentMetric(totalCbm)} CBM)</strong></span></div></article></section>;
+}
+
+async function OrderDetailPage({ order, returnCustomerId }: { order: SalesOrderDetail; returnCustomerId?: string }) {
+  const supabase = createSupabaseAdminClient();
+  const [{ data: latestPackingList, error: latestPackingListError }, { data: invoices, error: invoicesError }] = await Promise.all([
+    supabase
+      .from("packing_list")
+      .select("freight_shipment_id")
+      .eq("sales_order_id", order.id)
+      .not("freight_shipment_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("customer_invoice")
+      .select("id, invoice_number, brand_name_snapshot, invoice_date, due_date, invoice_status, payment_status, total_amount, balance_due")
+      .eq("sales_order_id", order.id)
+      .neq("invoice_status", "void")
+      .order("invoice_date", { ascending: false })
+  ]);
+  if (latestPackingListError) throw new Error(latestPackingListError.message);
+  if (invoicesError) throw new Error(invoicesError.message);
+  const { data: latestShipment, error: latestShipmentError } = latestPackingList?.freight_shipment_id
+    ? await supabase
+      .from("freight_shipment")
+      .select("id, status")
+      .eq("id", latestPackingList.freight_shipment_id)
+      .maybeSingle()
+    : { data: null, error: null };
+  if (latestShipmentError) throw new Error(latestShipmentError.message);
+  const isQuote = order.order_type === "quote";
+  const canEdit = ["open", "partially_shipped", "pending", "hold"].includes(order.status);
+  const canShip = !isQuote
+    && ["open", "partially_shipped"].includes(order.status)
+    && order.credit_hold_status !== "on_credit_hold"
+    && order.lines.some((line) => line.quantity_ordered > line.quantity_shipped && line.available_inventory > 0);
+  const customerOrdersHref = returnCustomerId ? `/?customer=${returnCustomerId}&tab=shipments` : `/?customer=${order.customer_account_id}&tab=orders${isQuote ? "&order_mode=quotes" : ""}`;
+  const editHref = `/?module=orders&order=${order.id}&order_action=edit`;
+  const hasPendingShipment = latestShipment?.status === "pending" || latestShipment?.status === "in_progress";
+  const hasPostedShipment = latestShipment?.status === "shipped" || latestShipment?.status === "delivered";
+
+  return (
+    <section className="dashboard-panel">
+      <section className="record-hero">
+        <div>
+          {returnCustomerId ? <Link className="context-parent-link" href={customerOrdersHref}>Back to Packing Lists</Link> : isQuote ? <Link className="context-parent-link" href={customerOrdersHref}>Quote List</Link> : <Link className="context-parent-link" href={customerOrdersHref}>Order List</Link>}
+          <div className="record-title-row">
+            <h2>{order.sales_order_number}</h2>
+            {canEdit ? <Link className="status-badge status-badge--good" href={editHref}>Edit</Link> : <StatusBadge tone="neutral" value={order.status} />}
+            {isQuote && order.status === "open" ? <form action={convertQuoteToOrderAction} className="inline-status-action"><input name="order_id" type="hidden" value={order.id} /><button className="status-badge status-badge--good status-badge--button" type="submit">Convert to Order</button></form> : null}
+            {order.credit_hold_status === "on_credit_hold" ? <StatusBadge tone="warn" value="Credit Hold" /> : null}
+          </div>
+          <p><Link className="context-parent-link" href={`/?customer=${order.customer_account_id}`}>{order.customer_name_snapshot}</Link> | Customer PO {order.customer_po_number}</p>
+          {isQuote && order.converted_order ? <p>Converted PO: <Link className="table-link" href={`/?module=orders&order=${order.converted_order.id}`}>{order.converted_order.sales_order_number}</Link></p> : null}
+        </div>
+        <div className="record-hero-actions">
+          {!isQuote && hasPendingShipment && latestShipment ? <Link className="primary-action" href={`/?module=shipment-create&order=${order.id}&shipment=${latestShipment.id}`}>Continue Shipment</Link> : null}
+          {!isQuote && hasPostedShipment && latestShipment ? <Link className="primary-action" href={`/?module=shipment-detail&shipment=${latestShipment.id}`}>View Shipment</Link> : null}
+          {!isQuote && !hasPendingShipment && !hasPostedShipment && canShip ? <Link className="primary-action" href={`/?module=shipment-create&order=${order.id}`}>Ship Order</Link> : null}
+          {isQuote ? <Link className="secondary-action quote-export-link" href={`/?module=quote-document&quote=${order.id}`} target="_blank">Export</Link> : null}
+        </div>
+      </section>
+      <section className="metric-grid order-metric-grid"><Metric labelText="Order Date" value={order.order_date} /><Metric labelText="Order Type" value={label(order.order_type)} /><Metric labelText="Shipping Priority" value={label(order.shipping_priority)} /><Metric labelText="Order Total" value={money(Number(order.total_amount ?? 0))} />{invoices && invoices.length > 0 ? <MetricLink href="#order-invoices" labelText="Invoices" value={numberFormatter.format(invoices.length)} /> : null}</section>
+      <section className="detail-section order-address-section">
+        <article className="info-panel"><h3>Ship-to Address</h3>{addressSnapshotLines(order.ship_to_snapshot_json, order.ship_to_display_name_snapshot).map((line, index) => <p className="address-line" key={`${line}-${index}`}>{line}</p>)}</article>
+        <article className="info-panel"><h3>Bill-to Address</h3>{addressSnapshotLines(order.bill_to_snapshot_json, order.customer_name_snapshot).map((line, index) => <p className="address-line" key={`${line}-${index}`}>{line}</p>)}</article>
+      </section>
+      <section className="detail-section"><article className="data-section"><div className="section-title"><h3>Order Lines</h3></div><div className="table-wrap"><table className="data-table"><thead><tr><th>SKU</th><th>Product</th><th>Brand</th><th>Ordered</th><th>Available</th><th>Shipped</th><th>Unit Price</th><th>Discount</th><th>Line Total</th></tr></thead><tbody>{order.lines.map((line) => <tr key={line.id}><td><Link className="table-link" href={line.product_sku_snapshot.startsWith("PT ") ? `/?module=product-parts&part=${line.product_id}` : `/?module=products&product=${line.product_id}`}>{line.product_sku_snapshot}</Link></td><td>{line.product_name_snapshot}</td><td>{line.brand_name_snapshot}</td><td>{line.quantity_ordered}</td><td>{line.available_inventory}</td><td>{line.quantity_shipped}</td><td>{money(Number(line.unit_price))}</td><td>{line.discount_percent}%</td><td>{money(line.line_total)}</td></tr>)}</tbody></table></div></article><article className="info-panel"><h3>Order Notes</h3><p className="long-text">{order.notes || "No internal notes."}</p></article></section>
+      {invoices && invoices.length > 0 ? <section className="detail-section" id="order-invoices"><article className="data-section"><div className="section-title"><h3>Invoices</h3><span className="section-count">{numberFormatter.format(invoices.length)}</span></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Invoice No.</th><th>Brand</th><th>Invoice Date</th><th>Due Date</th><th>Invoice Total</th><th>Balance Due</th><th>Invoice Status</th><th>Payment Status</th></tr></thead><tbody>{invoices.map((invoice) => <tr key={invoice.id}><td><Link className="table-link" href={`/?module=invoice-document&invoice=${invoice.id}`}>{invoice.invoice_number}</Link></td><td>{invoice.brand_name_snapshot}</td><td>{dateLabel(invoice.invoice_date)}</td><td>{invoice.due_date ? dateLabel(invoice.due_date) : "Not set"}</td><td>{money(Number(invoice.total_amount))}</td><td>{money(Number(invoice.balance_due))}</td><td><StatusBadge tone={invoice.invoice_status === "open" ? "primary" : "neutral"} value={invoice.invoice_status} /></td><td><StatusBadge tone={invoice.payment_status === "paid" ? "good" : invoice.payment_status === "partially_paid" ? "warn" : "danger"} value={invoice.payment_status} /></td></tr>)}</tbody></table></div></article></section> : null}
+    </section>
+  );
+}
+
+async function QuoteDocumentPage({ quoteId }: { quoteId?: string }) {
+  if (!quoteId) return <ModulePlaceholder moduleName="Quote document" />;
+
+  const quote = await getSalesOrderDetail(quoteId);
+  if (!quote || quote.order_type !== "quote") return <ModulePlaceholder moduleName="Quote not found" />;
+
+  return (
+    <section className="quote-document-page">
+      <div className="quote-document-controls">
+        <Link className="secondary-action" href={`/?module=orders&order=${quote.id}`}>Back to Quote</Link>
+        <QuoteDocumentControls />
+      </div>
+      <article className="quote-document">
+        <header className="quote-document-header">
+          <div><span className="eyebrow">Terracotta Designs and Kanova &amp; Co.</span><h2>Quote</h2></div>
+          <dl>
+            <div><dt>Quote No.</dt><dd>{quote.sales_order_number}</dd></div>
+            <div><dt>Quote Date</dt><dd>{dateLabel(quote.order_date)}</dd></div>
+            <div><dt>Customer PO</dt><dd>{quote.customer_po_number}</dd></div>
+          </dl>
+        </header>
+        <section className="quote-document-addresses">
+          <div><span>Bill To</span><strong>{quote.customer_name_snapshot}</strong></div>
+          <div><span>Ship To</span><strong>{quote.ship_to_display_name_snapshot}</strong></div>
+        </section>
+        <table className="quote-document-table">
+          <thead><tr><th>SKU</th><th>Item</th><th>Brand</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Line Total</th></tr></thead>
+          <tbody>{quote.lines.map((line) => <tr key={line.id}><td>{line.product_sku_snapshot}</td><td>{line.product_name_snapshot}</td><td>{line.brand_name_snapshot}</td><td>{numberFormatter.format(line.quantity_ordered)}</td><td>{money(Number(line.unit_price))}</td><td>{line.discount_percent}%</td><td>{money(line.line_total)}</td></tr>)}</tbody>
+        </table>
+        <div className="quote-document-total"><span>Quote Total</span><strong>{money(Number(quote.total_amount ?? 0))}</strong></div>
+        {quote.notes ? <section className="quote-document-notes"><span>Notes</span><p>{quote.notes}</p></section> : null}
+      </article>
+    </section>
+  );
+}
+
+function EditOrderPage({ billingAddressOptions, defaultDiscountPercent, error, order, parts, products, salesRepOptions, shipToOptions, territoryOptions }: { billingAddressOptions: OrderAddressOption[]; defaultDiscountPercent: number; error?: string; order: SalesOrderDetail; parts: OrderPartOption[]; products: OrderProductOption[]; salesRepOptions: RepOption[]; shipToOptions: OrderAddressOption[]; territoryOptions: SelectOption[] }) {
+  const customerOrdersHref = `/?customer=${order.customer_account_id}&tab=orders`;
+  const detailHref = `/?module=orders&order=${order.id}`;
+  const editable = ["open", "partially_shipped", "pending", "hold"].includes(order.status);
+
+  return (
+    <section className="dashboard-panel">
+      <section className="form-header">
+        <div>
+          <Link className="context-parent-link" href={customerOrdersHref}>Order List</Link>
+          <span className="eyebrow">Order Entry</span>
+          <h2>Edit {order.sales_order_number}</h2>
+          <p><Link className="context-parent-link" href={`/?customer=${order.customer_account_id}`}>{order.customer_name_snapshot}</Link></p>
+        </div>
+      </section>
+      {error ? <p className="form-alert">{error}</p> : null}
+      {!editable ? <p className="form-alert">Only open, partially shipped, pending, or held orders can be edited.</p> : null}
+      <form action={updateSalesOrderAction} className="customer-form order-entry-form" data-default-discount={defaultDiscountPercent}>
+        <OrderEntryPartsInitializer />
+        <input name="order_id" type="hidden" value={order.id} />
+        <input name="customer_id" type="hidden" value={order.customer_account_id} />
+        <input data-order-lines name="new_order_lines" type="hidden" value="[]" />
+        <fieldset>
+          <legend>Order Header</legend>
+          <div className="form-grid form-grid--two">
+            <label>Customer PO No.<input defaultValue={order.customer_po_number} disabled={!editable} name="customer_po_number" required /></label>
+            <label>Order Date<input defaultValue={order.order_date} readOnly /></label>
+            <label>Order Status<select defaultValue={order.status} disabled={!editable} name="order_status"><option value="open">Open</option><option value="pending">Pending</option><option value="hold">Hold</option><option value="void">Void</option></select></label>
+            <label>Shipping Priority<select defaultValue={order.shipping_priority} disabled={!editable || order.order_type === "quote"} name="shipping_priority"><option value="normal">Normal</option><option value="highest">Highest</option></select></label>
+            <label>Territory<select defaultValue={order.territory_id_snapshot ?? ""} disabled={!editable} name="territory_id"><option value="">Not assigned</option>{territoryOptions.map((territory) => <option key={territory.id} value={territory.id}>{territory.name}</option>)}</select></label>
+            <label>Sales Rep<select defaultValue={order.sales_rep_id_snapshot && order.sales_rep_agency_id_snapshot ? `${order.sales_rep_id_snapshot}|${order.sales_rep_agency_id_snapshot}` : ""} disabled={!editable} name="sales_rep_selection"><option value="">Not assigned</option>{salesRepOptions.map((rep) => <option key={rep.id} value={`${rep.id}|${rep.agency_id}`}>{rep.name} - {rep.agency_name}</option>)}</select></label>
+          </div>
+        </fieldset>
+        <EditOrderAddresses billingAddressOptions={billingAddressOptions} billingSnapshot={order.bill_to_snapshot_json} disabled={!editable} shipToOptions={shipToOptions} shipToSnapshot={order.ship_to_snapshot_json} />
+        {editable ? <EditOrderItemsPicker parts={parts} products={products} /> : null}
+        <fieldset>
+          <legend>Order Lines</legend>
+          <p className="fieldset-note">Only unshipped lines can be changed or removed. Order totals update automatically when you save.</p>
+          <div className="table-wrap">
+            <table className="data-table edit-order-lines-table">
+              <thead><tr><th>SKU</th><th>Product</th><th>Ordered</th><th>Shipped</th><th>Unit Price</th><th>Discount</th><th>Remove</th></tr></thead>
+              <tbody>
+                {order.lines.map((line) => {
+                  const locked = !editable || Number(line.quantity_shipped) > 0;
+                  return (
+                    <tr key={line.id}>
+                      <td>{line.product_sku_snapshot}<input name="line_id" type="hidden" value={line.id} /></td>
+                      <td>{line.product_name_snapshot}</td>
+                      <td>{locked ? line.quantity_ordered : <input defaultValue={line.quantity_ordered} min={1} name={`quantity_${line.id}`} required step="1" type="number" />}</td>
+                      <td>{line.quantity_shipped}</td>
+                      <td>{locked ? money(Number(line.unit_price)) : <input defaultValue={line.unit_price} min={0} name={`unit_price_${line.id}`} required step="0.01" type="number" />}</td>
+                      <td>{locked ? `${line.discount_percent}%` : <input defaultValue={line.discount_percent} max={100} min={0} name={`discount_percent_${line.id}`} required step="0.01" type="number" />}</td>
+                      <td>{locked ? "Locked" : <label className="inline-checkbox"><input name="delete_line_id" type="checkbox" value={line.id} /> Remove</label>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Notes</legend>
+          <label className="order-notes-field">Internal Order Notes<textarea defaultValue={order.notes ?? ""} disabled={!editable} name="notes" rows={4} /></label>
+        </fieldset>
+        {editable ? <div className="form-actions"><button className="primary-action" type="submit">Save Changes</button><Link className="secondary-action" href={detailHref}>Cancel</Link></div> : null}
+      </form>
+    </section>
+  );
+}
+
+function EditOrderItemsPicker({ parts, products }: { parts: OrderPartOption[]; products: OrderProductOption[] }) {
+  return (
+    <fieldset>
+      <legend>Add Items</legend>
+      <p className="fieldset-note">Search and add regular products or parts. New items are added when you save the order.</p>
+      <div
+        className="order-product-search"
+        data-order-product-picker
+        data-parent-products={JSON.stringify(products.map((product) => ({ id: product.id, name: product.name, sku: product.sku })))}
+        data-part-options={JSON.stringify(parts)}
+        data-products={JSON.stringify(products)}
+      >
+        <div className="order-search-heading">
+          <label className="order-search-label">Search SKU or Product Name</label>
+          <label className="checkbox-label order-part-toggle"><input name="search_parts" type="checkbox" /> Search Parts</label>
+        </div>
+        <div className="order-search-mode order-search-mode--products">
+          <label>
+            <input autoComplete="off" list="edit-order-product-options" name="product_search" placeholder="Type a SKU or product name" />
+            <datalist id="edit-order-product-options">{products.map((product) => <option key={product.id} label={`${product.name} | ${product.brandName}`} value={product.sku} />)}</datalist>
+          </label>
+          <div className="order-product-results" data-product-results />
+          <p className="fieldset-note" data-product-empty />
+        </div>
+        <div className="order-search-mode order-search-mode--parts">
+          <label className="checkbox-label order-generic-toggle"><input name="search_generic_part" type="checkbox" /> Search a generic part</label>
+          <div className="part-search-mode part-search-mode--parent">
+            <div className="part-parent-search-grid" data-order-part-picker data-parent-products={JSON.stringify(products.map((product) => ({ id: product.id, name: product.name, sku: product.sku })))} data-part-options={JSON.stringify(parts)}>
+              <div>
+                <label>
+                  Enter a Parent SKU/Name
+                  <input autoComplete="off" list="edit-order-parent-options" name="parent_part_search" placeholder="Type a parent SKU or name" />
+                  <datalist id="edit-order-parent-options">{products.map((product) => <option key={product.id} label={`${product.name} | ${product.brandName}`} value={product.sku} />)}</datalist>
+                </label>
+              </div>
+              <div className="part-child-picker" data-child-parts><span className="part-picker-label">Child Parts</span><p className="fieldset-note">Pick a parent product to display its child parts.</p></div>
+            </div>
+          </div>
+          <div className="part-search-mode part-search-mode--generic">
+            <label>
+              Search Generic Part Name or SKU
+              <input autoComplete="off" list="edit-order-generic-part-options" name="generic_part_search" placeholder="Type a part name or SKU" />
+              <datalist id="edit-order-generic-part-options">{parts.filter((part) => part.parentProductIds.length === 0).map((part) => <option key={part.id} label={part.name} value={part.sku} />)}</datalist>
+            </label>
+            <div className="order-product-results" data-generic-part-results />
+            <p className="fieldset-note" data-generic-part-empty />
+          </div>
+        </div>
+      </div>
+      <div className="native-order-lines" data-native-order-lines />
+      <div className="order-total"><span>New Items Subtotal</span><strong data-native-order-subtotal>$0.00</strong></div>
+    </fieldset>
+  );
+}
+
+function StatusBadge({ tone = "neutral", value }: { tone?: "good" | "neutral" | "primary" | "warn" | "danger"; value: string }) {
   return <span className={`status-badge status-badge--${tone}`}>{label(value)}</span>;
 }
 
@@ -3917,6 +7335,15 @@ function Metric({ labelText, value }: { labelText: string; value: string }) {
     <div className="metric">
       <span>{labelText}</span>
       <strong>{value}</strong>
+    </div>
+  );
+}
+
+function MetricLink({ href, labelText, value }: { href: string; labelText: string; value: string }) {
+  return (
+    <div className="metric">
+      <span>{labelText}</span>
+      <Link className="metric-link" href={href}><strong>{value}</strong></Link>
     </div>
   );
 }
@@ -4418,6 +7845,20 @@ async function EditBillingCreditForm({ customerId, error }: { customerId?: strin
   const dashboard = await getCustomerDashboard(customerId);
   const customer = dashboard.customer;
   const billing = dashboard.billing;
+  const supabase = createSupabaseAdminClient();
+  const { data: billingAddress, error: billingAddressError } = await supabase
+    .from("customer_location")
+    .select("id, location_name, address_line_1, address_line_2, city, state_province, postal_code, country_code")
+    .eq("customer_account_id", customerId)
+    .eq("is_billing_address", true)
+    .eq("status", "active")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (billingAddressError) {
+    throw new Error(billingAddressError.message);
+  }
 
   return (
     <section className="dashboard-panel">
@@ -4437,6 +7878,7 @@ async function EditBillingCreditForm({ customerId, error }: { customerId?: strin
       <form action={updateBillingCreditAction} className="customer-form">
         <input name="customer_id" type="hidden" value={customerId} />
         <input name="billing_profile_id" type="hidden" value={billing?.id ?? ""} />
+        <input name="billing_location_id" type="hidden" value={billingAddress?.id ?? ""} />
         <fieldset>
           <legend>Billing / Credit</legend>
           <div className="form-grid">
@@ -4461,6 +7903,33 @@ async function EditBillingCreditForm({ customerId, error }: { customerId?: strin
             <label>
               Invoice Email
               <input defaultValue={billing?.default_statement_email ?? customer.billing_email ?? ""} name="default_statement_email" type="email" />
+            </label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Billing Address</legend>
+          <p className="fieldset-note">This address is available as a saved Bill-to address when entering or editing orders.</p>
+          <div className="form-grid">
+            <label>
+              Billing Address Name
+              <input defaultValue={billingAddress?.location_name ?? "Billing Address"} name="billing_location_name" />
+            </label>
+            <label>
+              Address Line 1
+              <input defaultValue={billingAddress?.address_line_1 ?? ""} name="address_line_1" />
+            </label>
+            <label>
+              Address Line 2
+              <input defaultValue={billingAddress?.address_line_2 ?? ""} name="address_line_2" />
+            </label>
+            <label>
+              City
+              <input defaultValue={billingAddress?.city ?? ""} name="city" />
+            </label>
+            <LocationRegionFields defaultCountryCode={billingAddress?.country_code ?? "USA"} defaultStateProvince={billingAddress?.state_province ?? ""} />
+            <label>
+              Postal Code
+              <input defaultValue={billingAddress?.postal_code ?? ""} name="postal_code" />
             </label>
           </div>
         </fieldset>
@@ -4509,6 +7978,10 @@ async function AddLocationForm({ customerId, error }: { customerId?: string; err
               <input name="location_name" required />
             </label>
             <label>
+              Location Contact Email
+              <input name="location_contact_email" type="email" />
+            </label>
+            <label>
               Address Line 1
               <input name="address_line_1" />
             </label>
@@ -4546,7 +8019,7 @@ async function getLocationForEdit(locationId: string) {
   const { data: location, error: locationError } = await supabase
     .from("customer_location")
     .select(
-      "id, customer_account_id, location_code, location_name, location_type, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, is_shipping_address, is_default_ship_to, is_billing_address, is_showroom, status"
+      "id, customer_account_id, location_code, location_name, location_type, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, email, is_shipping_address, is_default_ship_to, is_billing_address, is_showroom, status"
     )
     .eq("id", locationId)
     .single();
@@ -4678,9 +8151,9 @@ async function LocationInfoPage({ customerId, locationId }: { customerId?: strin
           <h2>{location.location_name}</h2>
         </div>
         <div className="header-actions">
-          <button className="primary-action" type="button">
+          <Link className="primary-action" href={`/?module=new-order&customer=${customerId}&location=${locationId}`}>
             Enter New Order
-          </button>
+          </Link>
         </div>
       </section>
 
@@ -4812,14 +8285,12 @@ async function LocationInfoPage({ customerId, locationId }: { customerId?: strin
                 <tbody>
                   {orders.map((order) => (
                     <tr key={order.id}>
-                      <td>{order.sales_order_number}</td>
+                      <td><Link className="table-link" href={`/?module=orders&order=${order.id}`}>{order.sales_order_number}</Link></td>
                       <td>{order.customer_po_number}</td>
                       <td>{dateLabel(order.order_date)}</td>
                       <td>{label(order.order_source)}</td>
                       <td>{label(order.order_type)}</td>
-                      <td>
-                        <StatusBadge tone={order.credit_hold_status === "none" ? "good" : "warn"} value={order.status} />
-                      </td>
+                      <td><StatusBadge tone={order.credit_hold_status === "none" ? "good" : "warn"} value={order.status} /></td>
                       <td>{money(order.total_amount)}</td>
                     </tr>
                   ))}
@@ -5001,6 +8472,10 @@ async function EditLocationForm({ customerId, error, locationId }: { customerId?
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
+            </label>
+            <label>
+              Location Contact Email
+              <input defaultValue={location.email ?? ""} name="location_contact_email" type="email" />
             </label>
             <label>
               Address Line 1
@@ -8127,7 +11602,7 @@ async function EditProductInventoryForm({
                   <th>Delete</th>
                   <th>Box</th>
                   <th>Warehouse</th>
-                  <th>Bin</th>
+                  <th>Bin / Location</th>
                   <th>Condition</th>
                   <th>On Hand</th>
                   <th>Allocated</th>
@@ -8215,8 +11690,8 @@ async function EditProductInventoryForm({
               {warehouseSelect("new_warehouse_id")}
             </label>
             <label>
-              Bin
-              <input list="inventory-location-codes" name="new_location_code" placeholder="Bin code" />
+              Bin / Location
+              <input list="inventory-location-codes" name="new_location_code" placeholder="Leave blank for Unspecified Pick Location" />
             </label>
             <label>
               Condition
@@ -8238,7 +11713,7 @@ async function EditProductInventoryForm({
             </label>
           </div>
           <p className="fieldset-note">
-            Use this when restocked inventory is stored in an additional warehouse/bin location after receiving or putaway.
+            Use this when restocked inventory is stored in an additional warehouse/bin location after receiving or putaway. Leave the bin blank when the physical location is not yet recorded; the system will use the pickable Unspecified Pick Location.
           </p>
         </fieldset>
 
@@ -8555,49 +12030,25 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
     "edit-product-profile": "Edit Product Profile",
     "edit-product-specs": "Edit Product Specs",
     inventory: "Inventory / Locations",
-    invoices: "Invoices",
+    "invoice-create": "Create Invoice",
+    "invoice-created": "Invoices Created",
+    "invoice-document": "Invoice",
+    invoices: "Financial",
+    "payment-detail": "Payment",
     orders: "Orders",
+    quotes: "Quotes",
     "obsolete-customers": "Obsolete Accounts",
+    "new-order": "Enter New Order",
     "product-parts": "Parts",
     products: "Products",
     purchasing: "Purchasing",
     reports: "Reports",
     rga: "RGA",
     "sales-rep-agency": "Sales Rep Agency",
-    shipping: "Shipping",
+    shipping: "Shipments",
     "view-contact": "Contact",
     "view-location": "Location"
   };
-  const moduleNavEntries = Object.entries(moduleLabels).filter(
-    ([moduleKey]) =>
-      ![
-        "add-customer",
-        "add-contact",
-        "add-location",
-        "add-product-box",
-        "edit-account-profile",
-        "edit-billing-credit",
-        "edit-contact",
-        "edit-freight",
-        "edit-location",
-        "edit-product-boxes",
-        "edit-product-description",
-        "edit-product-images",
-        "edit-product-inventory",
-        "edit-product-parts",
-        "edit-product-vendors",
-        "edit-part-parents",
-        "edit-product-pricing-finishes",
-        "edit-product-profile",
-        "edit-product-specs",
-        "discontinued-products",
-        "obsolete-customers",
-        "product-parts",
-        "sales-rep-agency",
-        "view-contact",
-        "view-location"
-      ].includes(moduleKey)
-  );
   const workspaceHeader =
     activeModule === "discontinued-products"
       ? { eyebrow: "Product Master", title: "Discontinued / Deleted Products" }
@@ -8614,11 +12065,18 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
         : { eyebrow: "Lighting ERP", title: moduleLabels[activeModule] ?? label(activeModule) };
 
   const openOrders = dashboard?.orders.filter((order) => order.status !== "closed" && order.status !== "deleted") ?? [];
-  const ordersTotal = dashboard?.orders.reduce((sum, order) => sum + Number(order.total_amount ?? 0), 0) ?? 0;
+  const ordersLast30DaysTotal = dashboard?.ordersLast30DaysTotal ?? 0;
   const openInvoiceCount = dashboard?.invoices.filter((invoice) => invoice.invoice_status !== "void").length ?? 0;
+  const today = new Date().toISOString().slice(0, 10);
+  const overdueInvoiceCount = dashboard?.invoices.filter((invoice) => invoice.invoice_status !== "void" && Number(invoice.balance_due ?? 0) > 0 && Boolean(invoice.due_date) && invoice.due_date! < today).length ?? 0;
   const openBalance = dashboard?.invoices.reduce((sum, invoice) => sum + Number(invoice.balance_due ?? 0), 0) ?? 0;
   const uninvoicedPackingLists =
     dashboard?.packingLists.filter((packingList) => packingList.invoice_generation_status_snapshot === "not_invoiced").length ?? 0;
+  const packingInvoiceStatusFilter = params.packing_invoice_status === "not_invoiced" ? "not_invoiced" : undefined;
+  const packingListFreightEditId = params.packing_freight_edit;
+  const visiblePackingLists = dashboard?.packingLists.filter((packingList) =>
+    !packingInvoiceStatusFilter || packingList.invoice_generation_status_snapshot === packingInvoiceStatusFilter
+  ) ?? [];
   const primaryShowroomLocationIds = new Set(dashboard?.primaryShowrooms.map((showroom) => showroom.customer_location_id) ?? []);
   const customerDashboardTabs = [
     { key: "overview", label: "Overview" },
@@ -8626,7 +12084,7 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
     { key: "contacts", label: "Contacts" },
     { key: "sales-rep", label: "Sales Rep" },
     { key: "freight", label: "Freight" },
-    { key: "orders", label: "Orders" },
+    { key: "orders", label: "Orders / Quotes" },
     { key: "shipments", label: "Shipments" },
     { key: "invoices", label: "Invoices" },
     { key: "credit-memo", label: "Credit Memo" },
@@ -8635,8 +12093,96 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
     { key: "performance", label: "Performance" }
   ];
   const selectedCustomerTab = customerDashboardTabs.some((tab) => tab.key === params.tab) ? params.tab : "overview";
+  const customerOrderSearch = (params.order_q ?? "").trim().toLowerCase();
+  const customerOrderListMode = params.order_mode === "quotes" || params.order_mode === "display" ? params.order_mode : "orders";
+  const customerQuoteMode = customerOrderListMode === "quotes";
+  const customerDisplayMode = customerOrderListMode === "display";
+  const customerOrderSort = params.order_sort === "status" || params.order_sort === "created_at" ? params.order_sort : undefined;
+  const customerOrderSortDirection = customerOrderSort === "created_at"
+    ? params.order_dir === "asc" ? "asc" : "desc"
+    : params.order_dir === "desc" ? "desc" : "asc";
+  const customerOrderPageSize = [10, 20, 30].includes(Number(params.order_page_size)) ? Number(params.order_page_size) : 10;
+  const customerOrderPage = Math.max(1, Number(params.order_page ?? 1) || 1);
+  const customerOrderStatusRank = (status: string | null | undefined) => {
+    switch (status) {
+      case "open": return 0;
+      case "pending": return 1;
+      case "hold": return 2;
+      case "partially_shipped": return 3;
+      case "closed": return 4;
+      case "void": return 5;
+      case "deleted": return 6;
+      default: return 7;
+    }
+  };
+  const customerOrders = dashboard?.orders.filter((order) => {
+    if (customerQuoteMode && order.order_type !== "quote") return false;
+    if (customerDisplayMode && order.order_type !== "display") return false;
+    if (!customerQuoteMode && !customerDisplayMode && (order.order_type === "quote" || order.order_type === "display")) return false;
+    if (!customerOrderSearch) return true;
+    return [order.sales_order_number, order.customer_po_number, order.order_source, order.order_type, order.status, ...(dashboard?.orderSearchSkus?.[order.id] ?? [])]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(customerOrderSearch));
+  }).sort((left, right) => {
+    const statusDifference = customerOrderStatusRank(left.status) - customerOrderStatusRank(right.status);
+    const shouldSortByStatus = customerOrderSort === "status";
+
+    if (shouldSortByStatus && statusDifference !== 0) {
+      return customerOrderSortDirection === "desc" ? -statusDifference : statusDifference;
+    }
+
+    const dateDifference = String(left.created_at ?? "").localeCompare(String(right.created_at ?? ""));
+    return customerOrderSort === "created_at" && customerOrderSortDirection === "asc" ? dateDifference : -dateDifference;
+  }) ?? [];
+  const customerOrderTotalPages = Math.max(1, Math.ceil(customerOrders.length / customerOrderPageSize));
+  const customerOrderCurrentPage = Math.min(customerOrderTotalPages, customerOrderPage);
+  const customerOrderPageRows = customerOrders.slice((customerOrderCurrentPage - 1) * customerOrderPageSize, customerOrderCurrentPage * customerOrderPageSize);
+  const customerOrderAmount = customerOrders.reduce((sum, order) => sum + Number(order.total_amount ?? 0), 0);
+  const customerOrderPageHref = (page: number) => `/?customer=${dashboard?.customer.id ?? ""}&tab=orders${customerOrderListMode !== "orders" ? `&order_mode=${customerOrderListMode}` : ""}&order_page=${page}&order_page_size=${customerOrderPageSize}${customerOrderSearch ? `&order_q=${encodeURIComponent(customerOrderSearch)}` : ""}${customerOrderSort ? `&order_sort=${customerOrderSort}&order_dir=${customerOrderSortDirection}` : ""}`;
+  const customerOrderStatusSortHref = `/?customer=${dashboard?.customer.id ?? ""}&tab=orders${customerOrderListMode !== "orders" ? `&order_mode=${customerOrderListMode}` : ""}&order_page=1&order_page_size=${customerOrderPageSize}${customerOrderSearch ? `&order_q=${encodeURIComponent(customerOrderSearch)}` : ""}&order_sort=status&order_dir=${customerOrderSort === "status" && customerOrderSortDirection === "asc" ? "desc" : "asc"}`;
+  const customerOrderDateSortHref = `/?customer=${dashboard?.customer.id ?? ""}&tab=orders${customerOrderListMode !== "orders" ? `&order_mode=${customerOrderListMode}` : ""}&order_page=1&order_page_size=${customerOrderPageSize}${customerOrderSearch ? `&order_q=${encodeURIComponent(customerOrderSearch)}` : ""}&order_sort=created_at&order_dir=${customerOrderSort === "created_at" && customerOrderSortDirection === "desc" ? "asc" : "desc"}`;
+  const customerInvoiceSearch = (params.invoice_q ?? "").trim().toLowerCase();
+  const customerInvoiceAdvanced = params.invoice_advanced === "1";
+  const customerInvoiceDateFrom = params.invoice_date_from ?? "";
+  const customerInvoiceDateTo = params.invoice_date_to ?? "";
+  const customerInvoiceStatus = ["unpaid", "partially_paid", "paid"].includes(params.invoice_status ?? "")
+    ? params.invoice_status ?? ""
+    : "";
+  const customerInvoiceSkus = (params.invoice_skus ?? "")
+    .split(",")
+    .map((sku) => sku.trim().toLowerCase())
+    .filter(Boolean);
+  const customerInvoicePageSize = [10, 20, 30, 50, 100].includes(Number(params.invoice_page_size)) ? Number(params.invoice_page_size) : 10;
+  const customerInvoices = (dashboard?.invoices ?? []).filter((invoice) => {
+    if (customerInvoiceDateFrom && invoice.invoice_date < customerInvoiceDateFrom) return false;
+    if (customerInvoiceDateTo && invoice.invoice_date > customerInvoiceDateTo) return false;
+    if (customerInvoiceStatus && invoice.payment_status !== customerInvoiceStatus) return false;
+    if (customerInvoiceSkus.length) {
+      const invoiceSkus = dashboard?.invoiceSearchSkus?.[invoice.id] ?? [];
+      if (!customerInvoiceSkus.some((requestedSku) => invoiceSkus.some((invoiceSku) => invoiceSku.toLowerCase().includes(requestedSku)))) {
+        return false;
+      }
+    }
+    if (!customerInvoiceSearch) return true;
+    return [invoice.invoice_number, invoice.brand_name_snapshot, invoice.invoice_status, invoice.payment_status]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(customerInvoiceSearch));
+  });
+  const customerInvoiceTotalPages = Math.max(1, Math.ceil(customerInvoices.length / customerInvoicePageSize));
+  const customerInvoiceRequestedPage = Math.max(1, Number(params.invoice_page ?? 1) || 1);
+  const customerInvoiceCurrentPage = Math.min(customerInvoiceTotalPages, customerInvoiceRequestedPage);
+  const customerInvoicePageRows = customerInvoices.slice((customerInvoiceCurrentPage - 1) * customerInvoicePageSize, customerInvoiceCurrentPage * customerInvoicePageSize);
+  const paidCustomerInvoices = customerInvoices.filter((invoice) => invoice.payment_status === "paid");
+  const openCustomerInvoices = customerInvoices.filter((invoice) => invoice.invoice_status !== "void" && Number(invoice.balance_due) > 0);
+  const paidCustomerInvoiceAmount = paidCustomerInvoices.reduce((sum, invoice) => sum + Number(invoice.total_amount ?? 0), 0);
+  const openCustomerInvoiceAmount = openCustomerInvoices.reduce((sum, invoice) => sum + Number(invoice.balance_due ?? 0), 0);
+  const customerInvoicePageHref = (page: number) => `/?customer=${dashboard?.customer.id ?? ""}&tab=invoices&invoice_page=${page}&invoice_page_size=${customerInvoicePageSize}${customerInvoiceSearch ? `&invoice_q=${encodeURIComponent(customerInvoiceSearch)}` : ""}${customerInvoiceAdvanced ? "&invoice_advanced=1" : ""}${customerInvoiceDateFrom ? `&invoice_date_from=${encodeURIComponent(customerInvoiceDateFrom)}` : ""}${customerInvoiceDateTo ? `&invoice_date_to=${encodeURIComponent(customerInvoiceDateTo)}` : ""}${customerInvoiceStatus ? `&invoice_status=${encodeURIComponent(customerInvoiceStatus)}` : ""}${params.invoice_skus ? `&invoice_skus=${encodeURIComponent(params.invoice_skus)}` : ""}`;
   const customerTabHref = (tabKey: string) => {
     const search = new URLSearchParams({ customer: dashboard?.customer.id ?? "", tab: tabKey });
+
+    if (tabKey === "orders") {
+      search.set("order_mode", "orders");
+    }
 
     if (query) {
       search.set("q", query);
@@ -8656,56 +12202,7 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
           </div>
         </div>
 
-        <nav className="module-nav" aria-label="ERP modules">
-          {moduleNavEntries.map(([moduleKey, moduleLabel]) => (
-            <div className="nav-group" key={moduleKey}>
-              <Link
-                aria-current={activeModule === moduleKey ? "page" : undefined}
-                href={moduleKey === "customers" ? "/" : `/?module=${moduleKey}`}
-              >
-                {moduleLabel}
-              </Link>
-              {moduleKey === "customers" ? (
-                <div className="submenu-block">
-                  <Link aria-current={activeModule === "add-customer" ? "page" : undefined} href="/?module=add-customer">
-                    Add Customer
-                  </Link>
-                  <Link
-                    aria-current={activeModule === "obsolete-customers" ? "page" : undefined}
-                    href="/?module=obsolete-customers"
-                  >
-                    Obsolete Accounts
-                  </Link>
-                </div>
-              ) : null}
-              {moduleKey === "products" ? (
-                <div className="submenu-block">
-                  <Link aria-current={activeModule === "products" && !params.product_brand ? "page" : undefined} href="/?module=products">
-                    All Products
-                  </Link>
-                  {productBrandOptions.map((brand) => (
-                    <Link
-                      aria-current={activeModule === "products" && params.product_brand === brand.id ? "page" : undefined}
-                      href={`/?module=products&product_brand=${brand.id}`}
-                      key={brand.id}
-                    >
-                      {brand.name}
-                    </Link>
-                  ))}
-                  <Link aria-current={activeModule === "product-parts" ? "page" : undefined} href="/?module=product-parts">
-                    Parts
-                  </Link>
-                  <Link
-                    aria-current={activeModule === "discontinued-products" ? "page" : undefined}
-                    href="/?module=discontinued-products"
-                  >
-                    Discontinued
-                  </Link>
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </nav>
+        <ModuleNav activeModule={activeModule} productBrands={productBrandOptions} />
       </aside>
 
       <section className="erp-workspace" id="customers">
@@ -8749,6 +12246,8 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
           <EditFreightForm customerId={params.customer} error={params.error} />
         ) : activeModule === "sales-rep-agency" ? (
           <SalesRepAgencyPage agencyId={params.agency} />
+        ) : activeModule === "new-order" ? (
+          <NewOrderPage customerId={params.customer} error={params.error} locationId={params.location} />
         ) : selectedPartId ? (
           <PartDetailDashboard part={partDetail} selectedTab={params.product_tab ?? "profile"} />
         ) : selectedProductId ? (
@@ -8828,6 +12327,58 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
             totalCount={productPartSearchResult.totalCount}
             totalPages={productPartSearchResult.totalPages}
           />
+        ) : activeModule === "quote-document" ? (
+          <QuoteDocumentPage quoteId={params.quote} />
+        ) : activeModule === "shipment-create" ? (
+          <ShipmentCreatePage error={params.error} notice={params.notice} orderId={params.order} shipmentId={params.shipment} shipmentEdit={params.shipment_edit} />
+        ) : activeModule === "shipment-detail" ? (
+          <ShipmentResultPage notice={params.notice} returnCustomerId={params.return_customer} shipmentId={params.shipment} />
+        ) : activeModule === "packing-list-document" ? (
+          <PackingListDocumentPage packingListId={params.packing_list} />
+        ) : activeModule === "shipping-preparation-packing-list" ? (
+          <ShippingPreparationPackingListPage packingListId={params.preparation_packing_list} />
+        ) : activeModule === "shipping" ? (
+          <ShippingDashboardPage error={params.error} notice={params.notice} shippingTab={params.shipping_tab} />
+        ) : activeModule === "invoice-create" ? (
+          <InvoiceCreatePage error={params.error} packingListId={params.packing_list} />
+        ) : activeModule === "invoice-confirm" ? (
+          <InvoiceConfirmationPage
+            customerFreightCharge={params.invoice_customer_freight}
+            dropshipAllocations={params.invoice_dropship_allocations}
+            freightAllocations={params.invoice_freight_allocations}
+            invoiceDate={params.invoice_date}
+            packingListId={params.packing_list}
+            paymentDays={params.invoice_payment_days}
+            paymentTerms={params.invoice_payment_terms}
+            taxAllocations={params.invoice_tax_allocations}
+          />
+        ) : activeModule === "invoice-created" ? (
+          <InvoiceCreatedPage invoiceIds={params.invoice_ids} />
+        ) : activeModule === "invoice-document" ? (
+          <InvoiceDocumentPage invoiceId={params.invoice} />
+        ) : activeModule === "payment-detail" ? (
+          <PaymentDetailPage paymentId={params.payment} />
+        ) : activeModule === "invoices" ? (
+          <InvoiceQueuePage
+            error={params.error}
+            financialTab={params.financial_tab}
+            financialFilters={{
+              page: params.financial_page,
+              pageSize: params.financial_page_size,
+              query: params.financial_q,
+              advanced: params.financial_advanced,
+              dateFrom: params.financial_date_from,
+              dateTo: params.financial_date_to,
+              status: params.financial_status,
+              customer: params.financial_customer,
+              skus: params.financial_skus
+            }}
+            notice={params.notice}
+          />
+        ) : activeModule === "ar" ? (
+          <PaymentEntryPage error={params.error} invoiceId={params.invoice} notice={params.notice} />
+        ) : activeModule === "orders" || activeModule === "quotes" ? (
+          <OrdersOverview error={params.error} notice={params.notice} orderAction={params.order_action} orderAdvanced={params.order_advanced} orderCustomer={params.order_customer} orderCustomerName={params.order_customer_name} orderDateFrom={params.order_date_from} orderDateTo={params.order_date_to} orderDir={params.order_dir} orderId={params.order} orderPage={params.order_page} orderPageSize={params.order_page_size} orderQuery={params.order_q} orderReady={params.order_ready} orderRep={params.order_rep} orderSku={params.order_sku} orderSort={params.order_sort} orderStatus={params.order_status} orderTerritory={params.order_territory} quoteMode={activeModule === "quotes"} returnCustomerId={params.return_customer} />
         ) : activeModule !== "customers" && activeModule !== "obsolete-customers" ? (
           <ModulePlaceholder moduleName={moduleLabels[activeModule] ?? label(activeModule)} />
         ) : (
@@ -8855,9 +12406,6 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
                     </Link>
                   </div>
                   <div className="account-header-side">
-                    <button className="primary-action" type="button">
-                      Enter New Order
-                    </button>
                     <div className="account-numbers">
                       <span>Account No. {dashboard.customer.account_number}</span>
                       {dashboard.customer.legacy_account_id ? (
@@ -8868,11 +12416,21 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
                 </section>
 
                 <section className="metric-grid">
-                  <Metric labelText="Open Orders" value={numberFormatter.format(openOrders.length)} />
-                  <Metric labelText="Recent Order Total" value={money(ordersTotal)} />
-                  <Metric labelText="Open Invoices" value={numberFormatter.format(openInvoiceCount)} />
+                  <div className="metric">
+                    <span>Open / Ready to Ship Orders</span>
+                    <div className="metric-value-links">
+                      <Link className="metric-link" href={`/?module=orders&order_status=open&order_customer=${dashboard.customer.id}`}><strong>{numberFormatter.format(openOrders.length)}</strong></Link>
+                      <span aria-hidden="true"> / </span>
+                      <Link className="metric-link" href={`/?module=orders&order_status=open&order_customer=${dashboard.customer.id}&order_ready=true`}><strong>{numberFormatter.format(dashboard.readyToShipOrderCount)}</strong></Link>
+                    </div>
+                  </div>
+                  <Metric labelText="Order Total of Last 30 Days" value={money(ordersLast30DaysTotal)} />
+                  <Metric labelText="Overdue / Open Invoices" value={`${numberFormatter.format(overdueInvoiceCount)} / ${numberFormatter.format(openInvoiceCount)}`} />
                   <Metric labelText="Open Balance" value={money(openBalance)} />
-                  <Metric labelText="Un-invoiced Packing Lists" value={numberFormatter.format(uninvoicedPackingLists)} />
+                  <div className="metric">
+                    <span>Un-invoiced Packing Lists</span>
+                    <Link className="metric-link" href={`/?customer=${dashboard.customer.id}&tab=shipments&packing_invoice_status=not_invoiced`}><strong>{numberFormatter.format(uninvoicedPackingLists)}</strong></Link>
+                  </div>
                 </section>
 
                 <section className="tab-strip" aria-label="Customer dashboard sections">
@@ -9054,80 +12612,157 @@ export default async function Home({ searchParams }: { searchParams: SearchParam
                   </article>
 
                   <article className={selectedCustomerTab === "orders" ? "data-section" : "data-section tab-panel-hidden"} id="orders">
-                    <div className="section-title">
-                      <h3>Recent Orders</h3>
-                      <span>{dashboard.orders.length}</span>
+                    <div className="section-title order-section-title">
+                      <div className="order-actions-row">
+                        <Link className="primary-action" href={`/?module=new-order&customer=${dashboard.customer.id}`}>
+                          Enter New Order / Quote
+                        </Link>
+                        <Link className={customerOrderListMode === "orders" ? "text-action text-action--active" : "text-action"} href={`/?customer=${dashboard.customer.id}&tab=orders`}>
+                          Order List
+                        </Link>
+                        <Link className={customerQuoteMode ? "text-action text-action--active" : "text-action"} href={`/?customer=${dashboard.customer.id}&tab=orders&order_mode=quotes`}>
+                          Quote List
+                        </Link>
+                        <Link className={customerDisplayMode ? "text-action text-action--active" : "text-action"} href={`/?customer=${dashboard.customer.id}&tab=orders&order_mode=display`}>
+                          Display Orders
+                        </Link>
+                        <CustomerOrderControls customerId={dashboard.customer.id} mode={customerOrderListMode} pageSize={customerOrderPageSize} search={params.order_q ?? ""} sort={customerOrderSort} direction={customerOrderSortDirection} />
+                      </div>
                     </div>
                     <div className="table-wrap">
                       <table>
                         <thead>
                           <tr>
-                            <th>SO No.</th>
+                            <th>{customerQuoteMode ? "Quote No." : "SO No."}</th>
                             <th>Customer PO</th>
-                            <th>Date</th>
+                            <th><Link className="table-link" href={customerOrderDateSortHref}>Date / Time {customerOrderSort === "created_at" ? customerOrderSortDirection === "desc" ? "↓" : "↑" : "↓"}</Link></th>
                             <th>Source</th>
                             <th>Type</th>
-                            <th>Status</th>
+                            <th>{customerQuoteMode ? "Converted PO" : "Shipping Status"}</th>
+                            <th><Link className="table-link" href={customerOrderStatusSortHref}>Order Status {customerOrderSort === "status" ? customerOrderSortDirection === "asc" ? "↑" : "↓" : "↕"}</Link></th>
                             <th>Total</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {dashboard.orders.map((order) => (
+                          {customerOrderPageRows.map((order) => (
                             <tr key={order.id}>
-                              <td>{order.sales_order_number}</td>
+                              <td><Link className="table-link" href={`/?module=orders&order=${order.id}`}>{order.sales_order_number}</Link></td>
                               <td>{order.customer_po_number}</td>
-                              <td>{dateLabel(order.order_date)}</td>
+                              <td>{timestampLabel(order.created_at)}</td>
                               <td>{label(order.order_source)}</td>
                               <td>{label(order.order_type)}</td>
-                              <td>
-                                <StatusBadge tone={order.credit_hold_status === "none" ? "good" : "warn"} value={order.status} />
-                              </td>
+                              <td>{customerQuoteMode ? (order.converted_order ? <Link className="table-link" href={`/?module=orders&order=${order.converted_order.id}`}>{order.converted_order.sales_order_number}</Link> : "") : <StatusBadge {...shippingStatus(order.shipping_quantity, order.shipping_in_progress)} />}</td>
+                              <td><StatusBadge {...orderLifecycleStatus(order.status)} /></td>
                               <td>{money(order.total_amount)}</td>
                             </tr>
                           ))}
+                          {customerOrderPageRows.length === 0 ? <tr><td colSpan={8}><EmptyState text="No matching orders found." /></td></tr> : null}
                         </tbody>
                       </table>
                     </div>
+                    {customerOrderTotalPages > 1 ? (
+                      <nav className="pagination" aria-label="Customer order pages">
+                        <Link className="secondary-action" href={customerOrderPageHref(1)}>First</Link>
+                        <Link className="secondary-action" href={customerOrderPageHref(Math.max(1, customerOrderCurrentPage - 1))}>Previous</Link>
+                        {Array.from({ length: customerOrderTotalPages }, (_, index) => index + 1).map((page) => (
+                          <Link aria-current={page === customerOrderCurrentPage ? "page" : undefined} className={page === customerOrderCurrentPage ? "pagination-link pagination-link--active" : "pagination-link"} href={customerOrderPageHref(page)} key={page}>{page}</Link>
+                        ))}
+                        <Link className="secondary-action" href={customerOrderPageHref(Math.min(customerOrderTotalPages, customerOrderCurrentPage + 1))}>Next</Link>
+                        <Link className="secondary-action" href={customerOrderPageHref(customerOrderTotalPages)}>Last</Link>
+                      </nav>
+                    ) : null}
+                    <p className="open-order-summary">Total {customerQuoteMode ? "quotes" : customerDisplayMode ? "display orders" : "orders"}: <strong>{numberFormatter.format(customerOrders.length)}</strong> | Total amount: <strong>{money(customerOrderAmount)}</strong>{customerQuoteMode || customerDisplayMode ? null : <> | Ready to ship orders: <strong>{numberFormatter.format(dashboard.readyToShipOrderCount)}</strong></>}</p>
                   </article>
 
                   <article className={selectedCustomerTab === "shipments" ? "data-section" : "data-section tab-panel-hidden"} id="shipments">
                     <div className="section-title">
-                      <h3>Packing Lists / Shipment Work</h3>
-                      <span>{dashboard.packingLists.length}</span>
+                      <h3>{packingInvoiceStatusFilter ? "Packing Lists Awaiting Invoice" : "Packing Lists / Shipment Work"}</h3>
+                      <span>{visiblePackingLists.length}</span>
                     </div>
                     <div className="compact-list">
-                      {dashboard.packingLists.length === 0 ? <EmptyState text="No packing lists for this customer yet." /> : null}
-                      {dashboard.packingLists.map((packingList) => (
-                        <div className="compact-row" key={packingList.id}>
-                          <div>
-                            <strong>{packingList.packing_list_number}</strong>
-                            <span>PO {packingList.customer_po_number_snapshot}</span>
+                      {visiblePackingLists.length === 0 ? <EmptyState text={packingInvoiceStatusFilter ? "No packing lists are awaiting an invoice." : "No packing lists for this customer yet."} /> : null}
+                      {visiblePackingLists.map((packingList) => {
+                        const canEditFreight = packingList.invoice_generation_status_snapshot === "not_invoiced";
+                        const editHref = `/?customer=${dashboard.customer.id}&tab=shipments${packingInvoiceStatusFilter ? "&packing_invoice_status=not_invoiced" : ""}&packing_freight_edit=${packingList.id}`;
+                        const cancelHref = `/?customer=${dashboard.customer.id}&tab=shipments${packingInvoiceStatusFilter ? "&packing_invoice_status=not_invoiced" : ""}`;
+                        return <Fragment key={packingList.id}>
+                          <div className="compact-row packing-list-work-row">
+                            <div>
+                              {packingList.freight_shipment_id ? <Link className="packing-list-record-link" href={`/?module=shipment-detail&shipment=${packingList.freight_shipment_id}&return_customer=${dashboard.customer.id}`}>{packingList.packing_list_number}</Link> : <strong>{packingList.packing_list_number}</strong>}
+                              <span>PO <Link className="packing-list-po-link" href={`/?module=orders&order=${packingList.sales_order_id}&return_customer=${dashboard.customer.id}`}>{packingList.customer_po_number_snapshot}</Link></span>
+                            </div>
+                            <div className="packing-list-row-actions">
+                              {canEditFreight ? <Link className="text-action" href={`/?module=invoice-create&packing_list=${packingList.id}`}>Create Invoice</Link> : <span>{label(packingList.invoice_generation_status_snapshot)}</span>}
+                              {canEditFreight ? <Link className="text-action" href={editHref}>Freight Charge {money(packingList.shipping_fee)}</Link> : <span>{money(packingList.shipping_fee)}</span>}
+                            </div>
                           </div>
-                          <span>{label(packingList.invoice_generation_status_snapshot)}</span>
-                          <span>{money(packingList.shipping_fee)}</span>
-                        </div>
-                      ))}
+                          {canEditFreight && packingListFreightEditId === packingList.id ? <PackingListFreightEditor action={updatePackingListFreightChargeAction} actualFreightCost={Number(packingList.allocated_freight_cost)} cancelHref={cancelHref} currentFreightCharge={Number(packingList.shipping_fee)} customerId={dashboard.customer.id} packingListId={packingList.id} /> : null}
+                        </Fragment>;
+                      })}
                     </div>
                   </article>
 
                   <article className={selectedCustomerTab === "invoices" ? "data-section" : "data-section tab-panel-hidden"} id="invoices">
-                    <div className="section-title">
+                    <div className="section-title order-section-title">
                       <h3>Invoices</h3>
                       <span>{dashboard.invoices.length}</span>
                     </div>
-                    <div className="compact-list">
-                      {dashboard.invoices.length === 0 ? <EmptyState text="No invoices have been generated for this customer yet." /> : null}
-                      {dashboard.invoices.map((invoice) => (
-                        <div className="compact-row" key={invoice.id}>
-                          <div>
-                            <strong>{invoice.invoice_number}</strong>
-                            <span>{invoice.brand_name_snapshot}</span>
-                          </div>
-                          <span>{dateLabel(invoice.invoice_date)}</span>
-                          <span>{money(invoice.balance_due)}</span>
-                        </div>
-                      ))}
+                    <div className="customer-invoice-controls-row">
+                      <CustomerInvoiceControls
+                        customerId={dashboard.customer.id}
+                        pageSize={customerInvoicePageSize}
+                        search={params.invoice_q ?? ""}
+                        advanced={customerInvoiceAdvanced}
+                        dateFrom={customerInvoiceDateFrom}
+                        dateTo={customerInvoiceDateTo}
+                        paymentStatus={customerInvoiceStatus}
+                        skus={params.invoice_skus ?? ""}
+                      />
                     </div>
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Invoice No.</th>
+                            <th>Brand</th>
+                            <th>Invoice Date</th>
+                            <th>Due Date</th>
+                            <th>Total</th>
+                            <th>Balance Due</th>
+                            <th>Payment Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {customerInvoicePageRows.map((invoice) => (
+                            <tr key={invoice.id}>
+                              <td>
+                                <Link className="table-link" href={`/?module=invoice-document&invoice=${invoice.id}`}>{invoice.invoice_number}</Link>
+                                {invoice.sales_order?.customer_po_number ? <span className="invoice-po-reference">PO <Link className="table-link" href={`/?module=orders&order=${invoice.sales_order_id}`}>{invoice.sales_order.customer_po_number}</Link></span> : null}
+                              </td>
+                              <td>{invoice.brand_name_snapshot}</td>
+                              <td>{dateLabel(invoice.invoice_date)}</td>
+                              <td className={invoice.due_date && invoice.due_date < today && Number(invoice.balance_due) > 0 && invoice.invoice_status !== "void" ? "invoice-due-date invoice-due-date--overdue" : "invoice-due-date"}>{invoice.due_date ? dateLabel(invoice.due_date) : "Not set"}</td>
+                              <td>{money(Number(invoice.total_amount))}</td>
+                              <td>{money(Number(invoice.balance_due))}</td>
+                              <td><StatusBadge tone={invoice.payment_status === "paid" ? "good" : invoice.payment_status === "partially_paid" ? "warn" : "danger"} value={invoice.payment_status} /></td>
+                            </tr>
+                          ))}
+                          {customerInvoicePageRows.length === 0 ? <tr><td colSpan={7}><EmptyState text="No matching invoices found." /></td></tr> : null}
+                        </tbody>
+                      </table>
+                    </div>
+                    {customerInvoiceTotalPages > 1 ? (
+                      <nav className="pagination" aria-label="Customer invoice pages">
+                        <Link className="secondary-action" href={customerInvoicePageHref(1)}>First</Link>
+                        <Link className="secondary-action" href={customerInvoicePageHref(Math.max(1, customerInvoiceCurrentPage - 1))}>Previous</Link>
+                        {Array.from({ length: customerInvoiceTotalPages }, (_, index) => index + 1).map((page) => (
+                          <Link aria-current={page === customerInvoiceCurrentPage ? "page" : undefined} className={page === customerInvoiceCurrentPage ? "pagination-link pagination-link--active" : "pagination-link"} href={customerInvoicePageHref(page)} key={page}>{page}</Link>
+                        ))}
+                        <Link className="secondary-action" href={customerInvoicePageHref(Math.min(customerInvoiceTotalPages, customerInvoiceCurrentPage + 1))}>Next</Link>
+                        <Link className="secondary-action" href={customerInvoicePageHref(customerInvoiceTotalPages)}>Last</Link>
+                      </nav>
+                    ) : null}
+                    <p className="open-order-summary">Total invoices: <strong>{numberFormatter.format(customerInvoices.length)}</strong> | Paid invoices: <strong>{numberFormatter.format(paidCustomerInvoices.length)}</strong> ({money(paidCustomerInvoiceAmount)}) | Open invoices: <strong>{numberFormatter.format(openCustomerInvoices.length)}</strong> ({money(openCustomerInvoiceAmount)})</p>
                   </article>
 
                   <article className={selectedCustomerTab === "credit-memo" ? "data-section" : "data-section tab-panel-hidden"} id="credit-memo">

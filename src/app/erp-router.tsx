@@ -10,6 +10,7 @@ import { AddCustomerForm } from "@/components/customers/add-customer-form";
 import { AddLocationForm } from "@/components/customers/add-location-form";
 import { EditAccountProfileForm } from "@/components/customers/edit-account-profile-form";
 import { EditBillingCreditForm } from "@/components/customers/edit-billing-credit-form";
+import { EditLocationForm } from "@/components/customers/edit-location-form";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { FinancialInvoiceControls } from "@/components/financial/financial-invoice-controls";
 import { ProductDetailPartsTable } from "@/components/products/product-detail-parts-table";
@@ -15253,134 +15254,6 @@ async function LocationInfoPage({
   );
 }
 
-async function EditLocationForm({
-  customerId,
-  error,
-  locationId,
-}: {
-  customerId?: string;
-  error?: string;
-  locationId?: string;
-}) {
-  if (!customerId || !locationId) {
-    return (
-      <ModulePlaceholder moduleName="Edit Location requires a selected customer and location" />
-    );
-  }
-
-  const [customer, locationData] = await Promise.all([
-    getCustomerName(customerId),
-    getLocationForEdit(locationId),
-  ]);
-  const { location, primaryShowroom } = locationData;
-
-  return (
-    <section className="dashboard-panel">
-      <section className="form-header">
-        <div>
-          <span className="eyebrow">Customer Location</span>
-          <h2>{location.location_name}</h2>
-          <p>{customer.name}</p>
-        </div>
-        <Link
-          className="secondary-action secondary-action--light"
-          href={`/?customer=${customerId}#locations`}
-        >
-          Back to Account
-        </Link>
-      </section>
-
-      {error ? (
-        <div className="form-alert">
-          {error === "missing_required"
-            ? "Location name is required."
-            : decodeURIComponent(error)}
-        </div>
-      ) : null}
-
-      <form action={updateLocationAction} className="customer-form">
-        <input name="customer_id" type="hidden" value={customerId} />
-        <input name="location_id" type="hidden" value={locationId} />
-        <fieldset>
-          <legend>Location / Address</legend>
-          <div className="form-grid">
-            <label>
-              Location Name
-              <input
-                defaultValue={location.location_name}
-                name="location_name"
-                required
-              />
-            </label>
-            <label>
-              Status
-              <select defaultValue={location.status} name="status">
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-              </select>
-            </label>
-            <label>
-              Location Contact Email
-              <input
-                defaultValue={location.email ?? ""}
-                name="location_contact_email"
-                type="email"
-              />
-            </label>
-            <label>
-              Address Line 1
-              <input
-                defaultValue={location.address_line_1 ?? ""}
-                name="address_line_1"
-              />
-            </label>
-            <label>
-              Address Line 2
-              <input
-                defaultValue={location.address_line_2 ?? ""}
-                name="address_line_2"
-              />
-            </label>
-            <label>
-              City
-              <input defaultValue={location.city ?? ""} name="city" />
-            </label>
-            <LocationRegionFields
-              defaultCountryCode={location.country_code}
-              defaultStateProvince={location.state_province ?? ""}
-            />
-            <label>
-              Postal Code
-              <input
-                defaultValue={location.postal_code ?? ""}
-                name="postal_code"
-              />
-            </label>
-            <LocationRoleFields
-              defaultBillingAddress={Boolean(location.is_billing_address)}
-              defaultDefaultShipTo={location.is_default_ship_to}
-              defaultPrimaryShowroom={Boolean(primaryShowroom)}
-              defaultShippingAddress={location.is_shipping_address}
-              defaultShowroom={location.is_showroom}
-            />
-          </div>
-        </fieldset>
-        <div className="form-actions">
-          <button className="primary-action" type="submit">
-            Save Location
-          </button>
-          <Link
-            className="secondary-action secondary-action--light"
-            href={`/?customer=${customerId}#locations`}
-          >
-            Cancel
-          </Link>
-        </div>
-      </form>
-    </section>
-  );
-}
-
 async function getContactForEdit(contactId: string) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
@@ -20812,7 +20685,10 @@ export async function ErpRouter({
           <EditLocationForm
             customerId={params.customer}
             error={params.error}
+            loadCustomer={getCustomerName}
+            loadLocation={getLocationForEdit}
             locationId={params.location}
+            saveAction={updateLocationAction}
           />
         ) : activeModule === "edit-freight" ? (
           <EditFreightForm customerId={params.customer} error={params.error} />

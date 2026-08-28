@@ -19,6 +19,7 @@ import { EditLocationForm } from "@/components/customers/edit-location-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { FinancialInvoiceControls } from "@/components/financial/financial-invoice-controls";
+import { InvoiceCreatedPage } from "@/components/financial/invoice-created-page";
 import { ProductDetailPartsTable } from "@/components/products/product-detail-parts-table";
 import { ProductLedSpecFields } from "@/components/products/product-led-spec-fields";
 import { ProductEditPlaceholder } from "@/components/products/product-edit-placeholder";
@@ -9710,14 +9711,7 @@ async function InvoiceConfirmationPage({
   );
 }
 
-async function InvoiceCreatedPage({ invoiceIds }: { invoiceIds?: string }) {
-  const ids = (invoiceIds ?? "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean);
-  if (ids.length === 0)
-    return <ModulePlaceholder moduleName="Invoices not found" />;
-
+async function getCreatedInvoices(ids: string[]) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("customer_invoice")
@@ -9725,79 +9719,17 @@ async function InvoiceCreatedPage({ invoiceIds }: { invoiceIds?: string }) {
       "id, invoice_number, brand_name_snapshot, customer_name_snapshot, invoice_date, due_date, freight_amount, total_amount, invoice_status, email_status",
     )
     .in("id", ids);
-  if (error) throw new Error(error.message);
+  if (error) {
+    throw new Error(error.message);
+  }
 
   const invoicesById = new Map(
     (data ?? []).map((invoice) => [invoice.id, invoice]),
   );
-  const invoices = ids.flatMap((id) => {
+  return ids.flatMap((id) => {
     const invoice = invoicesById.get(id);
     return invoice ? [invoice] : [];
   });
-  if (invoices.length === 0)
-    return <ModulePlaceholder moduleName="Invoices not found" />;
-
-  return (
-    <section className="dashboard-panel">
-      <section className="record-hero">
-        <div>
-          <Link className="subtle-link" href="/?module=invoices">
-            Back to Invoice Work Queue
-          </Link>
-          <div className="record-title-row">
-            <h2>Brand-specific Invoices Created</h2>
-          </div>
-          <p>{invoices[0].customer_name_snapshot}</p>
-        </div>
-      </section>
-      <div className="success-banner">
-        {invoices.length} brand-specific invoice
-        {invoices.length === 1 ? "" : "s"} created successfully.
-      </div>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Invoice No.</th>
-              <th>Brand</th>
-              <th>Invoice Date</th>
-              <th>Due Date</th>
-              <th>Freight</th>
-              <th>Total</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {invoices.map((invoice) => (
-              <tr key={invoice.id}>
-                <td>
-                  <Link
-                    className="text-action"
-                    href={`/?module=invoice-document&invoice=${invoice.id}`}
-                  >
-                    {invoice.invoice_number}
-                  </Link>
-                </td>
-                <td>{invoice.brand_name_snapshot}</td>
-                <td>{dateLabel(invoice.invoice_date)}</td>
-                <td>{dateLabel(invoice.due_date)}</td>
-                <td>{money(Number(invoice.freight_amount))}</td>
-                <td>{money(Number(invoice.total_amount))}</td>
-                <td>
-                  <Link
-                    className="text-action"
-                    href={`/?module=invoice-document&invoice=${invoice.id}`}
-                  >
-                    View / Download / Email
-                  </Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
 }
 
 async function InvoiceDocumentPage({ invoiceId }: { invoiceId?: string }) {
@@ -18985,7 +18917,10 @@ export async function ErpRouter({
             taxAllocations={params.invoice_tax_allocations}
           />
         ) : activeModule === "invoice-created" ? (
-          <InvoiceCreatedPage invoiceIds={params.invoice_ids} />
+          <InvoiceCreatedPage
+            invoiceIds={params.invoice_ids}
+            loadInvoices={getCreatedInvoices}
+          />
         ) : activeModule === "invoice-document" ? (
           <InvoiceDocumentPage invoiceId={params.invoice} />
         ) : activeModule === "payment-detail" ? (

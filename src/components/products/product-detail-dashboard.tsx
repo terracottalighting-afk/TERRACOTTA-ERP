@@ -126,6 +126,7 @@ type ProductDetailDashboardProduct = {
   name: string;
   next_incoming_eta: string | null;
   no_box_needed: boolean;
+  on_hand_quantity: number;
   packingBoxes: ProductPackingBox[];
   parts: ProductDetailPartRow[];
   sellability_status: string;
@@ -220,8 +221,10 @@ export function ProductDetailDashboard({
           <strong>{product.brand_name}</strong>
         </div>
         <div className="metric-card">
-          <span>Inventory</span>
-          <strong>{numberFormatter.format(Number(product.sellable_quantity ?? 0))}</strong>
+          <span>On Hand / Available</span>
+          <strong>
+            {numberFormatter.format(product.on_hand_quantity)} / {numberFormatter.format(Number(product.sellable_quantity ?? 0))}
+          </strong>
         </div>
         <div className="metric-card">
           <span>ETA</span>

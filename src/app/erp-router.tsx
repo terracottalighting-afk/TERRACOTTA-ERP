@@ -554,6 +554,7 @@ type ProductDetail = {
   name: string;
   next_incoming_eta: string | null;
   no_box_needed: boolean;
+  on_hand_quantity: number;
   packingBoxes: ProductPackingBoxDetail[];
   parts: ProductComponentPartItem[];
   primary_showroom_exclusion_reason: string | null;
@@ -7831,6 +7832,19 @@ async function getProductDetail(
           ),
         )
       : Number(summaryResult.data?.sellable_quantity ?? 0);
+  const calculatedOnHandQuantity = product.no_box_needed
+    ? regularBalances
+        .filter((balance) => balance.product_packing_box_id === null)
+        .reduce((sum, balance) => sum + balance.quantity_on_hand, 0)
+    : requiredBoxes.length > 0
+      ? Math.min(
+          ...requiredBoxes.map((box) =>
+            regularBalances
+              .filter((balance) => balance.product_packing_box_id === box.id)
+              .reduce((sum, balance) => sum + balance.quantity_on_hand, 0),
+          ),
+        )
+      : 0;
 
   return {
     brand_id: product.brand_id,
@@ -7858,6 +7872,7 @@ async function getProductDetail(
     name: product.name,
     next_incoming_eta: summaryResult.data?.next_incoming_eta ?? null,
     no_box_needed: product.no_box_needed,
+    on_hand_quantity: calculatedOnHandQuantity,
     packingBoxes,
     parts,
     primary_showroom_exclusion_reason:

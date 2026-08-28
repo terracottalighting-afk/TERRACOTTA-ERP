@@ -8,6 +8,7 @@ import { CustomerOrderControls } from "@/components/customers/customer-order-con
 import { CustomerInvoiceControls } from "@/components/customers/customer-invoice-controls";
 import { AddCustomerForm } from "@/components/customers/add-customer-form";
 import { EditAccountProfileForm } from "@/components/customers/edit-account-profile-form";
+import { EditBillingCreditForm } from "@/components/customers/edit-billing-credit-form";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { FinancialInvoiceControls } from "@/components/financial/financial-invoice-controls";
 import { ProductDetailPartsTable } from "@/components/products/product-detail-parts-table";
@@ -14684,189 +14685,6 @@ async function getDefaultFreightPolicy(customerId: string) {
   return data as FreightPolicy | null;
 }
 
-async function EditBillingCreditForm({
-  customerId,
-  error,
-}: {
-  customerId?: string;
-  error?: string;
-}) {
-  if (!customerId) {
-    return (
-      <ModulePlaceholder moduleName="Edit Billing / Credit requires a selected customer" />
-    );
-  }
-
-  const dashboard = await getCustomerDashboard(customerId);
-  const customer = dashboard.customer;
-  const billing = dashboard.billing;
-  const supabase = createSupabaseAdminClient();
-  const { data: billingAddress, error: billingAddressError } = await supabase
-    .from("customer_location")
-    .select(
-      "id, location_name, address_line_1, address_line_2, city, state_province, postal_code, country_code",
-    )
-    .eq("customer_account_id", customerId)
-    .eq("is_billing_address", true)
-    .eq("status", "active")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-
-  if (billingAddressError) {
-    throw new Error(billingAddressError.message);
-  }
-
-  return (
-    <section className="dashboard-panel">
-      <section className="form-header">
-        <div>
-          <span className="eyebrow">Customer Account</span>
-          <h2>Edit Billing / Credit</h2>
-          <p>{customer.name}</p>
-        </div>
-        <Link
-          className="secondary-action secondary-action--light"
-          href={`/?customer=${customerId}`}
-        >
-          Back to Account
-        </Link>
-      </section>
-
-      {error ? (
-        <div className="form-alert">
-          {error === "missing_required"
-            ? "Customer is required."
-            : decodeURIComponent(error)}
-        </div>
-      ) : null}
-
-      <form action={updateBillingCreditAction} className="customer-form">
-        <input name="customer_id" type="hidden" value={customerId} />
-        <input
-          name="billing_profile_id"
-          type="hidden"
-          value={billing?.id ?? ""}
-        />
-        <input
-          name="billing_location_id"
-          type="hidden"
-          value={billingAddress?.id ?? ""}
-        />
-        <fieldset>
-          <legend>Billing / Credit</legend>
-          <div className="form-grid">
-            <label>
-              Payment Terms
-              <select
-                defaultValue={billing?.payment_terms ?? "Prepaid / No Credit"}
-                name="payment_terms"
-              >
-                <option value="Prepaid / No Credit">Prepaid / No Credit</option>
-                <option value="Net 30">Net 30</option>
-                <option value="Net 60 Days">Net 60 Days</option>
-                <option value="Net 90">Net 90</option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
-            <label>
-              Payment Days
-              <input
-                defaultValue={billing?.payment_days ?? 0}
-                min="0"
-                name="payment_days"
-                step="1"
-                type="number"
-              />
-            </label>
-            <label>
-              Credit Limit
-              <input
-                defaultValue={billing?.credit_limit ?? ""}
-                min="0"
-                name="credit_limit"
-                placeholder="Blank uses system default"
-                step="0.01"
-                type="number"
-              />
-            </label>
-            <label>
-              Invoice Email
-              <input
-                defaultValue={
-                  billing?.default_statement_email ??
-                  customer.billing_email ??
-                  ""
-                }
-                name="default_statement_email"
-                type="email"
-              />
-            </label>
-          </div>
-        </fieldset>
-        <fieldset>
-          <legend>Billing Address</legend>
-          <p className="fieldset-note">
-            This address is available as a saved Bill-to address when entering
-            or editing orders.
-          </p>
-          <div className="form-grid">
-            <label>
-              Billing Address Name
-              <input
-                defaultValue={
-                  billingAddress?.location_name ?? "Billing Address"
-                }
-                name="billing_location_name"
-              />
-            </label>
-            <label>
-              Address Line 1
-              <input
-                defaultValue={billingAddress?.address_line_1 ?? ""}
-                name="address_line_1"
-              />
-            </label>
-            <label>
-              Address Line 2
-              <input
-                defaultValue={billingAddress?.address_line_2 ?? ""}
-                name="address_line_2"
-              />
-            </label>
-            <label>
-              City
-              <input defaultValue={billingAddress?.city ?? ""} name="city" />
-            </label>
-            <LocationRegionFields
-              defaultCountryCode={billingAddress?.country_code ?? "USA"}
-              defaultStateProvince={billingAddress?.state_province ?? ""}
-            />
-            <label>
-              Postal Code
-              <input
-                defaultValue={billingAddress?.postal_code ?? ""}
-                name="postal_code"
-              />
-            </label>
-          </div>
-        </fieldset>
-        <div className="form-actions">
-          <button className="primary-action" type="submit">
-            Save Billing / Credit
-          </button>
-          <Link
-            className="secondary-action secondary-action--light"
-            href={`/?customer=${customerId}`}
-          >
-            Cancel
-          </Link>
-        </div>
-      </form>
-    </section>
-  );
-}
-
 async function AddLocationForm({
   customerId,
   error,
@@ -21049,6 +20867,8 @@ export async function ErpRouter({
           <EditBillingCreditForm
             customerId={params.customer}
             error={params.error}
+            loadCustomerDashboard={getCustomerDashboard}
+            saveAction={updateBillingCreditAction}
           />
         ) : activeModule === "add-contact" ? (
           <AddContactForm customerId={params.customer} error={params.error} />

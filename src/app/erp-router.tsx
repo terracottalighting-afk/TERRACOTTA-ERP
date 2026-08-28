@@ -18,11 +18,11 @@ import { EditFreightForm } from "@/components/customers/edit-freight-form";
 import { EditLocationForm } from "@/components/customers/edit-location-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
-import { FinancialDashboardTabs } from "@/components/financial/financial-dashboard-tabs";
 import { InvoiceConfirmationPage } from "@/components/financial/invoice-confirmation-page";
 import { InvoiceCreatePage } from "@/components/financial/invoice-create-page";
 import { InvoiceCreatedPage } from "@/components/financial/invoice-created-page";
 import { InvoiceDocumentPage } from "@/components/financial/invoice-document-page";
+import { InvoiceQueuePage } from "@/components/financial/invoice-queue-page";
 import { PaymentEntryPage } from "@/components/financial/payment-entry-page";
 import { PaymentDetailPage } from "@/components/financial/payment-detail-page";
 import { ProductDetailPartsTable } from "@/components/products/product-detail-parts-table";
@@ -8374,56 +8374,6 @@ async function getInvoiceQueuePackingLists() {
         ?.payment_terms ?? "Prepaid / No Credit",
     brandSummaries: brandSummariesByPackingList.get(packingList.id) ?? [],
   }));
-}
-
-async function InvoiceQueuePage({
-  error,
-  financialTab,
-  financialFilters,
-  notice,
-}: {
-  error?: string;
-  financialTab?: string;
-  financialFilters: {
-    page?: string;
-    pageSize?: string;
-    query?: string;
-    advanced?: string;
-    dateFrom?: string;
-    dateTo?: string;
-    status?: string;
-    customer?: string;
-    skus?: string;
-  };
-  notice?: string;
-}) {
-  const packingLists = await getInvoiceQueuePackingLists();
-  return (
-    <section className="dashboard-panel">
-      <section className="record-hero">
-        <div>
-          <Link className="subtle-link" href="/">
-            ERP Dashboard
-          </Link>
-          <div className="record-title-row">
-            <h2>Financial Dashboard</h2>
-          </div>
-          <p>Financial work is organized by invoice and payment status.</p>
-        </div>
-      </section>
-      {error ? (
-        <div className="form-alert">{decodeURIComponent(error)}</div>
-      ) : null}
-      {notice ? (
-        <div className="notice-banner">{decodeURIComponent(notice)}</div>
-      ) : null}
-      <FinancialDashboardTabs
-        financialFilters={financialFilters}
-        financialTab={financialTab}
-        packingLists={packingLists}
-      />
-    </section>
-  );
 }
 
 async function getPaymentEntry(invoiceId: string) {
@@ -17659,6 +17609,7 @@ export async function ErpRouter({
               customer: params.financial_customer,
               skus: params.financial_skus,
             }}
+            loadPackingLists={getInvoiceQueuePackingLists}
             notice={params.notice}
           />
         ) : activeModule === "ar" ? (

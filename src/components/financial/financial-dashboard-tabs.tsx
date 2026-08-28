@@ -16,7 +16,7 @@ type FinancialInvoiceFilters = {
   status?: string;
 };
 
-type FinancialDashboardPackingList = {
+export type FinancialDashboardPackingList = {
   brandSummaries: {
     brand_id: string;
     brand_name: string;

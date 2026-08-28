@@ -1098,7 +1098,8 @@ input {
   overflow-x: auto;
 }
 
-.tab-nav a {
+.tab-nav a,
+.tab-nav .disabled-tab {
   border-bottom: 3px solid transparent;
   color: var(--muted);
   font-size: 13px;
@@ -1108,9 +1109,14 @@ input {
 }
 
 .tab-nav a[aria-current="page"],
+.tab-nav .disabled-tab[aria-current="page"],
 .tab-nav a:hover {
   border-bottom-color: var(--accent);
   color: var(--foreground);
+}
+
+.tab-nav .disabled-tab {
+  opacity: 0.55;
 }
 
 .detail-section {

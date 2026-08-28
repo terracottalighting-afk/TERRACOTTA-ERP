@@ -163,6 +163,7 @@ export type SearchParams = Promise<{
   part_action?: string;
   selected_parts?: string;
   selected_vendor_products?: string;
+  setup?: string;
   product_tab?: string;
   spec_section?: string;
   vendor_action?: string;
@@ -4262,6 +4263,7 @@ async function uploadProductImageAction(formData: FormData) {
 
   const supabase = createSupabaseAdminClient();
   const productId = String(formData.get("product_id") ?? "").trim();
+  const setupFlow = formData.get("setup_flow") === "product";
   const returnModule = String(formData.get("return_module") ?? "").trim();
   const returnToPart = returnModule === "product-parts";
   const displayName = String(formData.get("display_name") ?? "").trim();
@@ -4281,7 +4283,7 @@ async function uploadProductImageAction(formData: FormData) {
     ? (requestedCategory as ProductImageCategory)
     : "stock";
   const imageFile = formData.get("image_file");
-  const baseUrl = `/?module=edit-product-images&product=${productId}&image_category=${imageCategory}${returnToPart ? "&return_module=product-parts" : ""}`;
+  const baseUrl = `/?module=edit-product-images&product=${productId}&image_category=${imageCategory}${returnToPart ? "&return_module=product-parts" : ""}${setupFlow ? "&setup=product" : ""}`;
 
   if (!productId || !(imageFile instanceof File) || imageFile.size === 0) {
     redirect(
@@ -4410,12 +4412,13 @@ async function updateProductImagesAction(formData: FormData) {
 
   const supabase = createSupabaseAdminClient();
   const productId = String(formData.get("product_id") ?? "").trim();
+  const setupFlow = formData.get("setup_flow") === "product";
   const returnCategory = String(
     formData.get("return_image_category") ?? "stock",
   ).trim();
   const returnModule = String(formData.get("return_module") ?? "").trim();
   const returnToPart = returnModule === "product-parts";
-  const baseUrl = `/?module=edit-product-images&product=${productId}&image_category=${returnCategory}${returnToPart ? "&return_module=product-parts" : ""}`;
+  const baseUrl = `/?module=edit-product-images&product=${productId}&image_category=${returnCategory}${returnToPart ? "&return_module=product-parts" : ""}${setupFlow ? "&setup=product" : ""}`;
 
   if (!productId) {
     redirect(`${baseUrl}&error=missing_required`);
@@ -4579,6 +4582,7 @@ async function updateProductProfileAction(formData: FormData) {
 
   const supabase = createSupabaseAdminClient();
   const productId = String(formData.get("product_id") ?? "").trim();
+  const setupFlow = formData.get("setup_flow") === "product";
   const sku = String(formData.get("sku") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const brandId = String(formData.get("brand_id") ?? "").trim();
@@ -4679,13 +4683,18 @@ async function updateProductProfileAction(formData: FormData) {
     );
   }
 
-  redirect(`/?module=products&product=${productId}`);
+  redirect(
+    setupFlow
+      ? `/?module=edit-product-specs&product=${productId}&spec_section=dimensions&setup=product`
+      : `/?module=products&product=${productId}`,
+  );
 }
 
 async function createProductAction(formData: FormData) {
   "use server";
 
   const supabase = createSupabaseAdminClient();
+  const setupFlow = formData.get("setup_flow") === "product";
   const sku = String(formData.get("sku") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   const brandId = String(formData.get("brand_id") ?? "").trim();
@@ -4783,7 +4792,11 @@ async function createProductAction(formData: FormData) {
     redirect(`/?module=add-product&error=${encodeURIComponent(error.message)}`);
   }
 
-  redirect(`/?module=products&product=${data.id}`);
+  redirect(
+    setupFlow
+      ? `/?module=edit-product-specs&product=${data.id}&spec_section=dimensions&setup=product`
+      : `/?module=products&product=${data.id}`,
+  );
 }
 
 async function updateProductSpecsAction(formData: FormData) {
@@ -4791,6 +4804,7 @@ async function updateProductSpecsAction(formData: FormData) {
 
   const supabase = createSupabaseAdminClient();
   const productId = String(formData.get("product_id") ?? "").trim();
+  const setupFlow = formData.get("setup_flow") === "product";
   const specSection = String(
     formData.get("spec_section") ?? "dimensions",
   ).trim();
@@ -4936,7 +4950,11 @@ async function updateProductSpecsAction(formData: FormData) {
     }
   }
 
-  redirect(`/?module=products&product=${productId}&product_tab=specs`);
+  redirect(
+    setupFlow
+      ? `/?module=edit-product-images&product=${productId}&setup=product`
+      : `/?module=products&product=${productId}&product_tab=specs`,
+  );
 }
 
 async function updateProductBoxesAction(formData: FormData) {
@@ -4944,6 +4962,7 @@ async function updateProductBoxesAction(formData: FormData) {
 
   const supabase = createSupabaseAdminClient();
   const productId = String(formData.get("product_id") ?? "").trim();
+  const setupFlow = formData.get("setup_flow") === "product";
 
   if (!productId) {
     redirect(
@@ -5085,7 +5104,11 @@ async function updateProductBoxesAction(formData: FormData) {
     }
   }
 
-  redirect(`/?module=products&product=${productId}&product_tab=packing`);
+  redirect(
+    setupFlow
+      ? `/?module=edit-product-inventory&product=${productId}&setup=product`
+      : `/?module=products&product=${productId}&product_tab=packing`,
+  );
 }
 
 async function addProductBoxAction(formData: FormData) {
@@ -5093,6 +5116,7 @@ async function addProductBoxAction(formData: FormData) {
 
   const supabase = createSupabaseAdminClient();
   const productId = String(formData.get("product_id") ?? "").trim();
+  const setupFlow = formData.get("setup_flow") === "product";
 
   if (!productId) {
     redirect(
@@ -5160,7 +5184,11 @@ async function addProductBoxAction(formData: FormData) {
     }
   }
 
-  redirect(`/?module=products&product=${productId}&product_tab=packing`);
+  redirect(
+    setupFlow
+      ? `/?module=edit-product-boxes&product=${productId}&setup=product`
+      : `/?module=products&product=${productId}&product_tab=packing`,
+  );
 }
 
 async function updateProductInventoryAction(formData: FormData) {
@@ -5168,6 +5196,7 @@ async function updateProductInventoryAction(formData: FormData) {
 
   const supabase = createSupabaseAdminClient();
   const productId = String(formData.get("product_id") ?? "").trim();
+  const setupFlow = formData.get("setup_flow") === "product";
   const returnModule = String(formData.get("return_module") ?? "").trim();
   const returnToPart = returnModule === "product-parts";
   const returnUrl = returnToPart
@@ -5510,7 +5539,11 @@ async function updateProductInventoryAction(formData: FormData) {
     }
   }
 
-  redirect(returnUrl);
+  redirect(
+    setupFlow && !returnToPart
+      ? `/?module=edit-product-parts&product=${productId}&part_action=add&setup=product`
+      : returnUrl,
+  );
 }
 
 async function updateProductPartsAction(formData: FormData) {
@@ -5518,6 +5551,7 @@ async function updateProductPartsAction(formData: FormData) {
 
   const supabase = createSupabaseAdminClient();
   const initialProductId = String(formData.get("product_id") ?? "").trim();
+  const setupFlow = formData.get("setup_flow") === "product";
   const selectedParentProductId = String(
     formData.get("parent_product_id") ?? "",
   ).trim();
@@ -5645,7 +5679,11 @@ async function updateProductPartsAction(formData: FormData) {
       }
     }
 
-    redirect(`/?module=products&product=${productId}&product_tab=parts`);
+    redirect(
+      setupFlow
+        ? `/?module=edit-product-vendors&product=${productId}&vendor_action=add&setup=product`
+        : `/?module=products&product=${productId}&product_tab=parts`,
+    );
   }
 
   if (partSaveAction === "delete" && selectedPartIds.length > 0) {
@@ -5943,7 +5981,11 @@ async function updateProductPartsAction(formData: FormData) {
     }
   }
 
-  redirect(`/?module=products&product=${productId}&product_tab=parts`);
+  redirect(
+    setupFlow
+      ? `/?module=edit-product-vendors&product=${productId}&vendor_action=add&setup=product`
+      : `/?module=products&product=${productId}&product_tab=parts`,
+  );
 }
 
 async function deletePartParentLinkAction(formData: FormData) {
@@ -5977,13 +6019,18 @@ async function updateProductVendorsAction(formData: FormData) {
 
   const supabase = createSupabaseAdminClient();
   const productId = String(formData.get("product_id") ?? "").trim();
+  const setupFlow = formData.get("setup_flow") === "product";
   const action = String(formData.get("vendor_action") ?? "edit").trim();
   const selectedIds = formData
     .getAll("selected_vendor_product_ids")
     .map((value) => String(value).trim())
     .filter(Boolean);
   const returnToVendors = () =>
-    redirect(`/?module=products&product=${productId}&product_tab=vendors`);
+    redirect(
+      setupFlow
+        ? `/?module=products&product=${productId}`
+        : `/?module=products&product=${productId}&product_tab=vendors`,
+    );
   const redirectWithError = (message: string) =>
     redirect(
       `/?module=edit-product-vendors&product=${productId}&vendor_action=${action}&selected_vendor_products=${selectedIds.join(",")}&error=${encodeURIComponent(message)}`,
@@ -9432,6 +9479,7 @@ export async function ErpRouter({
             error={params.error}
             loadProduct={getProductDetail}
             productId={params.product}
+            setupFlow={params.setup === "product"}
             styleOptions={productStyleOptions}
             updateProductProfileAction={updateProductProfileAction}
           />
@@ -9440,6 +9488,7 @@ export async function ErpRouter({
             error={params.error}
             loadProduct={getProductDetail}
             productId={params.product}
+            setupFlow={params.setup === "product"}
             specSection={params.spec_section ?? "dimensions"}
             updateProductSpecsAction={updateProductSpecsAction}
           />
@@ -9448,6 +9497,7 @@ export async function ErpRouter({
             error={params.error}
             loadProduct={getProductDetail}
             productId={params.product}
+            setupFlow={params.setup === "product"}
             updateProductBoxesAction={updateProductBoxesAction}
           />
         ) : activeModule === "add-product-box" ? (
@@ -9456,6 +9506,7 @@ export async function ErpRouter({
             error={params.error}
             loadProduct={getProductDetail}
             productId={params.product}
+            setupFlow={params.setup === "product"}
           />
         ) : activeModule === "edit-product-inventory" ? (
           <EditProductInventoryForm
@@ -9463,6 +9514,7 @@ export async function ErpRouter({
             loadProduct={getProductDetail}
             productId={params.product}
             returnModule={params.return_module}
+            setupFlow={params.setup === "product"}
             updateProductInventoryAction={updateProductInventoryAction}
             warehouseLocationOptions={warehouseLocationOptions}
             warehouseOptions={warehouseOptions}
@@ -9475,6 +9527,7 @@ export async function ErpRouter({
             notice={params.notice}
             productId={params.product}
             returnModule={params.return_module}
+            setupFlow={params.setup === "product"}
             updateProductImagesAction={updateProductImagesAction}
             uploadProductImageAction={uploadProductImageAction}
           />
@@ -9485,6 +9538,7 @@ export async function ErpRouter({
             partAction={params.part_action}
             productId={params.product}
             selectedParts={params.selected_parts}
+            setupFlow={params.setup === "product"}
             updateProductPartsAction={updateProductPartsAction}
           />
         ) : activeModule === "edit-product-vendors" ? (
@@ -9493,6 +9547,7 @@ export async function ErpRouter({
             loadProduct={getProductDetail}
             productId={params.product}
             selectedVendorProducts={params.selected_vendor_products}
+            setupFlow={params.setup === "product"}
             updateProductVendorsAction={updateProductVendorsAction}
             vendorAction={params.vendor_action}
           />

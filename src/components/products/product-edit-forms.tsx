@@ -126,6 +126,116 @@ const productPartRoleOptions = [
   "Others",
 ];
 
+type ProductSetupStep =
+  | "profile"
+  | "specs"
+  | "images"
+  | "packing"
+  | "inventory"
+  | "parts"
+  | "vendors"
+  | "done";
+
+function ProductSetupGuide({
+  currentStep,
+  productId,
+}: {
+  currentStep: ProductSetupStep;
+  productId?: string;
+}) {
+  const setupSuffix = "&setup=product";
+  const steps: { key: ProductSetupStep; href?: string; label: string }[] = [
+    {
+      key: "profile",
+      href: productId
+        ? `/?module=edit-product-profile&product=${productId}${setupSuffix}`
+        : undefined,
+      label: "Profile",
+    },
+    {
+      key: "specs",
+      href: productId
+        ? `/?module=edit-product-specs&product=${productId}&spec_section=dimensions${setupSuffix}`
+        : undefined,
+      label: "Specs",
+    },
+    {
+      key: "images",
+      href: productId
+        ? `/?module=edit-product-images&product=${productId}${setupSuffix}`
+        : undefined,
+      label: "Images",
+    },
+    {
+      key: "packing",
+      href: productId
+        ? `/?module=add-product-box&product=${productId}${setupSuffix}`
+        : undefined,
+      label: "Packing / Boxes",
+    },
+    {
+      key: "inventory",
+      href: productId
+        ? `/?module=edit-product-inventory&product=${productId}${setupSuffix}`
+        : undefined,
+      label: "Inventory",
+    },
+    {
+      key: "parts",
+      href: productId
+        ? `/?module=edit-product-parts&product=${productId}&part_action=add${setupSuffix}`
+        : undefined,
+      label: "Parts",
+    },
+    {
+      key: "vendors",
+      href: productId
+        ? `/?module=edit-product-vendors&product=${productId}&vendor_action=add${setupSuffix}`
+        : undefined,
+      label: "Vendors",
+    },
+    {
+      key: "done",
+      href: productId ? `/?module=products&product=${productId}` : undefined,
+      label: "Review",
+    },
+  ];
+
+  return (
+    <section className="info-card">
+      <div className="card-heading">
+        <h3>Product Setup</h3>
+        {productId ? (
+          <Link className="text-action" href={`/?module=products&product=${productId}`}>
+            Product Detail
+          </Link>
+        ) : null}
+      </div>
+      <nav className="tab-nav" aria-label="Product setup steps">
+        {steps.map((step) =>
+          step.href ? (
+            <Link
+              aria-current={currentStep === step.key ? "page" : undefined}
+              href={step.href}
+              key={step.key}
+            >
+              {step.label}
+            </Link>
+          ) : (
+            <span
+              aria-current={currentStep === step.key ? "page" : undefined}
+              className="disabled-tab"
+              key={step.key}
+            >
+              {step.label}
+            </span>
+          ),
+        )}
+      </nav>
+    </section>
+  );
+}
+
 export function AddProductForm({
   brandOptions,
   categoryOptions,
@@ -155,7 +265,10 @@ export function AddProductForm({
 
       {error ? <div className="form-alert">{decodeURIComponent(error)}</div> : null}
 
+      <ProductSetupGuide currentStep="profile" />
+
       <form action={createProductAction} className="customer-form">
+        <input name="setup_flow" type="hidden" value="product" />
         <fieldset>
           <legend>Core Product</legend>
           <div className="form-grid">
@@ -275,7 +388,7 @@ export function AddProductForm({
         </fieldset>
 
         <div className="form-actions">
-          <button type="submit">Create Product</button>
+          <button type="submit">Create Product and Continue to Specs</button>
           <Link className="secondary-action secondary-action--light" href="/?module=products">
             Cancel
           </Link>
@@ -291,6 +404,7 @@ export async function EditProductImagesForm({
   notice,
   productId,
   returnModule,
+  setupFlow,
   loadProduct,
   uploadProductImageAction,
   updateProductImagesAction,
@@ -300,17 +414,19 @@ export async function EditProductImagesForm({
   notice?: string;
   productId?: string;
   returnModule?: string;
+  setupFlow?: boolean;
   loadProduct: LoadProduct;
   uploadProductImageAction: FormAction;
   updateProductImagesAction: FormAction;
 }) {
   const product = productId ? await loadProduct(productId) : null;
   const returnToPart = returnModule === "product-parts";
+  const setupSuffix = setupFlow ? "&setup=product" : "";
   const imagesHref = returnToPart
     ? `/?module=product-parts&part=${productId}&product_tab=images`
     : `/?module=products&product=${productId}&product_tab=images`;
   const editImagesHref = (category: ProductImageCategory) =>
-    `/?module=edit-product-images&product=${productId}&image_category=${category}${returnToPart ? "&return_module=product-parts" : ""}`;
+    `/?module=edit-product-images&product=${productId}&image_category=${category}${returnToPart ? "&return_module=product-parts" : ""}${setupSuffix}`;
 
   if (!productId || !product) {
     return (
@@ -364,6 +480,9 @@ export async function EditProductImagesForm({
       {notice ? (
         <div className="form-notice">{decodeURIComponent(notice)}</div>
       ) : null}
+      {setupFlow ? (
+        <ProductSetupGuide currentStep="images" productId={product.id} />
+      ) : null}
 
       <nav className="tab-nav" aria-label="Image edit categories">
         {imageCategories.map((category) => (
@@ -379,6 +498,9 @@ export async function EditProductImagesForm({
 
       <form action={uploadProductImageAction} className="customer-form">
         <input name="product_id" type="hidden" value={product.id} />
+        {setupFlow ? (
+          <input name="setup_flow" type="hidden" value="product" />
+        ) : null}
         {returnToPart ? (
           <input name="return_module" type="hidden" value="product-parts" />
         ) : null}
@@ -436,6 +558,9 @@ export async function EditProductImagesForm({
           type="hidden"
           value={activeCategory}
         />
+        {setupFlow ? (
+          <input name="setup_flow" type="hidden" value="product" />
+        ) : null}
         {returnToPart ? (
           <input name="return_module" type="hidden" value="product-parts" />
         ) : null}
@@ -531,6 +656,14 @@ export async function EditProductImagesForm({
           >
             Cancel
           </Link>
+          {setupFlow ? (
+            <Link
+              className="primary-action"
+              href={`/?module=add-product-box&product=${product.id}&setup=product`}
+            >
+              Continue to Packing
+            </Link>
+          ) : null}
         </div>
       </form>
     </section>
@@ -542,6 +675,7 @@ export async function EditProductPartsForm({
   partAction,
   productId,
   selectedParts,
+  setupFlow,
   loadProduct,
   updateProductPartsAction,
 }: {
@@ -549,6 +683,7 @@ export async function EditProductPartsForm({
   partAction?: string;
   productId?: string;
   selectedParts?: string;
+  setupFlow?: boolean;
   loadProduct: LoadProduct;
   updateProductPartsAction: FormAction;
 }) {
@@ -637,9 +772,15 @@ export async function EditProductPartsForm({
       {error ? (
         <div className="form-alert">{decodeURIComponent(error)}</div>
       ) : null}
+      {setupFlow && product ? (
+        <ProductSetupGuide currentStep="parts" productId={product.id} />
+      ) : null}
 
       <form action={updateProductPartsAction} className="customer-form">
         <input name="product_id" type="hidden" value={product?.id ?? ""} />
+        {setupFlow ? (
+          <input name="setup_flow" type="hidden" value="product" />
+        ) : null}
 
         <fieldset>
           <legend>Parent Product</legend>
@@ -756,6 +897,14 @@ export async function EditProductPartsForm({
           >
             Cancel
           </Link>
+          {setupFlow && product ? (
+            <Link
+              className="primary-action"
+              href={`/?module=edit-product-vendors&product=${product.id}&vendor_action=add&setup=product`}
+            >
+              Continue to Vendors
+            </Link>
+          ) : null}
         </div>
       </form>
     </section>
@@ -934,6 +1083,7 @@ export async function EditProductVendorsForm({
   productId,
   selectedVendorProducts,
   vendorAction,
+  setupFlow,
   loadProduct,
   updateProductVendorsAction,
 }: {
@@ -941,6 +1091,7 @@ export async function EditProductVendorsForm({
   productId?: string;
   selectedVendorProducts?: string;
   vendorAction?: string;
+  setupFlow?: boolean;
   loadProduct: LoadProduct;
   updateProductVendorsAction: FormAction;
 }) {
@@ -997,9 +1148,15 @@ export async function EditProductVendorsForm({
       {error ? (
         <div className="form-alert">{decodeURIComponent(error)}</div>
       ) : null}
+      {setupFlow ? (
+        <ProductSetupGuide currentStep="vendors" productId={product.id} />
+      ) : null}
       <form action={updateProductVendorsAction} className="customer-form">
         <input name="product_id" type="hidden" value={product.id} />
         <input name="vendor_action" type="hidden" value={action} />
+        {setupFlow ? (
+          <input name="setup_flow" type="hidden" value="product" />
+        ) : null}
         {selectedIds.map((id) => (
           <input
             key={id}
@@ -1142,6 +1299,14 @@ export async function EditProductVendorsForm({
           >
             Cancel
           </Link>
+          {setupFlow ? (
+            <Link
+              className="primary-action"
+              href={`/?module=products&product=${product.id}`}
+            >
+              Finish Setup
+            </Link>
+          ) : null}
         </div>
       </form>
     </section>
@@ -1153,6 +1318,7 @@ export async function EditProductProfileForm({
   categoryOptions,
   error,
   productId,
+  setupFlow,
   styleOptions,
   loadProduct,
   updateProductProfileAction,
@@ -1161,6 +1327,7 @@ export async function EditProductProfileForm({
   categoryOptions: SelectOption[];
   error?: string;
   productId?: string;
+  setupFlow?: boolean;
   styleOptions: SelectOption[];
   loadProduct: LoadProduct;
   updateProductProfileAction: FormAction;
@@ -1203,9 +1370,15 @@ export async function EditProductProfileForm({
       {error ? (
         <div className="form-alert">{decodeURIComponent(error)}</div>
       ) : null}
+      {setupFlow ? (
+        <ProductSetupGuide currentStep="profile" productId={product.id} />
+      ) : null}
 
       <form action={updateProductProfileAction} className="customer-form">
         <input name="product_id" type="hidden" value={product.id} />
+        {setupFlow ? (
+          <input name="setup_flow" type="hidden" value="product" />
+        ) : null}
 
         <fieldset>
           <legend>Core Product</legend>
@@ -1368,7 +1541,9 @@ export async function EditProductProfileForm({
         </fieldset>
 
         <div className="form-actions">
-          <button type="submit">Save Product Profile</button>
+          <button type="submit">
+            {setupFlow ? "Save Profile and Continue to Specs" : "Save Product Profile"}
+          </button>
           <Link
             className="secondary-action secondary-action--light"
             href={`/?module=products&product=${product.id}`}
@@ -1384,12 +1559,14 @@ export async function EditProductProfileForm({
 export async function EditProductSpecsForm({
   error,
   productId,
+  setupFlow,
   specSection = "dimensions",
   loadProduct,
   updateProductSpecsAction,
 }: {
   error?: string;
   productId?: string;
+  setupFlow?: boolean;
   specSection?: string;
   loadProduct: LoadProduct;
   updateProductSpecsAction: FormAction;
@@ -1630,6 +1807,9 @@ export async function EditProductSpecsForm({
       {error ? (
         <div className="form-alert">{decodeURIComponent(error)}</div>
       ) : null}
+      {setupFlow ? (
+        <ProductSetupGuide currentStep="specs" productId={product.id} />
+      ) : null}
 
       <nav className="tab-nav" aria-label="Spec edit sections">
         {[
@@ -1645,7 +1825,7 @@ export async function EditProductSpecsForm({
                 ? "page"
                 : undefined
             }
-            href={`/?module=edit-product-specs&product=${product.id}&spec_section=${tab.key}`}
+            href={`/?module=edit-product-specs&product=${product.id}&spec_section=${tab.key}${setupFlow ? "&setup=product" : ""}`}
             key={tab.key}
           >
             {tab.label}
@@ -1660,6 +1840,9 @@ export async function EditProductSpecsForm({
           type="hidden"
           value={specSection === "other" ? "other" : sectionKey}
         />
+        {setupFlow ? (
+          <input name="setup_flow" type="hidden" value="product" />
+        ) : null}
 
         {specSection === "other" ? (
           <fieldset>
@@ -1902,13 +2085,23 @@ export async function EditProductSpecsForm({
         ) : null}
 
         <div className="form-actions">
-          <button type="submit">Save Product Specs</button>
+          <button type="submit">
+            {setupFlow ? "Save Specs and Continue to Images" : "Save Product Specs"}
+          </button>
           <Link
             className="secondary-action secondary-action--light"
             href={`/?module=products&product=${product.id}&product_tab=specs`}
           >
             Cancel
           </Link>
+          {setupFlow ? (
+            <Link
+              className="secondary-action secondary-action--light"
+              href={`/?module=edit-product-images&product=${product.id}&setup=product`}
+            >
+              Skip to Images
+            </Link>
+          ) : null}
         </div>
       </form>
     </section>
@@ -1918,11 +2111,13 @@ export async function EditProductSpecsForm({
 export async function EditProductBoxesForm({
   error,
   productId,
+  setupFlow,
   loadProduct,
   updateProductBoxesAction,
 }: {
   error?: string;
   productId?: string;
+  setupFlow?: boolean;
   loadProduct: LoadProduct;
   updateProductBoxesAction: FormAction;
 }) {
@@ -1975,9 +2170,15 @@ export async function EditProductBoxesForm({
       {error ? (
         <div className="form-alert">{decodeURIComponent(error)}</div>
       ) : null}
+      {setupFlow ? (
+        <ProductSetupGuide currentStep="packing" productId={product.id} />
+      ) : null}
 
       <form action={updateProductBoxesAction} className="customer-form">
         <input name="product_id" type="hidden" value={product.id} />
+        {setupFlow ? (
+          <input name="setup_flow" type="hidden" value="product" />
+        ) : null}
 
         <fieldset>
           <legend>Packing Specification</legend>
@@ -2113,7 +2314,9 @@ export async function EditProductBoxesForm({
         </fieldset>
 
         <div className="form-actions">
-          <button type="submit">Save Product Boxes</button>
+          <button type="submit">
+            {setupFlow ? "Save Packing and Continue to Inventory" : "Save Product Boxes"}
+          </button>
           <Link
             className="secondary-action secondary-action--light"
             href={`/?module=products&product=${product.id}&product_tab=packing`}
@@ -2129,11 +2332,13 @@ export async function EditProductBoxesForm({
 export async function AddProductBoxForm({
   error,
   productId,
+  setupFlow,
   loadProduct,
   addProductBoxAction,
 }: {
   error?: string;
   productId?: string;
+  setupFlow?: boolean;
   loadProduct: LoadProduct;
   addProductBoxAction: FormAction;
 }) {
@@ -2181,9 +2386,15 @@ export async function AddProductBoxForm({
       {error ? (
         <div className="form-alert">{decodeURIComponent(error)}</div>
       ) : null}
+      {setupFlow ? (
+        <ProductSetupGuide currentStep="packing" productId={product.id} />
+      ) : null}
 
       <form action={addProductBoxAction} className="customer-form">
         <input name="product_id" type="hidden" value={product.id} />
+        {setupFlow ? (
+          <input name="setup_flow" type="hidden" value="product" />
+        ) : null}
 
         <fieldset>
           <legend>Box Information</legend>
@@ -2247,6 +2458,14 @@ export async function AddProductBoxForm({
           >
             Cancel
           </Link>
+          {setupFlow ? (
+            <Link
+              className="primary-action"
+              href={`/?module=edit-product-inventory&product=${product.id}&setup=product`}
+            >
+              Continue to Inventory
+            </Link>
+          ) : null}
         </div>
       </form>
     </section>
@@ -2257,6 +2476,7 @@ export async function EditProductInventoryForm({
   error,
   productId,
   returnModule,
+  setupFlow,
   warehouseLocationOptions,
   warehouseOptions,
   loadProduct,
@@ -2265,6 +2485,7 @@ export async function EditProductInventoryForm({
   error?: string;
   productId?: string;
   returnModule?: string;
+  setupFlow?: boolean;
   warehouseLocationOptions: WarehouseLocationOption[];
   warehouseOptions: SelectOption[];
   loadProduct: LoadProduct;
@@ -2320,9 +2541,15 @@ export async function EditProductInventoryForm({
       {error ? (
         <div className="form-alert">{decodeURIComponent(error)}</div>
       ) : null}
+      {setupFlow && !returnToPart ? (
+        <ProductSetupGuide currentStep="inventory" productId={product.id} />
+      ) : null}
 
       <form action={updateProductInventoryAction} className="customer-form">
         <input name="product_id" type="hidden" value={product.id} />
+        {setupFlow ? (
+          <input name="setup_flow" type="hidden" value="product" />
+        ) : null}
         {returnToPart ? (
           <input name="return_module" type="hidden" value="product-parts" />
         ) : null}
@@ -2546,7 +2773,9 @@ export async function EditProductInventoryForm({
         </fieldset>
 
         <div className="form-actions">
-          <button type="submit">Save Inventory / Locations</button>
+          <button type="submit">
+            {setupFlow ? "Save Inventory and Continue to Parts" : "Save Inventory / Locations"}
+          </button>
           <Link
             className="secondary-action secondary-action--light"
             href={inventoryHref}

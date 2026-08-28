@@ -19,6 +19,7 @@ import { EditLocationForm } from "@/components/customers/edit-location-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { FinancialInvoiceControls } from "@/components/financial/financial-invoice-controls";
+import { InvoiceConfirmationPage } from "@/components/financial/invoice-confirmation-page";
 import { InvoiceCreatePage } from "@/components/financial/invoice-create-page";
 import { InvoiceCreatedPage } from "@/components/financial/invoice-created-page";
 import { InvoiceDocumentPage } from "@/components/financial/invoice-document-page";
@@ -9117,194 +9118,6 @@ async function getPaymentDetail(paymentId: string) {
   };
 }
 
-async function InvoiceConfirmationPage({
-  customerFreightCharge,
-  dropshipAllocations: rawDropshipAllocations,
-  freightAllocations: rawFreightAllocations,
-  invoiceDate,
-  packingListId,
-  paymentDays: rawPaymentDays,
-  paymentTerms,
-  taxAllocations: rawTaxAllocations,
-}: {
-  customerFreightCharge?: string;
-  dropshipAllocations?: string;
-  freightAllocations?: string;
-  invoiceDate?: string;
-  packingListId?: string;
-  paymentDays?: string;
-  paymentTerms?: string;
-  taxAllocations?: string;
-}) {
-  const packingLists = await getInvoiceQueuePackingLists();
-  const packingList = packingLists.find((item) => item.id === packingListId);
-  const paymentDays = Number(rawPaymentDays);
-  const freightCharge = Number(customerFreightCharge);
-  const freightAllocations = parseInvoiceAllocations(rawFreightAllocations);
-  const dropshipAllocations = parseInvoiceAllocations(rawDropshipAllocations);
-  const taxAllocations = parseInvoiceAllocations(rawTaxAllocations);
-  const setupUrl = `/?module=invoice-create&packing_list=${packingListId}`;
-  if (
-    !packingList ||
-    !Number.isInteger(paymentDays) ||
-    paymentDays < 0 ||
-    !Number.isFinite(freightCharge) ||
-    freightCharge < 0 ||
-    !freightAllocations ||
-    !dropshipAllocations ||
-    !taxAllocations
-  ) {
-    return (
-      <section className="dashboard-panel">
-        <div className="form-alert">
-          The invoice setup could not be confirmed. Return to invoice setup and
-          try again.
-        </div>
-        <Link className="secondary-action" href={setupUrl}>
-          Back to Invoice Setup
-        </Link>
-      </section>
-    );
-  }
-
-  const dueDate = invoiceDueDate(
-    packingList.ship_date,
-    paymentDays,
-    invoiceDate || new Date().toISOString().slice(0, 10),
-  );
-  const multipleBrands = packingList.brandSummaries.length > 1;
-  return (
-    <section className="dashboard-panel">
-      <section className="record-hero">
-        <div>
-          <Link className="subtle-link" href={setupUrl}>
-            Back to Invoice Setup
-          </Link>
-          <div className="record-title-row">
-            <h2>Confirm Brand-specific Invoice{multipleBrands ? "s" : ""}</h2>
-          </div>
-          <p>
-            {packingList.packing_list_number} / {packingList.customer_name} /
-            Customer PO {packingList.customer_po_number_snapshot}
-          </p>
-        </div>
-      </section>
-      <section className="invoice-confirmation-summary">
-        <div>
-          <span>Shipment Date</span>
-          <strong>{dateLabel(packingList.ship_date)}</strong>
-        </div>
-        <div>
-          <span>Payment Terms</span>
-          <strong>{paymentTerms || "Upon Receipt"}</strong>
-        </div>
-        <div>
-          <span>Invoice Due Date</span>
-          <strong>{dateLabel(dueDate)}</strong>
-        </div>
-        <div>
-          <span>Customer Freight Charge</span>
-          <strong>{money(freightCharge)}</strong>
-        </div>
-        <p className="fieldset-note">
-          Every brand-specific invoice from this shipment will use the same due
-          date. To change freight, tax, payment terms, or any allocation, return
-          to Invoice Setup.
-        </p>
-      </section>
-      <section className="invoice-confirmation-review">
-        <h3>Brand Invoice Review</h3>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Brand</th>
-                <th>Shipped Product Total</th>
-                <th>Freight</th>
-                <th>Drop-ship Fee</th>
-                <th>Tax</th>
-                <th>Invoice Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {packingList.brandSummaries.map((brand) => {
-                const freight = Number(freightAllocations[brand.brand_id] ?? 0);
-                const dropship = Number(
-                  dropshipAllocations[brand.brand_id] ?? 0,
-                );
-                const tax = Number(taxAllocations[brand.brand_id] ?? 0);
-                return (
-                  <tr key={brand.brand_id}>
-                    <td>{brand.brand_name}</td>
-                    <td>{money(brand.subtotal_amount)}</td>
-                    <td>{money(freight)}</td>
-                    <td>{money(dropship)}</td>
-                    <td>{money(tax)}</td>
-                    <td>
-                      {money(brand.subtotal_amount + freight + dropship + tax)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <form
-        action={createInvoicesFromPackingListAction}
-        className="form-actions"
-      >
-        <input name="packing_list_id" type="hidden" value={packingList.id} />
-        <input
-          name="invoice_date"
-          type="hidden"
-          value={invoiceDate || new Date().toISOString().slice(0, 10)}
-        />
-        <input
-          name="payment_terms"
-          type="hidden"
-          value={paymentTerms || "Upon Receipt"}
-        />
-        <input name="payment_days" type="hidden" value={paymentDays} />
-        <input
-          name="customer_freight_charge"
-          type="hidden"
-          value={freightCharge}
-        />
-        {packingList.brandSummaries.map((brand) => (
-          <Fragment key={brand.brand_id}>
-            <input name="brand_id" type="hidden" value={brand.brand_id} />
-            <input
-              name={`freight_${brand.brand_id}`}
-              type="hidden"
-              value={freightAllocations[brand.brand_id] ?? 0}
-            />
-            <input
-              name={`dropship_${brand.brand_id}`}
-              type="hidden"
-              value={dropshipAllocations[brand.brand_id] ?? 0}
-            />
-            <input
-              name={`tax_${brand.brand_id}`}
-              type="hidden"
-              value={taxAllocations[brand.brand_id] ?? 0}
-            />
-          </Fragment>
-        ))}
-        <button className="primary-action" type="submit">
-          Create Brand-specific Invoice{multipleBrands ? "s" : ""}
-        </button>
-        <Link
-          className="secondary-action secondary-action--light"
-          href={setupUrl}
-        >
-          Back to Invoice Setup
-        </Link>
-      </form>
-    </section>
-  );
-}
-
 async function getCreatedInvoices(ids: string[]) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
@@ -18387,9 +18200,13 @@ export async function ErpRouter({
             dropshipAllocations={params.invoice_dropship_allocations}
             freightAllocations={params.invoice_freight_allocations}
             invoiceDate={params.invoice_date}
+            invoiceDueDate={invoiceDueDate}
+            loadPackingLists={getInvoiceQueuePackingLists}
             packingListId={params.packing_list}
+            parseInvoiceAllocations={parseInvoiceAllocations}
             paymentDays={params.invoice_payment_days}
             paymentTerms={params.invoice_payment_terms}
+            saveAction={createInvoicesFromPackingListAction}
             taxAllocations={params.invoice_tax_allocations}
           />
         ) : activeModule === "invoice-created" ? (

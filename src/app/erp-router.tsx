@@ -20,6 +20,7 @@ import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { FinancialInvoiceControls } from "@/components/financial/financial-invoice-controls";
 import { InvoiceCreatedPage } from "@/components/financial/invoice-created-page";
+import { PaymentEntryPage } from "@/components/financial/payment-entry-page";
 import { PaymentDetailPage } from "@/components/financial/payment-detail-page";
 import { ProductDetailPartsTable } from "@/components/products/product-detail-parts-table";
 import { ProductLedSpecFields } from "@/components/products/product-led-spec-fields";
@@ -44,7 +45,6 @@ import { ShipmentFreightFields } from "@/components/shipping/shipment-freight-fi
 import { PackingListFreightEditor } from "@/components/shipping/packing-list-freight-editor";
 import { InvoiceTermsAndFreightFields } from "@/components/financial/invoice-terms-and-freight-fields";
 import { InvoiceDocumentControls } from "@/components/financial/invoice-document-controls";
-import { PaymentSettlementFields } from "@/components/financial/payment-settlement-fields";
 import { ModuleNav } from "./module-nav";
 import { EditOrderAddresses } from "@/components/orders/edit-order-addresses";
 import {
@@ -9005,19 +9005,7 @@ function FinancialInvoiceTable({
   );
 }
 
-async function PaymentEntryPage({
-  error,
-  invoiceId,
-  notice,
-}: {
-  error?: string;
-  invoiceId?: string;
-  notice?: string;
-}) {
-  if (!invoiceId)
-    return (
-      <ModulePlaceholder moduleName="Choose an unpaid invoice to record a payment" />
-    );
+async function getPaymentEntry(invoiceId: string) {
   const supabase = createSupabaseAdminClient();
   const { data: invoice, error: invoiceError } = await supabase
     .from("customer_invoice")
@@ -9028,10 +9016,8 @@ async function PaymentEntryPage({
     .maybeSingle();
 
   if (invoiceError) throw new Error(invoiceError.message);
-  if (!invoice) return <ModulePlaceholder moduleName="Invoice not found" />;
+  if (!invoice) return null;
 
-  const balanceDue = Number(invoice.balance_due ?? 0);
-  const canRecordPayment = invoice.invoice_status !== "void" && balanceDue > 0;
   const { data: availableCreditMemos, error: creditMemoError } = await supabase
     .from("credit_memo")
     .select("id, credit_memo_number, issue_date, amount_remaining")
@@ -9041,82 +9027,11 @@ async function PaymentEntryPage({
     .gt("amount_remaining", 0)
     .order("issue_date", { ascending: false });
   if (creditMemoError) throw new Error(creditMemoError.message);
-  const creditMemos = (availableCreditMemos ?? []).map((memo) => ({
-    id: memo.id,
-    creditMemoNumber: memo.credit_memo_number,
-    availableAmount: Number(memo.amount_remaining ?? 0),
-    issueDate: dateLabel(memo.issue_date),
-  }));
 
-  return (
-    <section className="dashboard-panel">
-      <section className="record-hero">
-        <div>
-          <Link
-            className="subtle-link"
-            href="/?module=invoices&financial_tab=active"
-          >
-            Active Invoices
-          </Link>
-          <div className="record-title-row">
-            <h2>Make Payment</h2>
-          </div>
-          <p>
-            {invoice.customer_name_snapshot} / Invoice {invoice.invoice_number}{" "}
-            / {invoice.brand_name_snapshot}
-          </p>
-        </div>
-      </section>
-      {error ? (
-        <div className="form-alert">{decodeURIComponent(error)}</div>
-      ) : null}
-      {notice ? (
-        <div className="form-notice">{decodeURIComponent(notice)}</div>
-      ) : null}
-      <section className="payment-invoice-summary">
-        <div>
-          <span>Invoice Total</span>
-          <strong>{money(Number(invoice.total_amount))}</strong>
-        </div>
-        <div>
-          <span>Balance Due</span>
-          <strong>{money(balanceDue)}</strong>
-        </div>
-        <div>
-          <span>Invoice Date</span>
-          <strong>{dateLabel(invoice.invoice_date)}</strong>
-        </div>
-        <div>
-          <span>Due Date</span>
-          <strong>{dateLabel(invoice.due_date)}</strong>
-        </div>
-      </section>
-      {!canRecordPayment ? (
-        <div className="empty-state">
-          This invoice does not have an amount remaining to pay.
-        </div>
-      ) : (
-        <form action={recordInvoicePaymentAction} className="customer-form">
-          <input name="invoice_id" type="hidden" value={invoice.id} />
-          <PaymentSettlementFields
-            balanceDue={balanceDue}
-            creditMemos={creditMemos}
-          />
-          <div className="form-actions">
-            <button className="primary-action" type="submit">
-              Record Settlement
-            </button>
-            <Link
-              className="secondary-action"
-              href="/?module=invoices&financial_tab=active"
-            >
-              Cancel
-            </Link>
-          </div>
-        </form>
-      )}
-    </section>
-  );
+  return {
+    creditMemos: availableCreditMemos ?? [],
+    invoice,
+  };
 }
 
 async function getPaymentDetail(paymentId: string) {
@@ -18791,7 +18706,9 @@ export async function ErpRouter({
           <PaymentEntryPage
             error={params.error}
             invoiceId={params.invoice}
+            loadPaymentEntry={getPaymentEntry}
             notice={params.notice}
+            saveAction={recordInvoicePaymentAction}
           />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview

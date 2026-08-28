@@ -326,7 +326,9 @@ input {
 .dashboard-panel {
   display: grid;
   gap: 16px;
+  max-width: 100%;
   min-width: 0;
+  overflow: hidden;
   padding: 18px;
 }
 
@@ -373,8 +375,10 @@ input {
 .list-actions {
   align-items: center;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+  min-width: 0;
 }
 
 .list-actions > span {
@@ -1291,7 +1295,8 @@ input {
   align-items: end;
   display: grid;
   gap: 12px;
-  grid-template-columns: auto minmax(360px, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
 }
 
 .inline-select-label {
@@ -2033,6 +2038,7 @@ dd {
 }
 
 .table-wrap {
+  max-width: 100%;
   overflow-x: auto;
 }
 

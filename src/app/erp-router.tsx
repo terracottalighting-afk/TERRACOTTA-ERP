@@ -35,12 +35,12 @@ import { PartDetailDashboard } from "@/components/products/part-detail-dashboard
 import { ProductDetailDashboard } from "@/components/products/product-detail-dashboard";
 import { OrdersOverviewControls } from "@/components/orders/orders-overview-controls";
 import {
-  OrderEntryForm,
   type OrderPartOption,
   type OrderProductOption,
   type OrderShipToOption,
 } from "@/components/orders/order-entry-form";
 import { OrderEntryPartsInitializer } from "@/components/orders/order-entry-parts-initializer";
+import { NewOrderPage } from "@/components/orders/new-order-page";
 import { QuoteDocumentPage } from "@/components/orders/quote-document-page";
 import { PackingListDocumentPage } from "@/components/shipping/packing-list-document-page";
 import { ShipmentSubmitButton } from "@/components/shipping/shipment-submit-button";
@@ -8171,56 +8171,6 @@ async function getOrderEntryData(customerId: string) {
   };
 }
 
-async function NewOrderPage({
-  customerId,
-  error,
-  locationId,
-}: {
-  customerId?: string;
-  error?: string;
-  locationId?: string;
-}) {
-  if (!customerId) {
-    return (
-      <ModulePlaceholder moduleName="Choose a customer account before entering a new order" />
-    );
-  }
-
-  const data = await getOrderEntryData(customerId);
-  if (!data)
-    return <ModulePlaceholder moduleName="Customer account not found" />;
-
-  return (
-    <section className="dashboard-panel">
-      <section className="form-header">
-        <div>
-          <span className="eyebrow">Order Entry</span>
-          <Link
-            className="context-parent-link"
-            href={`/?customer=${customerId}`}
-          >
-            {data.customer.name}
-          </Link>
-          <h2>Enter New Order</h2>
-        </div>
-      </section>
-      {error ? <p className="form-alert">{error}</p> : null}
-      <OrderEntryForm
-        accountName={data.customer.name}
-        customerId={customerId}
-        defaultDiscountPercent={Number(
-          data.customer.default_discount_percent ?? 0,
-        )}
-        defaultLocationId={locationId}
-        parts={data.partOptions}
-        products={data.products}
-        saveAction={createSalesOrderAction}
-        shipToOptions={data.shipToOptions}
-      />
-    </section>
-  );
-}
-
 async function getSalesOrderDetail(
   orderId: string,
 ): Promise<SalesOrderDetail | null> {
@@ -14031,7 +13981,9 @@ export async function ErpRouter({
           <NewOrderPage
             customerId={params.customer}
             error={params.error}
+            getOrderEntryData={getOrderEntryData}
             locationId={params.location}
+            saveAction={createSalesOrderAction}
           />
         ) : activeModule === "create-rga" ? (
           <CreateRgaPage

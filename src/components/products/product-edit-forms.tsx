@@ -161,18 +161,18 @@ function ProductSetupGuide({
       label: "Specs",
     },
     {
-      key: "images",
-      href: productId
-        ? `/?module=edit-product-images&product=${productId}${setupSuffix}`
-        : undefined,
-      label: "Images",
-    },
-    {
       key: "packing",
       href: productId
         ? `/?module=add-product-box&product=${productId}${setupSuffix}`
         : undefined,
       label: "Packing / Boxes",
+    },
+    {
+      key: "images",
+      href: productId
+        ? `/?module=edit-product-images&product=${productId}${setupSuffix}`
+        : undefined,
+      label: "Images",
     },
     {
       key: "inventory",
@@ -660,9 +660,9 @@ export async function EditProductImagesForm({
           {setupFlow ? (
             <Link
               className="primary-action"
-              href={`/?module=add-product-box&product=${product.id}&setup=product`}
+              href={`/?module=edit-product-inventory&product=${product.id}&setup=product`}
             >
-              Continue to Packing
+              Continue to Inventory
             </Link>
           ) : null}
         </div>
@@ -2087,7 +2087,7 @@ export async function EditProductSpecsForm({
 
         <div className="form-actions">
           <button type="submit">
-            {setupFlow ? "Save Specs and Continue to Images" : "Save Product Specs"}
+            {setupFlow ? "Save Specs and Continue to Packing" : "Save Product Specs"}
           </button>
           <Link
             className="secondary-action secondary-action--light"
@@ -2316,7 +2316,7 @@ export async function EditProductBoxesForm({
 
         <div className="form-actions">
           <button type="submit">
-            {setupFlow ? "Save Packing and Continue to Inventory" : "Save Product Boxes"}
+            {setupFlow ? "Save Packing and Continue to Images" : "Save Product Boxes"}
           </button>
           <Link
             className="secondary-action secondary-action--light"

@@ -161,10 +161,10 @@ export function ProductDetailDashboard({
   const tabs = [
     { key: "profile", label: "Profile" },
     { key: "specs", label: "Specs" },
+    { key: "packing", label: "Packing / Boxes" },
     { key: "images", label: "Images" },
     { key: "inventory", label: "Inventory / Locations" },
     { key: "parts", label: "Parts" },
-    { key: "packing", label: "Packing / Boxes" },
     { key: "documents", label: "Documents" },
     { key: "vendors", label: "Vendors" },
   ];

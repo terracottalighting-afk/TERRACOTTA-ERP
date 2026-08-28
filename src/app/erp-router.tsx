@@ -4971,7 +4971,7 @@ async function updateProductSpecsAction(formData: FormData) {
 
   redirect(
     setupFlow
-      ? `/?module=edit-product-images&product=${productId}&setup=product`
+      ? `/?module=add-product-box&product=${productId}&setup=product`
       : `/?module=products&product=${productId}&product_tab=specs`,
   );
 }
@@ -5125,7 +5125,7 @@ async function updateProductBoxesAction(formData: FormData) {
 
   redirect(
     setupFlow
-      ? `/?module=edit-product-inventory&product=${productId}&setup=product`
+      ? `/?module=edit-product-images&product=${productId}&setup=product`
       : `/?module=products&product=${productId}&product_tab=packing`,
   );
 }

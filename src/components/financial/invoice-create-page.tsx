@@ -1,0 +1,190 @@
+import Link from "next/link";
+
+import { InvoiceTermsAndFreightFields } from "@/components/financial/invoice-terms-and-freight-fields";
+import { money } from "@/lib/formatters";
+
+type InvoiceQueuePackingList = {
+  allocated_freight_cost: number;
+  brandSummaries: {
+    brand_id: string;
+    brand_name: string;
+    subtotal_amount: number;
+  }[];
+  customer_name: string;
+  customer_po_number_snapshot: string;
+  dropship_fee_amount: number;
+  id: string;
+  packing_list_number: string;
+  payment_days: number;
+  payment_terms: string;
+  ship_date: string | null;
+  shipping_fee: number;
+};
+
+export async function InvoiceCreatePage({
+  error,
+  loadPackingLists,
+  packingListId,
+  saveAction,
+}: {
+  error?: string;
+  loadPackingLists: () => Promise<InvoiceQueuePackingList[]>;
+  packingListId?: string;
+  saveAction: (formData: FormData) => void | Promise<void>;
+}) {
+  const packingLists = await loadPackingLists();
+  const packingList = packingLists.find((item) => item.id === packingListId);
+  if (!packingList) {
+    return (
+      <section className="dashboard-panel">
+        <div className="form-alert">
+          This packing list is not available for invoice creation.
+        </div>
+        <Link className="secondary-action" href="/?module=invoices">
+          Back to Invoice Work Queue
+        </Link>
+      </section>
+    );
+  }
+  const multipleBrands = packingList.brandSummaries.length > 1;
+
+  return (
+    <section className="dashboard-panel">
+      <section className="record-hero">
+        <div>
+          <Link className="subtle-link" href="/?module=invoices">
+            Invoice Work Queue
+          </Link>
+          <div className="record-title-row">
+            <h2>Invoice Setup</h2>
+          </div>
+          <p>
+            {packingList.packing_list_number} / {packingList.customer_name} /
+            Customer PO {packingList.customer_po_number_snapshot}
+          </p>
+        </div>
+      </section>
+      {error ? (
+        <div className="form-alert">{decodeURIComponent(error)}</div>
+      ) : null}
+      <form action={saveAction} className="customer-form">
+        <input name="packing_list_id" type="hidden" value={packingList.id} />
+        <fieldset>
+          <legend>Invoice Date</legend>
+          <div className="form-grid">
+            <label>
+              Invoice Date
+              <input
+                defaultValue={new Date().toISOString().slice(0, 10)}
+                name="invoice_date"
+                required
+                type="date"
+              />
+            </label>
+          </div>
+        </fieldset>
+        <InvoiceTermsAndFreightFields
+          actualFreightCost={Number(packingList.allocated_freight_cost ?? 0)}
+          defaultCustomerFreightCharge={Number(packingList.shipping_fee ?? 0)}
+          defaultPaymentDays={Number(packingList.payment_days ?? 0)}
+          defaultPaymentTerms={
+            packingList.payment_terms ?? "Prepaid / No Credit"
+          }
+          shipDate={packingList.ship_date}
+        />
+        <fieldset>
+          <legend>Brand Invoice Allocation</legend>
+          {multipleBrands ? (
+            <p className="fieldset-note">
+              Freight and drop-ship charges must be manually allocated across
+              the brand invoices. Tax is entered manually for each brand
+              invoice.
+            </p>
+          ) : (
+            <p className="fieldset-note">
+              One invoice will be created for this brand. Freight is taken from
+              the packing list; enter tax manually if applicable.
+            </p>
+          )}
+          <div className="table-wrap">
+            <table className="editable-table">
+              <thead>
+                <tr>
+                  <th>Brand</th>
+                  <th>Shipped Product Total</th>
+                  <th>Freight</th>
+                  <th>Drop-ship Fee</th>
+                  <th>Tax</th>
+                </tr>
+              </thead>
+              <tbody>
+                {packingList.brandSummaries.map((brand) => (
+                  <tr key={brand.brand_id}>
+                    <td>
+                      {brand.brand_name}
+                      <input
+                        name="brand_id"
+                        type="hidden"
+                        value={brand.brand_id}
+                      />
+                    </td>
+                    <td>{money(brand.subtotal_amount)}</td>
+                    <td>
+                      {multipleBrands ? (
+                        <input
+                          defaultValue={0}
+                          min={0}
+                          name={`freight_${brand.brand_id}`}
+                          step="0.01"
+                          type="number"
+                        />
+                      ) : (
+                        <>
+                          Uses customer freight charge
+                          <input
+                            name={`freight_${brand.brand_id}`}
+                            type="hidden"
+                            value={packingList.shipping_fee ?? 0}
+                          />
+                        </>
+                      )}
+                    </td>
+                    <td>
+                      <input
+                        defaultValue={
+                          multipleBrands ? 0 : packingList.dropship_fee_amount
+                        }
+                        min={0}
+                        name={`dropship_${brand.brand_id}`}
+                        step="0.01"
+                        type="number"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        defaultValue={0}
+                        min={0}
+                        name={`tax_${brand.brand_id}`}
+                        step="0.01"
+                        type="number"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </fieldset>
+        <div className="form-actions">
+          <button type="submit">Continue to Invoice Confirmation</button>
+          <Link
+            className="secondary-action secondary-action--light"
+            href="/?module=invoices"
+          >
+            Cancel
+          </Link>
+        </div>
+      </form>
+    </section>
+  );
+}

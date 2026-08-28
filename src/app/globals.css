@@ -802,7 +802,13 @@ input {
 }
 
 .ship-to-mode-toggle {
-  margin-bottom: 12px;
+  align-items: center;
+  color: var(--muted);
+  display: grid;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 7px;
+  margin: 0 0 20px;
 }
 
 .order-entry-form:has(input[name="is_dropship"]:checked) .ship-to-mode--saved {

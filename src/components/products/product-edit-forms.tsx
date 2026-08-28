@@ -10,6 +10,7 @@ type FormAction = (formData: FormData) => Promise<void>;
 type ProductImageCategory = "stock" | "detail" | "lifestyle" | "drawing" | "other";
 type SelectOption = { id: string; name: string };
 type WarehouseLocationOption = SelectOption & { warehouse_id: string; warehouse_name: string };
+const DEFAULT_BOX_ON_SAVE = "__create_default_box_1__";
 type ProductEditProduct = {
   brand_id: string;
   category_id: string | null;
@@ -2712,8 +2713,20 @@ export async function EditProductInventoryForm({
           <div className="form-grid">
             <label>
               Box
-              <select name="new_product_packing_box_id">
-                <option value="">SKU balance / no specific box</option>
+              <select
+                defaultValue={
+                  product.no_box_needed
+                    ? ""
+                    : product.packingBoxes[0]?.id ?? DEFAULT_BOX_ON_SAVE
+                }
+                name="new_product_packing_box_id"
+              >
+                {product.no_box_needed ? (
+                  <option value="">SKU balance / no specific box</option>
+                ) : null}
+                {!product.no_box_needed && product.packingBoxes.length === 0 ? (
+                  <option value={DEFAULT_BOX_ON_SAVE}>Box 1</option>
+                ) : null}
                 {product.packingBoxes.map((box) => (
                   <option key={box.id} value={box.id}>
                     Box {box.box_sequence}

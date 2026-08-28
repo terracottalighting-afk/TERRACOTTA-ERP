@@ -5213,6 +5213,7 @@ async function addProductBoxAction(formData: FormData) {
 async function updateProductInventoryAction(formData: FormData) {
   "use server";
 
+  const defaultBoxOnSave = "__create_default_box_1__";
   const supabase = createSupabaseAdminClient();
   const productId = String(formData.get("product_id") ?? "").trim();
   const setupFlow = formData.get("setup_flow") === "product";
@@ -5425,7 +5426,7 @@ async function updateProductInventoryAction(formData: FormData) {
     const newLocation = await resolveLocation(newLocationCode, newWarehouseId);
     const newAllocatedQuantity =
       optionalInventoryInteger("new_quantity_allocated") ?? 0;
-    const newPackingBoxId = optionalText("new_product_packing_box_id");
+    let newPackingBoxId = optionalText("new_product_packing_box_id");
 
     if (
       newQuantityOnHand === null ||
@@ -5449,6 +5450,56 @@ async function updateProductInventoryAction(formData: FormData) {
       redirectWithError(
         "New inventory location must have a positive on-hand or allocated quantity.",
       );
+    }
+
+    if (newPackingBoxId === defaultBoxOnSave) {
+      const { data: product, error: productError } = await supabase
+        .from("product")
+        .select("no_box_needed")
+        .eq("id", productId)
+        .maybeSingle();
+
+      if (productError || !product) {
+        redirectWithError(productError?.message ?? "Product was not found.");
+      }
+
+      if (product!.no_box_needed) {
+        redirectWithError("This product does not require a packing box.");
+      }
+
+      const { data: existingBox, error: existingBoxError } = await supabase
+        .from("product_packing_box")
+        .select("id")
+        .eq("product_id", productId)
+        .eq("box_sequence", 1)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      if (existingBoxError) {
+        redirectWithError(existingBoxError.message);
+      }
+
+      if (existingBox) {
+        newPackingBoxId = existingBox.id;
+      } else {
+        const { data: newBox, error: newBoxError } = await supabase
+          .from("product_packing_box")
+          .insert({
+            box_sequence: 1,
+            is_required_for_sale: true,
+            product_id: productId,
+          })
+          .select("id")
+          .single();
+
+        if (newBoxError || !newBox) {
+          redirectWithError(
+            newBoxError?.message ?? "Unable to create the default Box 1.",
+          );
+        }
+
+        newPackingBoxId = newBox!.id;
+      }
     }
 
     const { error } = await supabase.from("inventory_balance").insert({

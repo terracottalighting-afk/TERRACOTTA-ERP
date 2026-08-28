@@ -21,6 +21,7 @@ import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page
 import { FinancialInvoiceControls } from "@/components/financial/financial-invoice-controls";
 import { ProductDetailPartsTable } from "@/components/products/product-detail-parts-table";
 import { ProductLedSpecFields } from "@/components/products/product-led-spec-fields";
+import { ProductEditPlaceholder } from "@/components/products/product-edit-placeholder";
 import { ProductListRows } from "@/components/products/product-list-rows";
 import { ProductPartsEditRows } from "@/components/products/product-parts-edit-rows";
 import { PartParentProductPicker } from "@/components/products/part-parent-product-picker";
@@ -16497,43 +16498,6 @@ function ProductDetailDashboard({
           </div>
         </section>
       ) : null}
-    </section>
-  );
-}
-
-function ProductEditPlaceholder({
-  moduleName,
-  productId,
-}: {
-  moduleName: string;
-  productId?: string;
-}) {
-  return (
-    <section className="dashboard-panel">
-      <section className="record-hero">
-        <div>
-          <Link
-            className="subtle-link"
-            href={
-              productId
-                ? `/?module=products&product=${productId}`
-                : "/?module=products"
-            }
-          >
-            Product Detail
-          </Link>
-          <div className="record-title-row">
-            <h2>{moduleName}</h2>
-          </div>
-          <p>
-            This focused edit page will be built as a separate small form
-            instead of one long product edit screen.
-          </p>
-        </div>
-      </section>
-      <div className="empty-state">
-        Form coming in the next product edit slice.
-      </div>
     </section>
   );
 }

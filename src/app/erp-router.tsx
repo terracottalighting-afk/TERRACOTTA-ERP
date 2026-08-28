@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Fragment } from "react";
 import { LocationRegionFields } from "@/components/customers/location-region-fields";
@@ -4703,6 +4704,27 @@ async function createProductAction(formData: FormData) {
     redirect("/?module=add-product&error=missing_required");
   }
 
+  const productCreatedUrl = (productId: string) =>
+    setupFlow
+      ? `/?module=edit-product-specs&product=${productId}&spec_section=dimensions&setup=product`
+      : `/?module=products&product=${productId}`;
+  const { data: existingProduct, error: existingProductError } = await supabase
+    .from("product")
+    .select("id")
+    .eq("sku", sku)
+    .maybeSingle();
+
+  if (existingProductError) {
+    redirect(
+      `/?module=add-product&error=${encodeURIComponent(existingProductError.message)}`,
+    );
+  }
+
+  if (existingProduct) {
+    revalidatePath("/");
+    redirect(productCreatedUrl(existingProduct.id));
+  }
+
   const optionalText = (key: string) => {
     const value = String(formData.get(key) ?? "").trim();
     return value ? value : null;
@@ -4792,11 +4814,8 @@ async function createProductAction(formData: FormData) {
     redirect(`/?module=add-product&error=${encodeURIComponent(error.message)}`);
   }
 
-  redirect(
-    setupFlow
-      ? `/?module=edit-product-specs&product=${data.id}&spec_section=dimensions&setup=product`
-      : `/?module=products&product=${data.id}`,
-  );
+  revalidatePath("/");
+  redirect(productCreatedUrl(data.id));
 }
 
 async function updateProductSpecsAction(formData: FormData) {

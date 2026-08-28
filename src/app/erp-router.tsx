@@ -8,6 +8,7 @@ import { CustomerOrderControls } from "@/components/customers/customer-order-con
 import { CustomerInvoiceControls } from "@/components/customers/customer-invoice-controls";
 import { AddCustomerForm } from "@/components/customers/add-customer-form";
 import { AddLocationForm } from "@/components/customers/add-location-form";
+import { ContactInfoPage } from "@/components/customers/contact-info-page";
 import { ContactRoleBadges } from "@/components/customers/contact-role-badges";
 import { EditAccountProfileForm } from "@/components/customers/edit-account-profile-form";
 import { EditBillingCreditForm } from "@/components/customers/edit-billing-credit-form";
@@ -15287,107 +15288,6 @@ async function getContactLocationOptions(customerId: string) {
   return (data ?? []) as { id: string; location_name: string }[];
 }
 
-async function ContactInfoPage({
-  contactId,
-  customerId,
-}: {
-  contactId?: string;
-  customerId?: string;
-}) {
-  if (!customerId || !contactId) {
-    return (
-      <ModulePlaceholder moduleName="Contact page requires a selected customer and contact" />
-    );
-  }
-
-  const [customer, contact, locations] = await Promise.all([
-    getCustomerName(customerId),
-    getContactForEdit(contactId),
-    getContactLocationOptions(customerId),
-  ]);
-  const locationName =
-    locations.find((location) => location.id === contact.customer_location_id)
-      ?.location_name ?? "Account-level contact";
-
-  return (
-    <section className="dashboard-panel">
-      <section className="form-header">
-        <div>
-          <span className="eyebrow">Customer Contact</span>
-          <h2>{contact.name}</h2>
-          <Link
-            className="context-child-link"
-            href={`/?customer=${customerId}`}
-          >
-            {customer.name}
-          </Link>
-        </div>
-        <div className="header-actions">
-          <Link
-            className="primary-action"
-            href={`/?module=edit-contact&customer=${customerId}&contact=${contactId}`}
-          >
-            Edit Contact
-          </Link>
-        </div>
-      </section>
-
-      <section className="detail-grid">
-        <article className="info-panel">
-          <h3>Contact Profile</h3>
-          <dl>
-            <div>
-              <dt>Status</dt>
-              <dd>{contact.is_active === false ? "Inactive" : "Active"}</dd>
-            </div>
-            <div>
-              <dt>Title</dt>
-              <dd>{contact.title ?? "Not set"}</dd>
-            </div>
-            <div>
-              <dt>Department</dt>
-              <dd>{contact.department ?? "Not set"}</dd>
-            </div>
-            <div>
-              <dt>Location</dt>
-              <dd>{locationName}</dd>
-            </div>
-          </dl>
-        </article>
-
-        <article className="info-panel">
-          <h3>Contact Details</h3>
-          <dl>
-            <div>
-              <dt>Email</dt>
-              <dd>{contact.email ?? "Not set"}</dd>
-            </div>
-            <div>
-              <dt>Phone</dt>
-              <dd>{contact.phone ?? "Not set"}</dd>
-            </div>
-            <div>
-              <dt>Mobile</dt>
-              <dd>{contact.mobile ?? "Not set"}</dd>
-            </div>
-            <div>
-              <dt>Fax</dt>
-              <dd>{contact.fax ?? "Not set"}</dd>
-            </div>
-          </dl>
-        </article>
-      </section>
-
-      <article className="data-section">
-        <div className="section-title">
-          <h3>Contact Roles</h3>
-        </div>
-        <ContactRoleBadges contact={contact} />
-      </article>
-    </section>
-  );
-}
-
 async function AddContactForm({
   customerId,
   error,
@@ -20640,6 +20540,9 @@ export async function ErpRouter({
           <ContactInfoPage
             contactId={params.contact}
             customerId={params.customer}
+            loadContact={getContactForEdit}
+            loadCustomer={getCustomerName}
+            loadLocations={getContactLocationOptions}
           />
         ) : activeModule === "edit-contact" ? (
           <EditContactForm

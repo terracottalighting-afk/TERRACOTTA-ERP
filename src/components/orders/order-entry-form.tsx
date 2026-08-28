@@ -171,15 +171,15 @@ export function OrderEntryForm({ accountName, customerId, defaultDiscountPercent
               </select>
             </label>
           ) : null}
-          <label className="checkbox-label">
-            <input name="is_dropship" type="checkbox" />
-            Manual Ship-to / Drop Ship
-          </label>
         </div>
       </fieldset>
 
       <fieldset>
         <legend>Ship-to</legend>
+        <label className="checkbox-label">
+          <input name="is_dropship" type="checkbox" />
+          Manual Ship-to / Drop Ship
+        </label>
         <div className="ship-to-mode ship-to-mode--saved form-grid">
             <label className="full-width-field">
               Saved Shipping Address

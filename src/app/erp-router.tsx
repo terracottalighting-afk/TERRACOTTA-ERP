@@ -20,6 +20,7 @@ import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { FinancialInvoiceControls } from "@/components/financial/financial-invoice-controls";
 import { InvoiceCreatedPage } from "@/components/financial/invoice-created-page";
+import { InvoiceDocumentPage } from "@/components/financial/invoice-document-page";
 import { PaymentEntryPage } from "@/components/financial/payment-entry-page";
 import { PaymentDetailPage } from "@/components/financial/payment-detail-page";
 import { ProductDetailPartsTable } from "@/components/products/product-detail-parts-table";
@@ -44,7 +45,6 @@ import { ShipmentSubmitButton } from "@/components/shipping/shipment-submit-butt
 import { ShipmentFreightFields } from "@/components/shipping/shipment-freight-fields";
 import { PackingListFreightEditor } from "@/components/shipping/packing-list-freight-editor";
 import { InvoiceTermsAndFreightFields } from "@/components/financial/invoice-terms-and-freight-fields";
-import { InvoiceDocumentControls } from "@/components/financial/invoice-document-controls";
 import { ModuleNav } from "./module-nav";
 import { EditOrderAddresses } from "@/components/orders/edit-order-addresses";
 import {
@@ -9489,8 +9489,7 @@ async function getCreatedInvoices(ids: string[]) {
   });
 }
 
-async function InvoiceDocumentPage({ invoiceId }: { invoiceId?: string }) {
-  if (!invoiceId) return <ModulePlaceholder moduleName="Invoice not found" />;
+async function getInvoiceDocument(invoiceId: string) {
   const supabase = createSupabaseAdminClient();
   const [
     { data: invoice, error: invoiceError },
@@ -9513,7 +9512,7 @@ async function InvoiceDocumentPage({ invoiceId }: { invoiceId?: string }) {
   ]);
   if (invoiceError) throw new Error(invoiceError.message);
   if (linesError) throw new Error(linesError.message);
-  if (!invoice) return <ModulePlaceholder moduleName="Invoice not found" />;
+  if (!invoice) return null;
 
   const [
     { data: customer, error: customerError },
@@ -9533,131 +9532,12 @@ async function InvoiceDocumentPage({ invoiceId }: { invoiceId?: string }) {
   if (customerError) throw new Error(customerError.message);
   if (salesOrderError) throw new Error(salesOrderError.message);
 
-  return (
-    <section className="quote-document-page">
-      <div className="quote-document-controls print-hidden">
-        <Link className="secondary-action" href="/?module=invoices">
-          Back to Invoice Work Queue
-        </Link>
-        <InvoiceDocumentControls
-          invoiceNumber={invoice.invoice_number}
-          recipientEmail={customer?.billing_email}
-        />
-      </div>
-      <article className="quote-document">
-        <header className="quote-document-header">
-          <div>
-            <span className="eyebrow">{invoice.brand_name_snapshot}</span>
-            <h2>Invoice</h2>
-          </div>
-          <dl>
-            <div>
-              <dt>Invoice No.</dt>
-              <dd>{invoice.invoice_number}</dd>
-            </div>
-            <div>
-              <dt>Customer PO</dt>
-              <dd>
-                {salesOrder ? (
-                  <Link
-                    className="invoice-document-order-link"
-                    href={`/?module=orders&order=${salesOrder.id}`}
-                  >
-                    {salesOrder.customer_po_number}
-                  </Link>
-                ) : (
-                  "Not set"
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>Invoice Date</dt>
-              <dd>{dateLabel(invoice.invoice_date)}</dd>
-            </div>
-            <div>
-              <dt>Due Date</dt>
-              <dd>{dateLabel(invoice.due_date)}</dd>
-            </div>
-            <div>
-              <dt>Payment Terms</dt>
-              <dd>{invoice.payment_terms_snapshot || "Upon Receipt"}</dd>
-            </div>
-          </dl>
-        </header>
-        <section className="quote-document-addresses">
-          <div>
-            <span>Bill To</span>
-            {addressSnapshotLines(
-              invoice.bill_to_snapshot_json as Record<string, unknown>,
-              invoice.customer_name_snapshot,
-            ).map((line, index) => (
-              <strong key={`bill-${line}-${index}`}>{line}</strong>
-            ))}
-          </div>
-          <div>
-            <span>Ship To</span>
-            {addressSnapshotLines(
-              invoice.ship_to_snapshot_json as Record<string, unknown>,
-            ).map((line, index) => (
-              <strong key={`ship-${line}-${index}`}>{line}</strong>
-            ))}
-          </div>
-        </section>
-        <table className="quote-document-table">
-          <thead>
-            <tr>
-              <th>SKU</th>
-              <th>Item</th>
-              <th>Qty</th>
-              <th>Unit Price</th>
-              <th>Discount</th>
-              <th>Line Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(lines ?? []).map((line) => (
-              <tr key={line.id}>
-                <td>{line.product_sku_snapshot}</td>
-                <td>{line.product_name_snapshot}</td>
-                <td>
-                  {numberFormatter.format(Number(line.quantity_invoiced))}
-                </td>
-                <td>{money(Number(line.unit_price))}</td>
-                <td>{Number(line.discount_percent)}%</td>
-                <td>{money(Number(line.line_total))}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <dl className="invoice-document-totals">
-          <div>
-            <dt>Product Total</dt>
-            <dd>{money(Number(invoice.subtotal_amount))}</dd>
-          </div>
-          <div>
-            <dt>Freight</dt>
-            <dd>{money(Number(invoice.freight_amount))}</dd>
-          </div>
-          <div>
-            <dt>Drop-ship Fee</dt>
-            <dd>{money(Number(invoice.dropship_fee_amount))}</dd>
-          </div>
-          <div>
-            <dt>Tax</dt>
-            <dd>{money(Number(invoice.tax_amount))}</dd>
-          </div>
-          <div>
-            <dt>Invoice Total</dt>
-            <dd>{money(Number(invoice.total_amount))}</dd>
-          </div>
-          <div>
-            <dt>Balance Due</dt>
-            <dd>{money(Number(invoice.balance_due))}</dd>
-          </div>
-        </dl>
-      </article>
-    </section>
-  );
+  return {
+    customer,
+    invoice,
+    lines: lines ?? [],
+    salesOrder,
+  };
 }
 
 async function OrdersOverview({
@@ -18679,7 +18559,10 @@ export async function ErpRouter({
             loadInvoices={getCreatedInvoices}
           />
         ) : activeModule === "invoice-document" ? (
-          <InvoiceDocumentPage invoiceId={params.invoice} />
+          <InvoiceDocumentPage
+            invoiceId={params.invoice}
+            loadInvoiceDocument={getInvoiceDocument}
+          />
         ) : activeModule === "payment-detail" ? (
           <PaymentDetailPage
             loadPaymentDetail={getPaymentDetail}

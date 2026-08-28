@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Fragment } from "react";
-import { FreightTermsFields } from "@/components/customers/customer-terms-fields";
 import { LocationRegionFields } from "@/components/customers/location-region-fields";
 import { LocationRoleFields } from "@/components/customers/location-role-fields";
 import { CustomerOrderControls } from "@/components/customers/customer-order-controls";
@@ -14,6 +13,7 @@ import { ContactRoleBadges } from "@/components/customers/contact-role-badges";
 import { EditAccountProfileForm } from "@/components/customers/edit-account-profile-form";
 import { EditBillingCreditForm } from "@/components/customers/edit-billing-credit-form";
 import { EditContactForm } from "@/components/customers/edit-contact-form";
+import { EditFreightForm } from "@/components/customers/edit-freight-form";
 import { EditLocationForm } from "@/components/customers/edit-location-form";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { FinancialInvoiceControls } from "@/components/financial/financial-invoice-controls";
@@ -15290,90 +15290,6 @@ async function getContactLocationOptions(customerId: string) {
   return (data ?? []) as { id: string; location_name: string }[];
 }
 
-async function EditFreightForm({
-  customerId,
-  error,
-}: {
-  customerId?: string;
-  error?: string;
-}) {
-  if (!customerId) {
-    return (
-      <ModulePlaceholder moduleName="Edit Freight requires a selected customer" />
-    );
-  }
-
-  const [customer, freightPolicy] = await Promise.all([
-    getCustomerName(customerId),
-    getDefaultFreightPolicy(customerId),
-  ]);
-  const freightTerms =
-    freightPolicy?.freight_terms ??
-    freightPolicy?.ltl_freight_terms ??
-    "prepaid";
-
-  return (
-    <section className="dashboard-panel">
-      <section className="form-header">
-        <div>
-          <span className="eyebrow">Customer Freight</span>
-          <h2>Edit Freight Terms</h2>
-          <p>{customer.name}</p>
-        </div>
-        <Link
-          className="secondary-action secondary-action--light"
-          href={`/?customer=${customerId}#freight`}
-        >
-          Back to Account
-        </Link>
-      </section>
-
-      {error ? (
-        <div className="form-alert">{decodeURIComponent(error)}</div>
-      ) : null}
-
-      <form action={updateFreightPolicyAction} className="customer-form">
-        <input name="customer_id" type="hidden" value={customerId} />
-        <input
-          name="freight_policy_id"
-          type="hidden"
-          value={freightPolicy?.id ?? ""}
-        />
-        <FreightTermsFields
-          defaultFlatRatePercent={
-            freightPolicy?.flat_rate_percent?.toString() ?? ""
-          }
-          defaultFreightAllowance={
-            freightPolicy?.freight_allowance_amount?.toString() ?? ""
-          }
-          defaultFreightTerms={freightTerms}
-          defaultGroundCollectAccount={
-            freightPolicy?.default_ground_carrier_account_number ?? ""
-          }
-          defaultGroundCollectCarrier={
-            freightPolicy?.default_ground_carrier ?? ""
-          }
-          defaultLtlCollectAccount={
-            freightPolicy?.default_ltl_carrier_account_number ?? ""
-          }
-          defaultLtlCollectCarrier={freightPolicy?.default_ltl_carrier ?? ""}
-        />
-        <div className="form-actions">
-          <button className="primary-action" type="submit">
-            Save Freight Terms
-          </button>
-          <Link
-            className="secondary-action secondary-action--light"
-            href={`/?customer=${customerId}#freight`}
-          >
-            Cancel
-          </Link>
-        </div>
-      </form>
-    </section>
-  );
-}
-
 function CustomerListOverview({
   accountTypes,
   businessTypes,
@@ -20267,7 +20183,13 @@ export async function ErpRouter({
             saveAction={updateLocationAction}
           />
         ) : activeModule === "edit-freight" ? (
-          <EditFreightForm customerId={params.customer} error={params.error} />
+          <EditFreightForm
+            customerId={params.customer}
+            error={params.error}
+            loadCustomer={getCustomerName}
+            loadFreightPolicy={getDefaultFreightPolicy}
+            saveAction={updateFreightPolicyAction}
+          />
         ) : activeModule === "sales-rep-agency" ? (
           <SalesRepAgencyPage agencyId={params.agency} />
         ) : activeModule === "new-order" ? (

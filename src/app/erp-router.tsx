@@ -8,6 +8,7 @@ import { CustomerOrderControls } from "@/components/customers/customer-order-con
 import { CustomerInvoiceControls } from "@/components/customers/customer-invoice-controls";
 import { AddCustomerForm } from "@/components/customers/add-customer-form";
 import { AddLocationForm } from "@/components/customers/add-location-form";
+import { ContactRoleBadges } from "@/components/customers/contact-role-badges";
 import { EditAccountProfileForm } from "@/components/customers/edit-account-profile-form";
 import { EditBillingCreditForm } from "@/components/customers/edit-billing-credit-form";
 import { EditLocationForm } from "@/components/customers/edit-location-form";
@@ -15284,36 +15285,6 @@ async function getContactLocationOptions(customerId: string) {
   }
 
   return (data ?? []) as { id: string; location_name: string }[];
-}
-
-function ContactRoleBadges({ contact }: { contact: CustomerContact }) {
-  const hasRoles =
-    contact.is_primary ||
-    contact.is_billing_contact ||
-    contact.is_purchasing_contact ||
-    contact.is_warehouse_receiver ||
-    contact.is_showroom_floor_sales ||
-    contact.is_showroom_manager;
-
-  return (
-    <div className="badge-row badge-row--left">
-      {contact.is_primary ? <StatusBadge tone="good" value="Primary" /> : null}
-      {contact.is_purchasing_contact ? (
-        <StatusBadge value="Purchasing" />
-      ) : null}
-      {contact.is_billing_contact ? <StatusBadge value="Billing" /> : null}
-      {contact.is_warehouse_receiver ? (
-        <StatusBadge value="Warehouse Receiver" />
-      ) : null}
-      {contact.is_showroom_floor_sales ? (
-        <StatusBadge value="Showroom Floor Sales" />
-      ) : null}
-      {contact.is_showroom_manager ? (
-        <StatusBadge value="Showroom Manager" />
-      ) : null}
-      {!hasRoles ? <EmptyState text="No contact roles are selected." /> : null}
-    </div>
-  );
 }
 
 async function ContactInfoPage({

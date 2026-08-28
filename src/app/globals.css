@@ -801,6 +801,10 @@ input {
   display: none;
 }
 
+.ship-to-mode-toggle {
+  margin-bottom: 12px;
+}
+
 .order-entry-form:has(input[name="is_dropship"]:checked) .ship-to-mode--saved {
   display: none;
 }

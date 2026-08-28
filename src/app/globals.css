@@ -332,6 +332,18 @@ input {
   padding: 18px;
 }
 
+.dashboard-panel > * {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.list-header-panel {
+  align-items: center;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
 .account-header {
   align-items: start;
   border-bottom: 1px solid var(--line);

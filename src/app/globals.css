@@ -1311,6 +1311,12 @@ input {
   min-width: 0;
 }
 
+.product-list-table th,
+.product-list-table td {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
 .inline-select-label {
   align-items: center;
   color: var(--muted);

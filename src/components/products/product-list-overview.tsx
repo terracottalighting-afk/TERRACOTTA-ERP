@@ -423,7 +423,7 @@ export function ProductListOverview({
           value={filters.styleId ?? ""}
         />
         <div className="table-wrap">
-          <table>
+          <table className="product-list-table">
             <thead>
               <tr>
                 <th className="expand-column">Parts</th>

@@ -20,6 +20,7 @@ import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { FinancialInvoiceControls } from "@/components/financial/financial-invoice-controls";
 import { InvoiceCreatedPage } from "@/components/financial/invoice-created-page";
+import { PaymentDetailPage } from "@/components/financial/payment-detail-page";
 import { ProductDetailPartsTable } from "@/components/products/product-detail-parts-table";
 import { ProductLedSpecFields } from "@/components/products/product-led-spec-fields";
 import { ProductEditPlaceholder } from "@/components/products/product-edit-placeholder";
@@ -9118,8 +9119,7 @@ async function PaymentEntryPage({
   );
 }
 
-async function PaymentDetailPage({ paymentId }: { paymentId?: string }) {
-  if (!paymentId) return <ModulePlaceholder moduleName="Payment not found" />;
+async function getPaymentDetail(paymentId: string) {
   const supabase = createSupabaseAdminClient();
   const [
     { data: payment, error: paymentError },
@@ -9152,7 +9152,7 @@ async function PaymentDetailPage({ paymentId }: { paymentId?: string }) {
   ]);
   if (paymentError) throw new Error(paymentError.message);
   if (applicationsError) throw new Error(applicationsError.message);
-  if (!payment) return <ModulePlaceholder moduleName="Payment not found" />;
+  if (!payment) return null;
 
   const invoiceIds = [
     ...new Set(
@@ -9193,171 +9193,13 @@ async function PaymentDetailPage({ paymentId }: { paymentId?: string }) {
     }),
   );
 
-  return (
-    <section className="dashboard-panel">
-      <section className="record-hero">
-        <div>
-          <Link
-            className="subtle-link"
-            href="/?module=invoices&financial_tab=payments"
-          >
-            Payment List
-          </Link>
-          <div className="record-title-row">
-            <h2>Payment {payment.payment_number}</h2>
-            <StatusBadge
-              tone={
-                payment.status === "fully_applied"
-                  ? "good"
-                  : payment.status === "voided"
-                    ? "danger"
-                    : "primary"
-              }
-              value={payment.status}
-            />
-          </div>
-          <p>
-            {customer ? (
-              <Link
-                className="context-parent-link"
-                href={`/?customer=${customer.id}&tab=invoices`}
-              >
-                {customer.name}
-              </Link>
-            ) : (
-              "Customer"
-            )}
-          </p>
-        </div>
-      </section>
-      <section className="payment-invoice-summary">
-        <div>
-          <span>Payment Date</span>
-          <strong>{dateLabel(payment.payment_date)}</strong>
-        </div>
-        <div>
-          <span>Payment Method</span>
-          <strong>{label(payment.payment_method)}</strong>
-        </div>
-        <div>
-          <span>Received</span>
-          <strong>{money(Number(payment.amount_received))}</strong>
-        </div>
-        <div>
-          <span>Applied</span>
-          <strong>{money(Number(payment.amount_applied))}</strong>
-        </div>
-        <div>
-          <span>Unapplied</span>
-          <strong>{money(Number(payment.amount_unapplied))}</strong>
-        </div>
-      </section>
-      <section className="detail-section shipment-workspace-section">
-        <article className="data-section">
-          <div className="section-title">
-            <h3>Payment Details</h3>
-          </div>
-          <dl className="record-details">
-            <div>
-              <dt>Reference No.</dt>
-              <dd>{payment.reference_number || "Not set"}</dd>
-            </div>
-            <div>
-              <dt>Recorded</dt>
-              <dd>{timestampLabel(payment.posted_at ?? payment.created_at)}</dd>
-            </div>
-            <div>
-              <dt>Memo</dt>
-              <dd>{payment.memo || "None"}</dd>
-            </div>
-          </dl>
-        </article>
-        <article className="data-section">
-          <div className="section-title">
-            <h3>Supporting Documents</h3>
-            <span>{documents.length}</span>
-          </div>
-          <div className="compact-list">
-            {documents.length === 0 ? (
-              <EmptyState text="No supporting documents were attached." />
-            ) : (
-              documents.map((document) => (
-                <div className="compact-row" key={document.id}>
-                  <div>
-                    <strong>{document.original_file_name}</strong>
-                    <span>
-                      {label(document.category ?? "payment document")} |{" "}
-                      {timestampLabel(document.uploaded_at)}
-                    </span>
-                  </div>
-                  {document.downloadUrl ? (
-                    <a className="text-action" href={document.downloadUrl}>
-                      Download
-                    </a>
-                  ) : (
-                    <span>Unavailable</span>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </article>
-        <article className="data-section full-width-field">
-          <div className="section-title">
-            <h3>Applied Invoices</h3>
-          </div>
-          {(applications ?? []).length === 0 ? (
-            <EmptyState text="This payment has not been applied to an invoice." />
-          ) : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Invoice No.</th>
-                    <th>Brand</th>
-                    <th>Invoice Date</th>
-                    <th>Applied Date</th>
-                    <th>Payment Applied</th>
-                    <th>Waived</th>
-                    <th>Balance Due</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(applications ?? []).map((application) => {
-                    const invoice = invoiceById.get(
-                      application.customer_invoice_id,
-                    );
-                    return (
-                      <tr key={application.id}>
-                        <td>
-                          {invoice ? (
-                            <Link
-                              className="table-link"
-                              href={`/?module=invoice-document&invoice=${invoice.id}`}
-                            >
-                              {invoice.invoice_number}
-                            </Link>
-                          ) : (
-                            "Unavailable"
-                          )}
-                        </td>
-                        <td>{invoice?.brand_name_snapshot ?? "-"}</td>
-                        <td>{dateLabel(invoice?.invoice_date)}</td>
-                        <td>{dateLabel(application.applied_date)}</td>
-                        <td>{money(Number(application.amount_applied))}</td>
-                        <td>{money(Number(application.line_waive_amount))}</td>
-                        <td>{money(Number(invoice?.balance_due ?? 0))}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </article>
-      </section>
-    </section>
-  );
+  return {
+    applications: applications ?? [],
+    customer,
+    documents,
+    invoices: invoices ?? [],
+    payment,
+  };
 }
 
 async function InvoiceCreatePage({
@@ -18924,7 +18766,10 @@ export async function ErpRouter({
         ) : activeModule === "invoice-document" ? (
           <InvoiceDocumentPage invoiceId={params.invoice} />
         ) : activeModule === "payment-detail" ? (
-          <PaymentDetailPage paymentId={params.payment} />
+          <PaymentDetailPage
+            loadPaymentDetail={getPaymentDetail}
+            paymentId={params.payment}
+          />
         ) : activeModule === "invoices" ? (
           <InvoiceQueuePage
             error={params.error}

@@ -41,7 +41,7 @@ import {
   type OrderShipToOption,
 } from "@/components/orders/order-entry-form";
 import { OrderEntryPartsInitializer } from "@/components/orders/order-entry-parts-initializer";
-import { QuoteDocumentControls } from "@/components/orders/quote-document-controls";
+import { QuoteDocumentPage } from "@/components/orders/quote-document-page";
 import { PackingListDocumentControls } from "@/components/shipping/packing-list-document-controls";
 import { ShipmentSubmitButton } from "@/components/shipping/shipment-submit-button";
 import { ShipmentFreightFields } from "@/components/shipping/shipment-freight-fields";
@@ -12746,98 +12746,6 @@ async function RgaSolutionPage({
   );
 }
 
-async function QuoteDocumentPage({ quoteId }: { quoteId?: string }) {
-  if (!quoteId) return <ModulePlaceholder moduleName="Quote document" />;
-
-  const quote = await getSalesOrderDetail(quoteId);
-  if (!quote || quote.order_type !== "quote")
-    return <ModulePlaceholder moduleName="Quote not found" />;
-
-  return (
-    <section className="quote-document-page">
-      <div className="quote-document-controls">
-        <Link
-          className="secondary-action"
-          href={`/?module=orders&order=${quote.id}`}
-        >
-          Back to Quote
-        </Link>
-        <QuoteDocumentControls />
-      </div>
-      <article className="quote-document">
-        <header className="quote-document-header">
-          <div>
-            <span className="eyebrow">
-              Terracotta Designs and Kanova &amp; Co.
-            </span>
-            <h2>Quote</h2>
-          </div>
-          <dl>
-            <div>
-              <dt>Quote No.</dt>
-              <dd>{quote.sales_order_number}</dd>
-            </div>
-            <div>
-              <dt>Quote Date</dt>
-              <dd>{dateLabel(quote.order_date)}</dd>
-            </div>
-            <div>
-              <dt>Customer PO</dt>
-              <dd>{quote.customer_po_number}</dd>
-            </div>
-          </dl>
-        </header>
-        <section className="quote-document-addresses">
-          <div>
-            <span>Bill To</span>
-            <strong>{quote.customer_name_snapshot}</strong>
-          </div>
-          <div>
-            <span>Ship To</span>
-            <strong>{quote.ship_to_display_name_snapshot}</strong>
-          </div>
-        </section>
-        <table className="quote-document-table">
-          <thead>
-            <tr>
-              <th>SKU</th>
-              <th>Item</th>
-              <th>Brand</th>
-              <th>Qty</th>
-              <th>Unit Price</th>
-              <th>Discount</th>
-              <th>Line Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {quote.lines.map((line) => (
-              <tr key={line.id}>
-                <td>{line.product_sku_snapshot}</td>
-                <td>{line.product_name_snapshot}</td>
-                <td>{line.brand_name_snapshot}</td>
-                <td>{numberFormatter.format(line.quantity_ordered)}</td>
-                <td>{money(Number(line.unit_price))}</td>
-                <td>{line.discount_percent}%</td>
-                <td>{money(line.line_total)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="quote-document-total">
-          <span>Quote Total</span>
-          <strong>{money(Number(quote.total_amount ?? 0))}</strong>
-        </div>
-        {quote.notes ? (
-          <section className="quote-document-notes">
-            <span>Notes</span>
-            <p>{quote.notes}</p>
-          </section>
-        ) : null}
-      </article>
-    </section>
-  );
-}
-
 function EditOrderPage({
   billingAddressOptions,
   defaultDiscountPercent,
@@ -17530,7 +17438,10 @@ export async function ErpRouter({
             totalPages={productPartSearchResult.totalPages}
           />
         ) : activeModule === "quote-document" ? (
-          <QuoteDocumentPage quoteId={params.quote} />
+          <QuoteDocumentPage
+            loadQuote={getSalesOrderDetail}
+            quoteId={params.quote}
+          />
         ) : activeModule === "shipment-create" ? (
           <ShipmentCreatePage
             error={params.error}

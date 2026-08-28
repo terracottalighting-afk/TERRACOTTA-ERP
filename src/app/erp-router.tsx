@@ -7,6 +7,7 @@ import { LocationRoleFields } from "@/components/customers/location-role-fields"
 import { CustomerOrderControls } from "@/components/customers/customer-order-controls";
 import { CustomerInvoiceControls } from "@/components/customers/customer-invoice-controls";
 import { AddCustomerForm } from "@/components/customers/add-customer-form";
+import { AddLocationForm } from "@/components/customers/add-location-form";
 import { EditAccountProfileForm } from "@/components/customers/edit-account-profile-form";
 import { EditBillingCreditForm } from "@/components/customers/edit-billing-credit-form";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
@@ -14685,94 +14686,6 @@ async function getDefaultFreightPolicy(customerId: string) {
   return data as FreightPolicy | null;
 }
 
-async function AddLocationForm({
-  customerId,
-  error,
-}: {
-  customerId?: string;
-  error?: string;
-}) {
-  if (!customerId) {
-    return (
-      <ModulePlaceholder moduleName="Add Location requires a selected customer" />
-    );
-  }
-
-  const customer = await getCustomerName(customerId);
-
-  return (
-    <section className="dashboard-panel">
-      <section className="form-header">
-        <div>
-          <span className="eyebrow">Customer Locations</span>
-          <h2>Add Location</h2>
-          <p>{customer.name}</p>
-        </div>
-        <Link
-          className="secondary-action secondary-action--light"
-          href={`/?customer=${customerId}#locations`}
-        >
-          Back to Account
-        </Link>
-      </section>
-
-      {error ? (
-        <div className="form-alert">
-          {error === "missing_required"
-            ? "Location name is required."
-            : decodeURIComponent(error)}
-        </div>
-      ) : null}
-
-      <form action={addLocationAction} className="customer-form">
-        <input name="customer_id" type="hidden" value={customerId} />
-        <fieldset>
-          <legend>Location / Address</legend>
-          <div className="form-grid">
-            <label>
-              Location Name
-              <input name="location_name" required />
-            </label>
-            <label>
-              Location Contact Email
-              <input name="location_contact_email" type="email" />
-            </label>
-            <label>
-              Address Line 1
-              <input name="address_line_1" />
-            </label>
-            <label>
-              Address Line 2
-              <input name="address_line_2" />
-            </label>
-            <label>
-              City
-              <input name="city" />
-            </label>
-            <LocationRegionFields />
-            <label>
-              Postal Code
-              <input name="postal_code" />
-            </label>
-            <LocationRoleFields />
-          </div>
-        </fieldset>
-        <div className="form-actions">
-          <button className="primary-action" type="submit">
-            Save Location
-          </button>
-          <Link
-            className="secondary-action secondary-action--light"
-            href={`/?customer=${customerId}#locations`}
-          >
-            Cancel
-          </Link>
-        </div>
-      </form>
-    </section>
-  );
-}
-
 async function getLocationForEdit(locationId: string) {
   const supabase = createSupabaseAdminClient();
   const { data: location, error: locationError } = await supabase
@@ -20873,7 +20786,12 @@ export async function ErpRouter({
         ) : activeModule === "add-contact" ? (
           <AddContactForm customerId={params.customer} error={params.error} />
         ) : activeModule === "add-location" ? (
-          <AddLocationForm customerId={params.customer} error={params.error} />
+          <AddLocationForm
+            customerId={params.customer}
+            error={params.error}
+            loadCustomer={getCustomerName}
+            saveAction={addLocationAction}
+          />
         ) : activeModule === "view-contact" ? (
           <ContactInfoPage
             contactId={params.contact}

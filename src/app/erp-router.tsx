@@ -6,6 +6,7 @@ import { LocationRegionFields } from "@/components/customers/location-region-fie
 import { LocationRoleFields } from "@/components/customers/location-role-fields";
 import { CustomerOrderControls } from "@/components/customers/customer-order-controls";
 import { CustomerInvoiceControls } from "@/components/customers/customer-invoice-controls";
+import { AddContactForm } from "@/components/customers/add-contact-form";
 import { AddCustomerForm } from "@/components/customers/add-customer-form";
 import { AddLocationForm } from "@/components/customers/add-location-form";
 import { ContactInfoPage } from "@/components/customers/contact-info-page";
@@ -15288,136 +15289,6 @@ async function getContactLocationOptions(customerId: string) {
   return (data ?? []) as { id: string; location_name: string }[];
 }
 
-async function AddContactForm({
-  customerId,
-  error,
-}: {
-  customerId?: string;
-  error?: string;
-}) {
-  if (!customerId) {
-    return (
-      <ModulePlaceholder moduleName="Add Contact requires a selected customer" />
-    );
-  }
-
-  const [customer, locations] = await Promise.all([
-    getCustomerName(customerId),
-    getContactLocationOptions(customerId),
-  ]);
-
-  return (
-    <section className="dashboard-panel">
-      <section className="form-header">
-        <div>
-          <span className="eyebrow">Customer Contact</span>
-          <h2>Add Contact</h2>
-          <p>{customer.name}</p>
-        </div>
-        <Link
-          className="secondary-action secondary-action--light"
-          href={`/?customer=${customerId}#contacts`}
-        >
-          Back to Account
-        </Link>
-      </section>
-
-      {error ? (
-        <div className="form-alert">
-          {error === "missing_required"
-            ? "Contact name is required."
-            : decodeURIComponent(error)}
-        </div>
-      ) : null}
-
-      <form action={addContactAction} className="customer-form">
-        <input name="customer_id" type="hidden" value={customerId} />
-        <fieldset>
-          <legend>Contact Information</legend>
-          <div className="form-grid">
-            <label>
-              Contact Name
-              <input name="name" required />
-            </label>
-            <label>
-              Title
-              <input name="title" />
-            </label>
-            <label>
-              Department
-              <input name="department" />
-            </label>
-            <label>
-              Location
-              <select name="customer_location_id">
-                <option value="">Account-level contact</option>
-                {locations.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.location_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Email
-              <input name="email" type="email" />
-            </label>
-            <label>
-              Phone
-              <input name="phone" />
-            </label>
-            <label>
-              Mobile
-              <input name="mobile" />
-            </label>
-            <label>
-              Fax
-              <input name="fax" />
-            </label>
-            <div className="checkbox-cluster">
-              <label className="checkbox-label">
-                <input name="is_primary" type="checkbox" />
-                Primary contact
-              </label>
-              <label className="checkbox-label">
-                <input name="is_purchasing_contact" type="checkbox" />
-                Purchasing contact
-              </label>
-              <label className="checkbox-label">
-                <input name="is_billing_contact" type="checkbox" />
-                Billing contact
-              </label>
-              <label className="checkbox-label">
-                <input name="is_warehouse_receiver" type="checkbox" />
-                Warehouse receiver
-              </label>
-              <label className="checkbox-label">
-                <input name="is_showroom_floor_sales" type="checkbox" />
-                Showroom floor sales
-              </label>
-              <label className="checkbox-label">
-                <input name="is_showroom_manager" type="checkbox" />
-                Showroom manager
-              </label>
-            </div>
-          </div>
-        </fieldset>
-        <div className="form-actions">
-          <button className="primary-action" type="submit">
-            Save Contact
-          </button>
-          <Link
-            className="secondary-action secondary-action--light"
-            href={`/?customer=${customerId}#contacts`}
-          >
-            Cancel
-          </Link>
-        </div>
-      </form>
-    </section>
-  );
-}
-
 async function EditContactForm({
   contactId,
   customerId,
@@ -20528,7 +20399,13 @@ export async function ErpRouter({
             saveAction={updateBillingCreditAction}
           />
         ) : activeModule === "add-contact" ? (
-          <AddContactForm customerId={params.customer} error={params.error} />
+          <AddContactForm
+            customerId={params.customer}
+            error={params.error}
+            loadCustomer={getCustomerName}
+            loadLocations={getContactLocationOptions}
+            saveAction={addContactAction}
+          />
         ) : activeModule === "add-location" ? (
           <AddLocationForm
             customerId={params.customer}

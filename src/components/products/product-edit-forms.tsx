@@ -126,6 +126,165 @@ const productPartRoleOptions = [
   "Others",
 ];
 
+export function AddProductForm({
+  brandOptions,
+  categoryOptions,
+  createProductAction,
+  error,
+  styleOptions,
+}: {
+  brandOptions: SelectOption[];
+  categoryOptions: SelectOption[];
+  createProductAction: FormAction;
+  error?: string;
+  styleOptions: SelectOption[];
+}) {
+  return (
+    <section className="dashboard-panel">
+      <section className="record-hero">
+        <div>
+          <Link className="subtle-link" href="/?module=products">
+            Product List
+          </Link>
+          <div className="record-title-row">
+            <h2>Add Product</h2>
+          </div>
+          <p>Create the product profile first, then add specs, images, boxes, and inventory from the detail page.</p>
+        </div>
+      </section>
+
+      {error ? <div className="form-alert">{decodeURIComponent(error)}</div> : null}
+
+      <form action={createProductAction} className="customer-form">
+        <fieldset>
+          <legend>Core Product</legend>
+          <div className="form-grid">
+            <label>
+              SKU
+              <input name="sku" required />
+            </label>
+            <label>
+              Product Name
+              <input name="name" required />
+            </label>
+            <label>
+              Brand
+              <select name="brand_id" required>
+                <option value="">Select brand</option>
+                {brandOptions.map((brand) => (
+                  <option key={brand.id} value={brand.id}>
+                    {brand.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Category
+              <select name="product_category_id">
+                <option value="">Not set</option>
+                {categoryOptions.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Style / Suite
+              <select name="signature_suite_id">
+                <option value="">Not set</option>
+                {styleOptions.map((style) => (
+                  <option key={style.id} value={style.id}>
+                    {style.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Collection / Family
+              <input name="collection" />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Status / Eligibility</legend>
+          <div className="form-grid">
+            <label>
+              Lifecycle Status
+              <select defaultValue="pending" name="status">
+                <option value="pending">Pending</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="discontinued">Discontinued</option>
+                <option value="deleted">Deleted</option>
+              </select>
+            </label>
+            <label>
+              Sellability
+              <select defaultValue="hidden" name="sellability_status">
+                <option value="hidden">Hidden</option>
+                <option value="sellable">Sellable</option>
+                <option value="blocked">Blocked</option>
+                <option value="override_required">Override Required</option>
+              </select>
+            </label>
+            <label>
+              Customer Eligibility
+              <select defaultValue="all" name="customer_eligibility_tag">
+                <option value="all">All</option>
+                <option value="ecommerce_only">Ecommerce Only</option>
+                <option value="non_ecommerce_only">Non-ecommerce Only</option>
+                <option value="exclusive">Exclusive</option>
+              </select>
+            </label>
+            <label>
+              Primary Showroom Count
+              <select defaultValue="yes" name="counts_toward_primary_showroom_default">
+                <option value="yes">Included</option>
+                <option value="no">Excluded</option>
+              </select>
+            </label>
+            <label className="full-width-field">
+              Exclusion Reason
+              <input name="primary_showroom_exclusion_reason" />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Pricing / Description</legend>
+          <div className="form-grid">
+            <label>
+              Default Price
+              <input min="0" name="default_price" step="0.01" type="number" />
+            </label>
+            <label>
+              Default Vendor Item No.
+              <input name="default_vendor_item_number" />
+            </label>
+            <label className="checkbox-label">
+              <input name="no_box_needed" type="checkbox" />
+              No box needed
+            </label>
+            <label className="full-width-field">
+              Product Description
+              <textarea maxLength={3500} name="description" rows={7} />
+            </label>
+          </div>
+        </fieldset>
+
+        <div className="form-actions">
+          <button type="submit">Create Product</button>
+          <Link className="secondary-action secondary-action--light" href="/?module=products">
+            Cancel
+          </Link>
+        </div>
+      </form>
+    </section>
+  );
+}
+
 export async function EditProductImagesForm({
   error,
   imageCategory,

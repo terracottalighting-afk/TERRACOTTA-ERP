@@ -170,9 +170,9 @@ export function ProductListOverview({
           >
             Delete Selected
           </button>
-          <button className="primary-action" type="button">
+          <Link className="primary-action" href="/?module=add-product">
             Add Product
-          </button>
+          </Link>
         </div>
       </section>
 

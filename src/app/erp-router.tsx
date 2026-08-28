@@ -32,6 +32,7 @@ import { PartDetailDashboard } from "@/components/products/part-detail-dashboard
 import { ProductDetailDashboard } from "@/components/products/product-detail-dashboard";
 import {
   AddPartParentProductsForm,
+  AddProductForm,
   AddProductBoxForm,
   EditProductBoxesForm,
   EditProductImagesForm,
@@ -4681,6 +4682,110 @@ async function updateProductProfileAction(formData: FormData) {
   redirect(`/?module=products&product=${productId}`);
 }
 
+async function createProductAction(formData: FormData) {
+  "use server";
+
+  const supabase = createSupabaseAdminClient();
+  const sku = String(formData.get("sku") ?? "").trim();
+  const name = String(formData.get("name") ?? "").trim();
+  const brandId = String(formData.get("brand_id") ?? "").trim();
+
+  if (!sku || !name || !brandId) {
+    redirect("/?module=add-product&error=missing_required");
+  }
+
+  const optionalText = (key: string) => {
+    const value = String(formData.get(key) ?? "").trim();
+    return value ? value : null;
+  };
+  const statusValue = String(formData.get("status") ?? "pending");
+  const status = [
+    "pending",
+    "active",
+    "inactive",
+    "discontinued",
+    "deleted",
+  ].includes(statusValue)
+    ? (statusValue as
+        | "pending"
+        | "active"
+        | "inactive"
+        | "discontinued"
+        | "deleted")
+    : "pending";
+  const sellabilityValue = String(
+    formData.get("sellability_status") ?? "hidden",
+  );
+  const sellabilityStatus = [
+    "hidden",
+    "sellable",
+    "blocked",
+    "override_required",
+  ].includes(sellabilityValue)
+    ? (sellabilityValue as
+        | "hidden"
+        | "sellable"
+        | "blocked"
+        | "override_required")
+    : "hidden";
+  const eligibilityValue = String(
+    formData.get("customer_eligibility_tag") ?? "all",
+  );
+  const customerEligibilityTag = [
+    "all",
+    "ecommerce_only",
+    "non_ecommerce_only",
+    "exclusive",
+  ].includes(eligibilityValue)
+    ? (eligibilityValue as
+        | "all"
+        | "ecommerce_only"
+        | "non_ecommerce_only"
+        | "exclusive")
+    : "all";
+  const priceRaw = optionalText("default_price");
+  const defaultPrice = priceRaw ? Number(priceRaw) : null;
+  const description = optionalText("description");
+
+  const { data, error } = await supabase
+    .from("product")
+    .insert({
+      brand_id: brandId,
+      collection: optionalText("collection"),
+      counts_toward_primary_showroom_default:
+        formData.get("counts_toward_primary_showroom_default") === "yes",
+      customer_eligibility_tag: customerEligibilityTag,
+      default_price:
+        defaultPrice !== null && Number.isFinite(defaultPrice)
+          ? defaultPrice
+          : null,
+      default_vendor_item_number: optionalText("default_vendor_item_number"),
+      description,
+      description_word_count: description
+        ? description.split(/\s+/).filter(Boolean).length
+        : null,
+      name,
+      no_box_needed: formData.get("no_box_needed") === "on",
+      primary_showroom_exclusion_reason:
+        formData.get("counts_toward_primary_showroom_default") === "no"
+          ? optionalText("primary_showroom_exclusion_reason")
+          : null,
+      product_category_id: optionalText("product_category_id"),
+      sellability_status: sellabilityStatus,
+      signature_suite_id: optionalText("signature_suite_id"),
+      sku,
+      status,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    redirect(`/?module=add-product&error=${encodeURIComponent(error.message)}`);
+  }
+
+  redirect(`/?module=products&product=${data.id}`);
+}
+
 async function updateProductSpecsAction(formData: FormData) {
   "use server";
 
@@ -8808,6 +8913,7 @@ export async function ErpRouter({
     "add-contact": "Add Contact",
     "add-customer": "Add Customer",
     "add-location": "Add Location",
+    "add-product": "Add Product",
     "add-product-box": "Add Product Box",
     ar: "Payments / AR",
     "create-rga": "Create RGA",
@@ -9310,6 +9416,14 @@ export async function ErpRouter({
             product={productDetail}
             selectedTab={params.product_tab ?? "profile"}
             uploadDocumentAction={uploadProductDocumentAction}
+          />
+        ) : activeModule === "add-product" ? (
+          <AddProductForm
+            brandOptions={productBrandOptions}
+            categoryOptions={productCategoryOptions}
+            createProductAction={createProductAction}
+            error={params.error}
+            styleOptions={productStyleOptions}
           />
         ) : activeModule === "edit-product-profile" ? (
           <EditProductProfileForm

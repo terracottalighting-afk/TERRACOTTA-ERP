@@ -45,7 +45,7 @@ export async function AddContactForm({
         </div>
         <Link
           className="secondary-action secondary-action--light"
-          href={`/?customer=${customerId}#contacts`}
+          href={`/?customer=${customerId}&tab=contacts`}
         >
           Back to Account
         </Link>
@@ -137,7 +137,7 @@ export async function AddContactForm({
           </button>
           <Link
             className="secondary-action secondary-action--light"
-            href={`/?customer=${customerId}#contacts`}
+            href={`/?customer=${customerId}&tab=contacts`}
           >
             Cancel
           </Link>

@@ -37,7 +37,7 @@ export async function AddLocationForm({
         </div>
         <Link
           className="secondary-action secondary-action--light"
-          href={`/?customer=${customerId}#locations`}
+          href={`/?customer=${customerId}&tab=locations`}
         >
           Back to Account
         </Link>
@@ -90,7 +90,7 @@ export async function AddLocationForm({
           </button>
           <Link
             className="secondary-action secondary-action--light"
-            href={`/?customer=${customerId}#locations`}
+            href={`/?customer=${customerId}&tab=locations`}
           >
             Cancel
           </Link>

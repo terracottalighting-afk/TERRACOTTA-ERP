@@ -6500,7 +6500,7 @@ async function addLocationAction(formData: FormData) {
     }
   }
 
-  redirect(`/?module=view-location&customer=${customerId}&location=${data.id}`);
+  redirect(`/?customer=${customerId}&tab=locations`);
 }
 
 async function updateLocationAction(formData: FormData) {
@@ -6607,9 +6607,7 @@ async function updateLocationAction(formData: FormData) {
     }
   }
 
-  redirect(
-    `/?module=view-location&customer=${customerId}&location=${locationId}`,
-  );
+  redirect(`/?customer=${customerId}&tab=locations`);
 }
 
 async function updateContactAction(formData: FormData) {
@@ -6659,7 +6657,7 @@ async function updateContactAction(formData: FormData) {
     );
   }
 
-  redirect(`/?module=view-contact&customer=${customerId}&contact=${contactId}`);
+  redirect(`/?customer=${customerId}&tab=contacts`);
 }
 
 async function addContactAction(formData: FormData) {
@@ -6709,7 +6707,7 @@ async function addContactAction(formData: FormData) {
     );
   }
 
-  redirect(`/?module=view-contact&customer=${customerId}&contact=${data.id}`);
+  redirect(`/?customer=${customerId}&tab=contacts`);
 }
 
 async function updateFreightPolicyAction(formData: FormData) {
@@ -6794,7 +6792,7 @@ async function updateFreightPolicyAction(formData: FormData) {
     );
   }
 
-  redirect(`/?customer=${customerId}#freight`);
+  redirect(`/?customer=${customerId}&tab=freight`);
 }
 
 async function searchCustomers(

@@ -66,7 +66,7 @@ export async function EditLocationForm({
         </div>
         <Link
           className="secondary-action secondary-action--light"
-          href={`/?customer=${customerId}#locations`}
+          href={`/?customer=${customerId}&tab=locations`}
         >
           Back to Account
         </Link>
@@ -153,7 +153,7 @@ export async function EditLocationForm({
           </button>
           <Link
             className="secondary-action secondary-action--light"
-            href={`/?customer=${customerId}#locations`}
+            href={`/?customer=${customerId}&tab=locations`}
           >
             Cancel
           </Link>

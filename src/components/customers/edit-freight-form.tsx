@@ -57,7 +57,7 @@ export async function EditFreightForm({
         </div>
         <Link
           className="secondary-action secondary-action--light"
-          href={`/?customer=${customerId}#freight`}
+          href={`/?customer=${customerId}&tab=freight`}
         >
           Back to Account
         </Link>
@@ -99,7 +99,7 @@ export async function EditFreightForm({
           </button>
           <Link
             className="secondary-action secondary-action--light"
-            href={`/?customer=${customerId}#freight`}
+            href={`/?customer=${customerId}&tab=freight`}
           >
             Cancel
           </Link>

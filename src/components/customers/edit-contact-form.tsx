@@ -68,7 +68,7 @@ export async function EditContactForm({
         </div>
         <Link
           className="secondary-action secondary-action--light"
-          href={`/?module=view-contact&customer=${customerId}&contact=${contactId}`}
+          href={`/?customer=${customerId}&tab=contacts`}
         >
           Back to Contact
         </Link>
@@ -207,7 +207,7 @@ export async function EditContactForm({
           </button>
           <Link
             className="secondary-action secondary-action--light"
-            href={`/?module=view-contact&customer=${customerId}&contact=${contactId}`}
+            href={`/?customer=${customerId}&tab=contacts`}
           >
             Cancel
           </Link>

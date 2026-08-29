@@ -10088,6 +10088,12 @@ export async function ErpRouter({
                             </span>
                           </div>
                           <div className="badge-row">
+                            <Link
+                              className="text-action"
+                              href={`/?module=edit-location&customer=${dashboard.customer.id}&location=${location.id}`}
+                            >
+                              Edit
+                            </Link>
                             {location.is_default_ship_to ? (
                               <StatusBadge
                                 tone="good"
@@ -10156,6 +10162,12 @@ export async function ErpRouter({
                           </div>
                           <span>{contact.email ?? "No email"}</span>
                           <div className="badge-row">
+                            <Link
+                              className="text-action"
+                              href={`/?module=edit-contact&customer=${dashboard.customer.id}&contact=${contact.id}`}
+                            >
+                              Edit
+                            </Link>
                             {contact.is_purchasing_contact ? (
                               <StatusBadge value="Purchasing" />
                             ) : null}

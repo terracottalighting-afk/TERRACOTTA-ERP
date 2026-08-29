@@ -252,7 +252,15 @@ export function OrderEntryForm({ accountName, customerId, defaultDiscountPercent
               <input name="dropship_postal_code" />
             </label>
             <label>
-              Shipping Contact Email
+              Shipping Contact
+              <input name="dropship_contact_name" />
+            </label>
+            <label>
+              Phone
+              <input name="dropship_contact_phone" type="tel" />
+            </label>
+            <label>
+              Email
               <input name="dropship_email" type="email" />
             </label>
         </div>

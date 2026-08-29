@@ -1439,6 +1439,10 @@ async function createSalesOrderAction(formData: FormData) {
         postal_code: dropshipPostalCode,
         country: dropshipCountry,
         country_code: dropshipCountry === "United States" ? "US" : null,
+        shipping_contact_name:
+          textValue(formData, "dropship_contact_name") || null,
+        shipping_contact_phone:
+          textValue(formData, "dropship_contact_phone") || null,
         shipping_contact_email:
           textValue(formData, "dropship_email") ||
           account.purchase_email ||

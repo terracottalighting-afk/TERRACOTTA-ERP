@@ -10385,13 +10385,13 @@ export async function ErpRouter({
                     id="orders"
                   >
                     <div className="section-title order-section-title">
+                      <Link
+                        className="primary-action"
+                        href={`/?module=new-order&customer=${dashboard.customer.id}`}
+                      >
+                        Enter New Order / Quote
+                      </Link>
                       <div className="order-actions-row">
-                        <Link
-                          className="primary-action"
-                          href={`/?module=new-order&customer=${dashboard.customer.id}`}
-                        >
-                          Enter New Order / Quote
-                        </Link>
                         <Link
                           className={
                             customerOrderListMode === "orders"

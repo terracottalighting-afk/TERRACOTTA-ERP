@@ -1749,7 +1749,10 @@ dd {
 }
 
 .order-section-title {
-  justify-content: flex-start;
+  align-items: flex-start;
+  display: grid;
+  gap: 14px;
+  justify-content: stretch;
 }
 
 .order-actions-row {
@@ -1757,7 +1760,7 @@ dd {
   display: flex;
   flex-wrap: wrap;
   gap: 24px;
-  justify-content: space-between;
+  justify-content: flex-start;
   width: 100%;
 }
 

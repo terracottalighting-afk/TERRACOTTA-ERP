@@ -17,6 +17,7 @@ import { EditBillingCreditForm } from "@/components/customers/edit-billing-credi
 import { EditContactForm } from "@/components/customers/edit-contact-form";
 import { EditFreightForm } from "@/components/customers/edit-freight-form";
 import { EditLocationForm } from "@/components/customers/edit-location-form";
+import { EditSalesRepForm } from "@/components/customers/edit-sales-rep-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { InvoiceConfirmationPage } from "@/components/financial/invoice-confirmation-page";
@@ -804,6 +805,40 @@ async function getSalesRepOptions() {
     id: rep.id,
     name: rep.name,
   })) as RepOption[];
+}
+
+async function getCustomerRepAssignmentsForEdit(customerId: string) {
+  const supabase = createSupabaseAdminClient();
+  const { data: locations, error: locationsError } = await supabase
+    .from("customer_location")
+    .select("id, location_name")
+    .eq("customer_account_id", customerId)
+    .order("location_name", { ascending: true });
+
+  if (locationsError) {
+    throw new Error(locationsError.message);
+  }
+
+  const locationIds = (locations ?? []).map((location) => location.id);
+  const { data: assignments, error: assignmentsError } = locationIds.length
+    ? await supabase
+        .from("customer_location_rep_assignment")
+        .select("id, customer_location_id, sales_rep_id, territory_id, coverage_role, status")
+        .in("customer_location_id", locationIds)
+        .order("created_at", { ascending: true })
+    : { data: [], error: null };
+
+  if (assignmentsError) {
+    throw new Error(assignmentsError.message);
+  }
+
+  return {
+    assignments: assignments ?? [],
+    locations: (locations ?? []).map((location) => ({
+      id: location.id,
+      name: location.location_name,
+    })),
+  };
 }
 
 async function getProductBrandOptions() {
@@ -6795,6 +6830,99 @@ async function updateFreightPolicyAction(formData: FormData) {
   redirect(`/?customer=${customerId}&tab=freight`);
 }
 
+async function saveCustomerRepAssignmentAction(formData: FormData) {
+  "use server";
+
+  const supabase = createSupabaseAdminClient();
+  const customerId = textValue(formData, "customer_id");
+  const assignmentId = textValue(formData, "assignment_id");
+  const locationId = textValue(formData, "location_id");
+  const salesRepSelection = textValue(formData, "sales_rep_selection");
+  const [salesRepId, salesRepAgencyId] = salesRepSelection
+    ? salesRepSelection.split("|")
+    : ["", ""];
+  const territoryId = textValue(formData, "territory_id") || null;
+  const coverageRoleValue = textValue(formData, "coverage_role");
+  const coverageRole = ["primary", "secondary", "support", "manager"].includes(
+    coverageRoleValue,
+  )
+    ? (coverageRoleValue as "primary" | "secondary" | "support" | "manager")
+    : "primary";
+  const status: "active" | "inactive" =
+    textValue(formData, "status") === "inactive" ? "inactive" : "active";
+  const editUrl = `/?module=edit-sales-rep&customer=${customerId}`;
+
+  if (!customerId || !locationId || !salesRepId || !salesRepAgencyId) {
+    redirect(`${editUrl}&error=missing_required`);
+  }
+
+  const { data: location, error: locationError } = await supabase
+    .from("customer_location")
+    .select("id")
+    .eq("id", locationId)
+    .eq("customer_account_id", customerId)
+    .maybeSingle();
+
+  if (locationError || !location) {
+    redirect(
+      `${editUrl}&error=${encodeURIComponent(locationError?.message ?? "The selected location does not belong to this customer.")}`,
+    );
+  }
+
+  const assignment = {
+    coverage_role: coverageRole,
+    customer_location_id: locationId,
+    sales_rep_agency_id: salesRepAgencyId,
+    sales_rep_id: salesRepId,
+    status,
+    territory_id: territoryId,
+  };
+
+  if (assignmentId) {
+    const { data: existingAssignment, error: existingError } = await supabase
+      .from("customer_location_rep_assignment")
+      .select("customer_location_id")
+      .eq("id", assignmentId)
+      .maybeSingle();
+
+    if (existingError || !existingAssignment) {
+      redirect(
+        `${editUrl}&error=${encodeURIComponent(existingError?.message ?? "Sales rep assignment was not found.")}`,
+      );
+    }
+
+    const { data: existingLocation, error: existingLocationError } = await supabase
+      .from("customer_location")
+      .select("id")
+      .eq("id", existingAssignment.customer_location_id)
+      .eq("customer_account_id", customerId)
+      .maybeSingle();
+
+    if (existingLocationError || !existingLocation) {
+      redirect(`${editUrl}&error=${encodeURIComponent("Sales rep assignment does not belong to this customer.")}`);
+    }
+
+    const { error } = await supabase
+      .from("customer_location_rep_assignment")
+      .update(assignment)
+      .eq("id", assignmentId);
+
+    if (error) {
+      redirect(`${editUrl}&error=${encodeURIComponent(error.message)}`);
+    }
+  } else {
+    const { error } = await supabase
+      .from("customer_location_rep_assignment")
+      .insert({ ...assignment, assignment_source: "manual" });
+
+    if (error) {
+      redirect(`${editUrl}&error=${encodeURIComponent(error.message)}`);
+    }
+  }
+
+  redirect(`/?customer=${customerId}&tab=sales-rep`);
+}
+
 async function searchCustomers(
   query: string,
   mode: "active" | "obsolete" = "active",
@@ -9066,6 +9194,7 @@ export async function ErpRouter({
     "edit-contact": "Edit Contact",
     "edit-freight": "Edit Freight",
     "edit-location": "Edit Location",
+    "edit-sales-rep": "Edit Sales Rep",
     "edit-product-boxes": "Edit Product Boxes",
     "edit-product-description": "Edit Product Description",
     "edit-product-images": "Edit Product Images",
@@ -9499,6 +9628,16 @@ export async function ErpRouter({
             loadLocation={getLocationForEdit}
             locationId={params.location}
             saveAction={updateLocationAction}
+          />
+        ) : activeModule === "edit-sales-rep" ? (
+          <EditSalesRepForm
+            customerId={params.customer}
+            error={params.error}
+            loadAssignments={getCustomerRepAssignmentsForEdit}
+            loadCustomer={getCustomerName}
+            repOptions={salesRepOptions}
+            saveAction={saveCustomerRepAssignmentAction}
+            territoryOptions={territoryOptions}
           />
         ) : activeModule === "edit-freight" ? (
           <EditFreightForm
@@ -10197,7 +10336,15 @@ export async function ErpRouter({
                   >
                     <div className="section-title">
                       <h3>Sales Rep</h3>
-                      <span>{dashboard.salesRepAssignments.length}</span>
+                      <div className="section-actions">
+                        <span>{dashboard.salesRepAssignments.length}</span>
+                        <Link
+                          className="text-action"
+                          href={`/?module=edit-sales-rep&customer=${dashboard.customer.id}`}
+                        >
+                          Edit
+                        </Link>
+                      </div>
                     </div>
                     <div className="compact-list">
                       {dashboard.salesRepAssignments.length === 0 ? (
@@ -10908,10 +11055,10 @@ export async function ErpRouter({
                       <div className="section-actions">
                         <span>{dashboard.freightPolicies.length}</span>
                         <Link
-                          className="small-action"
+                          className="text-action"
                           href={`/?module=edit-freight&customer=${dashboard.customer.id}`}
                         >
-                          Edit Freight
+                          Edit
                         </Link>
                       </div>
                     </div>

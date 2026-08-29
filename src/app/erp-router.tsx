@@ -1322,6 +1322,7 @@ async function createSalesOrderAction(formData: FormData) {
     billingResult,
     invoiceResult,
     freightResult,
+    billToLocationResult,
     locationResult,
     productsResult,
   ] = await Promise.all([
@@ -1351,6 +1352,17 @@ async function createSalesOrderAction(formData: FormData) {
       .eq("customer_account_id", customerId)
       .eq("is_active", true)
       .order("is_default", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("customer_location")
+      .select(
+        "location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, receiver_name, phone, email",
+      )
+      .eq("customer_account_id", customerId)
+      .eq("is_billing_address", true)
+      .eq("status", "active")
+      .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle(),
     locationId
@@ -1384,6 +1396,7 @@ async function createSalesOrderAction(formData: FormData) {
     billingResult,
     invoiceResult,
     freightResult,
+    billToLocationResult,
     locationResult,
     productsResult,
   ].find((result) => result.error);
@@ -1429,6 +1442,7 @@ async function createSalesOrderAction(formData: FormData) {
 
   const account = accountResult.data;
   const savedLocation = locationResult.data;
+  const billToLocation = billToLocationResult.data;
   const dropshipName = textValue(formData, "dropship_name");
   const dropshipAddressLine1 = textValue(formData, "dropship_address_line_1");
   const dropshipCity = textValue(formData, "dropship_city");
@@ -1502,6 +1516,21 @@ async function createSalesOrderAction(formData: FormData) {
           account.purchase_email ||
           null,
       };
+  const billToSnapshot = billToLocation
+    ? {
+        bill_to_display_name: billToLocation.location_name,
+        address_line_1: billToLocation.address_line_1,
+        address_line_2: billToLocation.address_line_2,
+        city: billToLocation.city,
+        state_province: billToLocation.state_province,
+        postal_code: billToLocation.postal_code,
+        country: billToLocation.country,
+        country_code: billToLocation.country_code,
+        shipping_contact_name: billToLocation.receiver_name,
+        shipping_contact_phone: billToLocation.phone,
+        shipping_contact_email: billToLocation.email,
+      }
+    : { bill_to_display_name: account.name };
 
   const { data: order, error: orderError } = await supabase
     .from("sales_order")
@@ -1513,6 +1542,7 @@ async function createSalesOrderAction(formData: FormData) {
             ? "pro_forma_invoice"
             : "order_acknowledgement",
       balance_at_order_entry_snapshot: currentBalance,
+      bill_to_snapshot_json: billToSnapshot,
       credit_hold_reason: onCreditHold ? "credit_limit_exceeded" : null,
       credit_hold_status: onCreditHold ? "on_credit_hold" : "none",
       credit_limit_snapshot: creditLimit,
@@ -8604,8 +8634,43 @@ async function getSalesOrderDetail(
     ]),
   );
 
+  const billToLocationResult = orderResult.data.bill_to_snapshot_json
+    ? { data: null, error: null }
+    : await supabase
+        .from("customer_location")
+        .select(
+          "location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, receiver_name, phone, email",
+        )
+        .eq("customer_account_id", orderResult.data.customer_account_id)
+        .eq("is_billing_address", true)
+        .eq("status", "active")
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+  if (billToLocationResult.error)
+    throw new Error(billToLocationResult.error.message);
+
+  const billToSnapshot =
+    orderResult.data.bill_to_snapshot_json ??
+    (billToLocationResult.data
+      ? {
+          bill_to_display_name: billToLocationResult.data.location_name,
+          address_line_1: billToLocationResult.data.address_line_1,
+          address_line_2: billToLocationResult.data.address_line_2,
+          city: billToLocationResult.data.city,
+          state_province: billToLocationResult.data.state_province,
+          postal_code: billToLocationResult.data.postal_code,
+          country: billToLocationResult.data.country,
+          country_code: billToLocationResult.data.country_code,
+          shipping_contact_name: billToLocationResult.data.receiver_name,
+          shipping_contact_phone: billToLocationResult.data.phone,
+          shipping_contact_email: billToLocationResult.data.email,
+        }
+      : null);
+
   return {
     ...orderResult.data,
+    bill_to_snapshot_json: billToSnapshot,
     converted_order: convertedOrderResult.data,
     lines: (linesResult.data ?? []).map((line) => ({
       ...line,

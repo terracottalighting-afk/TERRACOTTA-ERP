@@ -1322,7 +1322,7 @@ async function createSalesOrderAction(formData: FormData) {
       ? supabase
           .from("customer_location")
           .select(
-            "id, location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, email",
+            "id, location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, receiver_name, phone, email",
           )
           .eq("id", locationId)
           .eq("customer_account_id", customerId)
@@ -1402,6 +1402,8 @@ async function createSalesOrderAction(formData: FormData) {
   const dropshipCountry =
     textValue(formData, "dropship_country") || "United States";
   const shippingContactEmail = textValue(formData, "shipping_contact_email");
+  const shippingContactName = textValue(formData, "shipping_contact_name");
+  const shippingContactPhone = textValue(formData, "shipping_contact_phone");
 
   if (
     isDropship &&
@@ -1451,6 +1453,10 @@ async function createSalesOrderAction(formData: FormData) {
         postal_code: savedLocation!.postal_code,
         country: savedLocation!.country,
         country_code: savedLocation!.country_code,
+        shipping_contact_name:
+          shippingContactName || savedLocation!.receiver_name || null,
+        shipping_contact_phone:
+          shippingContactPhone || savedLocation!.phone || null,
         shipping_contact_email:
           shippingContactEmail ||
           savedLocation!.email ||
@@ -8259,7 +8265,7 @@ async function getOrderEntryData(customerId: string) {
     supabase
       .from("customer_location")
       .select(
-        "id, location_name, address_line_1, city, state_province, country_code, email, is_default_ship_to",
+        "id, location_name, address_line_1, city, state_province, country_code, receiver_name, phone, email, is_default_ship_to",
       )
       .eq("customer_account_id", customerId)
       .eq("is_shipping_address", true)
@@ -8398,10 +8404,12 @@ async function getOrderEntryData(customerId: string) {
       ]
         .filter(Boolean)
         .join(", "),
+      contactName: location.receiver_name,
       email: location.email,
       id: location.id,
       isDefault: location.is_default_ship_to,
       name: location.location_name,
+      phone: location.phone,
     }),
   );
 

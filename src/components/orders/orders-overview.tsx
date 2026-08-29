@@ -156,7 +156,7 @@ export async function OrdersOverview({
         supabase
           .from("customer_location")
           .select(
-            "id, location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, email, is_billing_address, is_default_ship_to, is_shipping_address",
+            "id, location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, receiver_name, phone, email, is_billing_address, is_default_ship_to, is_shipping_address",
           )
           .eq("customer_account_id", order.customer_account_id)
           .eq("status", "active")
@@ -174,10 +174,12 @@ export async function OrdersOverview({
         city: location.city,
         country: location.country,
         countryCode: location.country_code,
+        contactName: location.receiver_name,
         email: location.email,
         id: location.id,
         isDefault: location.is_default_ship_to,
         name: location.location_name,
+        phone: location.phone,
         postalCode: location.postal_code,
         stateProvince: location.state_province,
       }));

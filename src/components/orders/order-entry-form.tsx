@@ -18,10 +18,12 @@ export type OrderPartOption = OrderProductOption & {
 
 export type OrderShipToOption = {
   address: string;
+  contactName: string | null;
   email: string | null;
   id: string;
   isDefault: boolean;
   name: string;
+  phone: string | null;
 };
 
 type OrderLine = OrderProductOption & {
@@ -52,6 +54,14 @@ export function OrderEntryForm({ accountName, customerId, defaultDiscountPercent
   const [lines, setLines] = useState<OrderLine[]>([]);
   const [orderType, setOrderType] = useState("regular");
   const [locationId, setLocationId] = useState(defaultLocationId ?? shipToOptions.find((location) => location.isDefault)?.id ?? shipToOptions[0]?.id ?? "");
+  const [shippingContactName, setShippingContactName] = useState(() => {
+    const initialLocationId = defaultLocationId ?? shipToOptions.find((location) => location.isDefault)?.id ?? shipToOptions[0]?.id;
+    return shipToOptions.find((location) => location.id === initialLocationId)?.contactName ?? "";
+  });
+  const [shippingContactPhone, setShippingContactPhone] = useState(() => {
+    const initialLocationId = defaultLocationId ?? shipToOptions.find((location) => location.isDefault)?.id ?? shipToOptions[0]?.id;
+    return shipToOptions.find((location) => location.id === initialLocationId)?.phone ?? "";
+  });
   const [shippingContactEmail, setShippingContactEmail] = useState(() => {
     const initialLocationId = defaultLocationId ?? shipToOptions.find((location) => location.isDefault)?.id ?? shipToOptions[0]?.id;
     return shipToOptions.find((location) => location.id === initialLocationId)?.email ?? "";
@@ -185,8 +195,11 @@ export function OrderEntryForm({ accountName, customerId, defaultDiscountPercent
               Saved Shipping Address
               <select name="customer_location_id" onChange={(event) => {
                 const nextLocationId = event.target.value;
+                const nextLocation = shipToOptions.find((location) => location.id === nextLocationId);
                 setLocationId(nextLocationId);
-                setShippingContactEmail(shipToOptions.find((location) => location.id === nextLocationId)?.email ?? "");
+                setShippingContactName(nextLocation?.contactName ?? "");
+                setShippingContactPhone(nextLocation?.phone ?? "");
+                setShippingContactEmail(nextLocation?.email ?? "");
               }} value={locationId}>
                 <option value="">Select a saved shipping address</option>
                 {shipToOptions.map((location) => (
@@ -197,7 +210,15 @@ export function OrderEntryForm({ accountName, customerId, defaultDiscountPercent
               </select>
             </label>
             <label>
-              Shipping Contact Email
+              Shipping Contact
+              <input name="shipping_contact_name" onChange={(event) => setShippingContactName(event.target.value)} value={shippingContactName} />
+            </label>
+            <label>
+              Phone
+              <input name="shipping_contact_phone" onChange={(event) => setShippingContactPhone(event.target.value)} type="tel" value={shippingContactPhone} />
+            </label>
+            <label>
+              Email
               <input name="shipping_contact_email" onChange={(event) => setShippingContactEmail(event.target.value)} type="email" value={shippingContactEmail} />
             </label>
         </div>

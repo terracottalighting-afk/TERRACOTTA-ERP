@@ -21,6 +21,14 @@ export function addressSnapshotLines(
     .filter(Boolean)
     .map(String)
     .join(", ");
+  const shippingContact = [
+    value.shipping_contact_name,
+    value.shipping_contact_phone,
+    value.shipping_contact_email,
+  ]
+    .filter(Boolean)
+    .map(String)
+    .join(" | ");
 
   return [
     name,
@@ -28,6 +36,7 @@ export function addressSnapshotLines(
     value.address_line_2,
     cityStatePostal,
     value.country,
+    shippingContact,
   ]
     .filter(Boolean)
     .map(String);

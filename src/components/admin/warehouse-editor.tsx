@@ -51,7 +51,7 @@ export async function WarehouseEditor({
             </section>
             <div className="form-actions">
               <Link className="primary-action" href="/?module=admin&admin_tab=warehouse">Confirm</Link>
-              <Link className="secondary-action" href={`/?module=admin-warehouse&warehouse=${warehouse.id}`}>Edit Warehouse</Link>
+              <Link className="secondary-action" href={`/?module=admin-warehouse-edit&warehouse=${warehouse.id}`}>Edit Warehouse</Link>
             </div>
           </article>
         </section>

@@ -64,6 +64,7 @@ import { RgaDetailPage } from "@/components/rga/rga-detail-page";
 import { RgaSolutionPage } from "@/components/rga/rga-solution-page";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
 import { WarehouseEditor } from "@/components/admin/warehouse-editor";
+import { WarehouseInfoPage } from "@/components/admin/warehouse-info-page";
 import { ModuleNav } from "./module-nav";
 import {
   addressSnapshotLines,
@@ -942,7 +943,7 @@ async function createWarehouseAction(formData: FormData) {
   const optionalText = (key: string) => textValue(formData, key) || null;
   const warehouseCode = textValue(formData, "warehouse_code").toUpperCase();
   const name = textValue(formData, "name");
-  if (!warehouseCode || !name) redirect("/?module=admin-warehouse&error=Warehouse%20code%20and%20name%20are%20required.");
+  if (!warehouseCode || !name) redirect("/?module=admin-warehouse-edit&error=Warehouse%20code%20and%20name%20are%20required.");
 
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase.from("warehouse").insert({
@@ -950,7 +951,7 @@ async function createWarehouseAction(formData: FormData) {
     country: textValue(formData, "country") || "United States", country_code: (textValue(formData, "country_code") || "USA").toUpperCase(),
     name, notes: optionalText("notes"), postal_code: optionalText("postal_code"), state_province: optionalText("state_province"), warehouse_code: warehouseCode,
   }).select("id").single();
-  if (error) redirect(`/?module=admin-warehouse&error=${encodeURIComponent(error.message)}`);
+  if (error) redirect(`/?module=admin-warehouse-edit&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");
   redirect(`/?module=admin-warehouse&warehouse=${data.id}&notice=warehouse_created`);
 }
@@ -967,7 +968,7 @@ async function updateWarehouseAction(formData: FormData) {
     state_province: optionalText("state_province"), warehouse_code: textValue(formData, "warehouse_code").toUpperCase(),
   };
   const { error } = await createSupabaseAdminClient().from("warehouse").update(update).eq("id", warehouseId);
-  if (error) redirect(`/?module=admin-warehouse&warehouse=${warehouseId}&error=${encodeURIComponent(error.message)}`);
+  if (error) redirect(`/?module=admin-warehouse-edit&warehouse=${warehouseId}&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");
   redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
 }
@@ -9440,7 +9441,8 @@ export async function ErpRouter({
     : null;
   const moduleLabels: Record<string, string> = {
     admin: "Admin",
-    "admin-warehouse": "Warehouse Settings",
+    "admin-warehouse": "Warehouse Information",
+    "admin-warehouse-edit": "Edit Warehouse",
     "add-contact": "Add Contact",
     "add-customer": "Add Customer",
     "add-location": "Add Location",
@@ -10196,8 +10198,10 @@ export async function ErpRouter({
             notice={params.notice}
             saveAction={recordInvoicePaymentAction}
           />
-        ) : activeModule === "admin-warehouse" ? (
+        ) : activeModule === "admin-warehouse-edit" ? (
           <WarehouseEditor createAction={createWarehouseAction} error={params.error} notice={params.notice} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
+        ) : activeModule === "admin-warehouse" ? (
+          <WarehouseInfoPage warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
           <AdminDashboard selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (

@@ -34,3 +34,18 @@ export function createSupabaseAdminClient() {
     global: { fetch: fetchWithRetry }
   });
 }
+
+// Temporary untyped access for newly migrated tables until database types are regenerated.
+export function createSupabaseUntypedAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceRoleKey) {
+    throw new Error("Missing Supabase admin environment variables.");
+  }
+
+  return createClient(url, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { fetch: fetchWithRetry },
+  });
+}

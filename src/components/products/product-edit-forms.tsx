@@ -682,6 +682,7 @@ export async function EditProductPartsForm({
   selectedParts,
   setupFlow,
   loadProduct,
+  updatePartInventoryAction,
   updateProductPartsAction,
 }: {
   error?: string;
@@ -690,6 +691,7 @@ export async function EditProductPartsForm({
   selectedParts?: string;
   setupFlow?: boolean;
   loadProduct: LoadProduct;
+  updatePartInventoryAction: FormAction;
   updateProductPartsAction: FormAction;
 }) {
   const product = productId ? await loadProduct(productId) : null;
@@ -834,24 +836,54 @@ export async function EditProductPartsForm({
               <fieldset>
                 <legend>Part Inventory</legend>
                 <p className="fieldset-note">
-                  Inventory is maintained per part, including its on-hand,
-                  allocated, and location balances.
+                  Set the sellable quantity for each linked part. Use the
+                  detailed inventory editor when an adjustment needs a specific
+                  warehouse, bin, allocation, or condition.
                 </p>
-                <div className="compact-list">
+                <div className="table-wrap">
+                  <table className="editable-table">
+                    <thead>
+                      <tr>
+                        <th>Part SKU</th>
+                        <th>Part Name</th>
+                        <th>Current Sellable Quantity</th>
+                        <th>Set Sellable Quantity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
                   {product.parts.map((part) => (
-                    <div className="compact-row" key={part.id}>
-                      <div>
+                    <tr key={part.id}>
+                      <td>
                         <strong>{part.component_sku}</strong>
-                        <span>{part.component_name}</span>
-                      </div>
-                      <Link
-                        className="text-action"
-                        href={`/?module=edit-product-inventory&product=${part.component_product_id}&return_module=product-parts`}
-                      >
-                        Edit Inventory
-                      </Link>
-                    </div>
+                        <input
+                          name="part_inventory_product_ids"
+                          type="hidden"
+                          value={part.component_product_id}
+                        />
+                      </td>
+                      <td>{part.component_name}</td>
+                      <td>
+                        {numberFormatter.format(
+                          Number(part.sellable_quantity ?? 0),
+                        )}
+                      </td>
+                      <td>
+                        <input
+                          min={0}
+                          name={`part_inventory_target_${part.component_product_id}`}
+                          step={1}
+                          type="number"
+                        />
+                      </td>
+                    </tr>
                   ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="form-actions">
+                  <button formAction={updatePartInventoryAction} type="submit">
+                    Save Inventory Updates
+                  </button>
                 </div>
               </fieldset>
             ) : null}

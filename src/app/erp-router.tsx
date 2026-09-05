@@ -5692,6 +5692,174 @@ async function updateProductInventoryAction(formData: FormData) {
   );
 }
 
+async function updatePartInventoryAction(formData: FormData) {
+  "use server";
+
+  const supabase = createSupabaseAdminClient();
+  const parentProductId = String(formData.get("product_id") ?? "").trim();
+  const productIds = [
+    ...new Set(
+      formData
+        .getAll("part_inventory_product_ids")
+        .map((value) => String(value).trim())
+        .filter(Boolean),
+    ),
+  ];
+  const editUrl = `/?module=edit-product-parts&product=${parentProductId}&part_action=edit`;
+
+  if (!parentProductId || productIds.length === 0) {
+    redirect(`${editUrl}&error=missing_required`);
+  }
+
+  const targetQuantityByProductId = new Map<string, number>();
+  for (const productId of productIds) {
+    const rawValue = String(
+      formData.get(`part_inventory_target_${productId}`) ?? "",
+    ).trim();
+    if (!rawValue) {
+      continue;
+    }
+
+    const quantity = Number(rawValue);
+    if (!Number.isInteger(quantity) || quantity < 0) {
+      redirect(
+        `${editUrl}&error=${encodeURIComponent("Each sellable quantity must be a whole number zero or higher.")}`,
+      );
+    }
+    targetQuantityByProductId.set(productId, quantity);
+  }
+
+  if (targetQuantityByProductId.size === 0) {
+    redirect(
+      `${editUrl}&error=${encodeURIComponent("Enter at least one sellable quantity to update.")}`,
+    );
+  }
+
+  const [partLinksResult, productsResult] = await Promise.all([
+    supabase
+      .from("product_part")
+      .select("component_product_id")
+      .eq("parent_product_id", parentProductId)
+      .eq("is_active", true)
+      .in("component_product_id", [...targetQuantityByProductId.keys()]),
+    supabase
+      .from("product")
+      .select("id, no_box_needed")
+      .in("id", [...targetQuantityByProductId.keys()]),
+  ]);
+
+  if (partLinksResult.error || productsResult.error) {
+    redirect(
+      `${editUrl}&error=${encodeURIComponent(partLinksResult.error?.message ?? productsResult.error?.message ?? "Unable to load part inventory.")}`,
+    );
+  }
+
+  const linkedProductIds = new Set(
+    (partLinksResult.data ?? []).map((part) => part.component_product_id),
+  );
+  if (
+    [...targetQuantityByProductId.keys()].some(
+      (productId) => !linkedProductIds.has(productId),
+    )
+  ) {
+    redirect(
+      `${editUrl}&error=${encodeURIComponent("A selected part is no longer linked to this product.")}`,
+    );
+  }
+
+  const productById = new Map(
+    (productsResult.data ?? []).map((product) => [product.id, product]),
+  );
+  if (
+    [...targetQuantityByProductId.keys()].some(
+      (productId) => !productById.has(productId),
+    )
+  ) {
+    redirect(`${editUrl}&error=${encodeURIComponent("A selected part was not found.")}`);
+  }
+
+  const { data: fallbackLocation, error: fallbackLocationError } = await supabase
+    .from("warehouse_location")
+    .select("id, warehouse_id")
+    .eq("is_active", true)
+    .eq("is_pickable", true)
+    .eq("location_code", "UNSPECIFIED-PICK")
+    .order("warehouse_id", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (fallbackLocationError || !fallbackLocation) {
+    redirect(
+      `${editUrl}&error=${encodeURIComponent(fallbackLocationError?.message ?? "No Unspecified Pick Location is available for the inventory update.")}`,
+    );
+  }
+
+  for (const [productId, targetQuantity] of targetQuantityByProductId) {
+    const product = productById.get(productId)!;
+    const { data: requiredBoxes, error: requiredBoxesError } = product.no_box_needed
+      ? { data: [], error: null }
+      : await supabase
+          .from("product_packing_box")
+          .select("id, default_warehouse_id, default_warehouse_location_id")
+          .eq("product_id", productId)
+          .eq("is_active", true)
+          .eq("is_required_for_sale", true);
+
+    if (requiredBoxesError) {
+      redirect(`${editUrl}&error=${encodeURIComponent(requiredBoxesError.message)}`);
+    }
+
+    const targets = product.no_box_needed
+      ? [
+          {
+            id: null,
+            default_warehouse_id: fallbackLocation.warehouse_id,
+            default_warehouse_location_id: fallbackLocation.id,
+          },
+        ]
+      : requiredBoxes ?? [];
+
+    for (const target of targets) {
+      const warehouseId = target.default_warehouse_id ?? fallbackLocation.warehouse_id;
+      const warehouseLocationId =
+        target.default_warehouse_location_id ?? fallbackLocation.id;
+      let balanceQuery = supabase
+        .from("inventory_balance")
+        .select("id")
+        .eq("product_id", productId)
+        .eq("warehouse_location_id", warehouseLocationId)
+        .eq("inventory_condition", "regular");
+      balanceQuery = target.id
+        ? balanceQuery.eq("product_packing_box_id", target.id)
+        : balanceQuery.is("product_packing_box_id", null);
+
+      const { data: existingBalance, error: existingBalanceError } =
+        await balanceQuery.maybeSingle();
+      if (existingBalanceError) {
+        redirect(`${editUrl}&error=${encodeURIComponent(existingBalanceError.message)}`);
+      }
+
+      const payload = {
+        inventory_condition: "regular" as const,
+        product_id: productId,
+        product_packing_box_id: target.id,
+        quantity_allocated: 0,
+        quantity_on_hand: targetQuantity,
+        warehouse_id: warehouseId,
+        warehouse_location_id: warehouseLocationId,
+      };
+      const result = existingBalance
+        ? await supabase.from("inventory_balance").update(payload).eq("id", existingBalance.id)
+        : await supabase.from("inventory_balance").insert(payload);
+      if (result.error) {
+        redirect(`${editUrl}&error=${encodeURIComponent(result.error.message)}`);
+      }
+    }
+  }
+
+  redirect(editUrl);
+}
+
 async function updateProductPartsAction(formData: FormData) {
   "use server";
 
@@ -9838,6 +10006,7 @@ export async function ErpRouter({
             productId={params.product}
             selectedParts={params.selected_parts}
             setupFlow={params.setup === "product"}
+            updatePartInventoryAction={updatePartInventoryAction}
             updateProductPartsAction={updateProductPartsAction}
           />
         ) : activeModule === "edit-product-vendors" ? (

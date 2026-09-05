@@ -1,16 +1,13 @@
 import { StatusBadge } from "@/components/ui";
-import { label } from "@/lib/formatters";
 import { productPartRoleOptions } from "@/lib/product-part-roles";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function AdminDashboard() {
   const supabase = createSupabaseAdminClient();
-  const [warehousesResult, locationsResult, territoriesResult, usersResult, rolesResult, brandsResult, suitesResult, categoriesResult, finishesResult, accountTypesResult, businessTypesResult, agenciesResult, salesRepsResult] = await Promise.all([
+  const [warehousesResult, locationsResult, territoriesResult, brandsResult, suitesResult, categoriesResult, finishesResult, accountTypesResult, businessTypesResult, agenciesResult, salesRepsResult] = await Promise.all([
     supabase.from("warehouse").select("id, warehouse_code, name, is_active").order("name", { ascending: true }),
     supabase.from("warehouse_location").select("id, warehouse_id, location_code, location_name, location_type, is_active, is_pickable").order("location_code", { ascending: true }),
     supabase.from("territory").select("id, territory_code, name, status").order("name", { ascending: true }),
-    supabase.from("user_account").select("id, display_name, email, user_type, department, is_active").order("display_name", { ascending: true }),
-    supabase.from("role").select("id, role_code, name, user_type, is_active").order("name", { ascending: true }),
     supabase.from("brand").select("id"),
     supabase.from("product_signature_suite").select("id"),
     supabase.from("product_category").select("id"),
@@ -20,14 +17,12 @@ export async function AdminDashboard() {
     supabase.from("sales_rep_agency").select("id"),
     supabase.from("sales_rep").select("id"),
   ]);
-  const failedResult = [warehousesResult, locationsResult, territoriesResult, usersResult, rolesResult, brandsResult, suitesResult, categoriesResult, finishesResult, accountTypesResult, businessTypesResult, agenciesResult, salesRepsResult].find((result) => result.error);
+  const failedResult = [warehousesResult, locationsResult, territoriesResult, brandsResult, suitesResult, categoriesResult, finishesResult, accountTypesResult, businessTypesResult, agenciesResult, salesRepsResult].find((result) => result.error);
   if (failedResult?.error) throw new Error(failedResult.error.message);
 
   const warehouses = warehousesResult.data ?? [];
   const locations = locationsResult.data ?? [];
   const territories = territoriesResult.data ?? [];
-  const users = usersResult.data ?? [];
-  const roles = rolesResult.data ?? [];
   const warehouseNameById = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse.name]));
   const configurationCounts = [
     { label: "Brands", value: brandsResult.data?.length ?? 0 },
@@ -46,8 +41,7 @@ export async function AdminDashboard() {
       <div className="metric"><span>Warehouses</span><strong>{warehouses.length}</strong></div>
       <div className="metric"><span>Bins / Locations</span><strong>{locations.length}</strong></div>
       <div className="metric"><span>Territories</span><strong>{territories.length}</strong></div>
-      <div className="metric"><span>Users</span><strong>{users.length}</strong></div>
-      <div className="metric"><span>Security Roles</span><strong>{roles.length}</strong></div>
+      <div className="metric"><span>Users and Access</span><strong>Controlled</strong></div>
     </section>
     <section className="section-stack">
       <article className="data-section">
@@ -66,10 +60,7 @@ export async function AdminDashboard() {
         {territories.length === 0 ? <p className="empty-state">No territories have been configured.</p> : null}
       </div></article>
       <article className="data-section"><div className="section-title"><h3>Product Part Roles</h3></div><p className="fieldset-note">These roles are available when linking a component part to a product.</p><div className="badge-row">{productPartRoleOptions.map((role) => <StatusBadge key={role} value={role} />)}</div></article>
-      <article className="data-section"><div className="section-title"><h3>Users and Access Roles</h3></div><div className="table-wrap"><table className="data-table"><thead><tr><th>User</th><th>Email</th><th>Department</th><th>User Type</th><th>Status</th></tr></thead><tbody>
-        {users.map((user) => <tr key={user.id}><td>{user.display_name}</td><td>{user.email}</td><td>{user.department ?? "Not set"}</td><td>{label(user.user_type)}</td><td><StatusBadge tone={user.is_active ? "good" : "warn"} value={user.is_active ? "Active" : "Inactive"} /></td></tr>)}
-        {users.length === 0 ? <tr><td colSpan={5}>No users have been configured.</td></tr> : null}
-      </tbody></table></div><div className="badge-row">{roles.map((role) => <StatusBadge key={role.id} tone={role.is_active ? "primary" : "warn"} value={`${role.name} (${role.role_code})`} />)}</div></article>
+      <article className="data-section"><div className="section-title"><h3>Users and Access Roles</h3></div><p className="fieldset-note">User accounts and security roles are intentionally protected from the general application database role. This dashboard now reserves the management area; its controlled user-administration screen will be added with the required access policy.</p></article>
       <article className="data-section"><div className="section-title"><h3>Shared Master Data</h3></div><div className="metric-grid">{configurationCounts.map((item) => <div className="metric" key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}</div></article>
     </section>
   </section>;

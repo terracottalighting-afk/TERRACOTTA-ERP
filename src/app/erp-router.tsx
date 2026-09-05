@@ -65,6 +65,7 @@ import { RgaSolutionPage } from "@/components/rga/rga-solution-page";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
 import { WarehouseEditor } from "@/components/admin/warehouse-editor";
 import { WarehouseInfoPage } from "@/components/admin/warehouse-info-page";
+import { ZoneEditor } from "@/components/admin/zone-editor";
 import { ModuleNav } from "./module-nav";
 import {
   addressSnapshotLines,
@@ -969,6 +970,25 @@ async function updateWarehouseAction(formData: FormData) {
   };
   const { error } = await createSupabaseAdminClient().from("warehouse").update(update).eq("id", warehouseId);
   if (error) redirect(`/?module=admin-warehouse-edit&warehouse=${warehouseId}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
+}
+
+async function createWarehouseZoneAction(formData: FormData) {
+  "use server";
+  const warehouseId = textValue(formData, "warehouse_id");
+  const zoneCode = textValue(formData, "zone_code").toUpperCase();
+  const name = textValue(formData, "name");
+  if (!warehouseId || !zoneCode || !name) {
+    redirect(`/?module=admin-zone-add&warehouse=${warehouseId}&error=Zone%20code%20and%20name%20are%20required.`);
+  }
+  const { error } = await createSupabaseAdminClient().from("warehouse_zone").insert({
+    description: textValue(formData, "description") || null,
+    name,
+    warehouse_id: warehouseId,
+    zone_code: zoneCode,
+  });
+  if (error) redirect(`/?module=admin-zone-add&warehouse=${warehouseId}&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");
   redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
 }
@@ -9443,6 +9463,7 @@ export async function ErpRouter({
     admin: "Admin",
     "admin-warehouse": "Warehouse Information",
     "admin-warehouse-edit": "Edit Warehouse",
+    "admin-zone-add": "Add Zone",
     "add-contact": "Add Contact",
     "add-customer": "Add Customer",
     "add-location": "Add Location",
@@ -10200,6 +10221,8 @@ export async function ErpRouter({
           />
         ) : activeModule === "admin-warehouse-edit" ? (
           <WarehouseEditor createAction={createWarehouseAction} error={params.error} notice={params.notice} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
+        ) : activeModule === "admin-zone-add" ? (
+          <ZoneEditor createAction={createWarehouseZoneAction} error={params.error} warehouseId={params.warehouse} />
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (

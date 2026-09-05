@@ -18,13 +18,13 @@ export async function WarehouseInfoPage({ warehouseId }: { warehouseId?: string 
   if (!warehouse) return <section className="dashboard-panel"><p className="empty-state">Warehouse not found.</p></section>;
 
   return <section className="dashboard-panel">
-    <section className="account-header"><div><span className="eyebrow">Warehouse Settings</span><h2>{warehouse.name}</h2><Link className="text-action" href="/?module=admin&admin_tab=warehouse">Back to Warehouse Settings</Link></div><Link className="primary-action" href={`/?module=admin-warehouse-edit&warehouse=${warehouse.id}`}>Edit Warehouse</Link></section>
+    <section className="account-header"><div><span className="eyebrow">Warehouse Settings</span><h2>{warehouse.name}</h2><Link className="text-action" href="/?module=admin&admin_tab=warehouse">Back to Warehouse Settings</Link></div></section>
     <section className="detail-grid">
-      <article className="info-panel"><h3>Warehouse Information</h3><dl><div><dt>Warehouse Code</dt><dd>{warehouse.warehouse_code}</dd></div><div><dt>Status</dt><dd><StatusBadge tone={warehouse.is_active ? "good" : "warn"} value={warehouse.is_active ? "Active" : "Inactive"} /></dd></div><div><dt>Notes</dt><dd>{warehouse.notes ?? "Not set"}</dd></div></dl></article>
-      <article className="info-panel"><h3>Address</h3><dl><div><dt>Address</dt><dd>{[warehouse.address_line_1, warehouse.address_line_2].filter(Boolean).join(", ") || "Not set"}</dd></div><div><dt>City / State</dt><dd>{[warehouse.city, warehouse.state_province, warehouse.postal_code].filter(Boolean).join(", ") || "Not set"}</dd></div><div><dt>Country</dt><dd>{warehouse.country}</dd></div></dl></article>
+      <article className="info-panel"><div className="panel-title-row"><h3>Warehouse Information</h3><Link className="text-action" href={`/?module=admin-warehouse-edit&warehouse=${warehouse.id}`}>Edit</Link></div><dl><div><dt>Warehouse Code</dt><dd>{warehouse.warehouse_code}</dd></div><div><dt>Status</dt><dd><StatusBadge tone={warehouse.is_active ? "good" : "warn"} value={warehouse.is_active ? "Active" : "Inactive"} /></dd></div><div><dt>Notes</dt><dd>{warehouse.notes ?? "Not set"}</dd></div></dl></article>
+      <article className="info-panel"><div className="panel-title-row"><h3>Address</h3><Link className="text-action" href={`/?module=admin-warehouse-edit&warehouse=${warehouse.id}`}>Edit</Link></div><dl><div><dt>Address</dt><dd>{[warehouse.address_line_1, warehouse.address_line_2].filter(Boolean).join(", ") || "Not set"}</dd></div><div><dt>City / State</dt><dd>{[warehouse.city, warehouse.state_province, warehouse.postal_code].filter(Boolean).join(", ") || "Not set"}</dd></div><div><dt>Country</dt><dd>{warehouse.country}</dd></div></dl></article>
     </section>
     <article className="data-section">
-      <div className="section-title"><h3>Zones, Aisles, and Sections</h3></div>
+      <div className="section-title"><h3>Zones, Aisles, and Sections</h3><Link className="text-action" href={`/?module=admin-zone-add&warehouse=${warehouse.id}`}>Add Zone</Link></div>
       <div className="compact-list">
         {(zones ?? []).map((zone) => {
           const zoneAisles = (aisles ?? []).filter((aisle) => aisle.warehouse_zone_id === zone.id);

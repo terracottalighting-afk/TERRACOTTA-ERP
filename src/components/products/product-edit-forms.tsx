@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Fragment } from "react";
 import { dateLabel, fileSizeLabel, label, numberFormatter } from "@/lib/formatters";
+import { productPartRoleOptions } from "@/lib/product-part-roles";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { PartParentProductPicker } from "./part-parent-product-picker";
 import { ProductLedSpecFields } from "./product-led-spec-fields";
@@ -113,19 +114,6 @@ type ProductEditProduct = {
   }[];
 };
 type LoadProduct = (productId: string) => Promise<ProductEditProduct | null>;
-
-const productPartRoleOptions = [
-  "Chain",
-  "Rod",
-  "Decor Glass",
-  "Glass Shade",
-  "Stone Shade",
-  "Other Decor",
-  "Fabric Shade",
-  "Decor Nut",
-  "Canopy",
-  "Others",
-];
 
 type ProductSetupStep =
   | "profile"

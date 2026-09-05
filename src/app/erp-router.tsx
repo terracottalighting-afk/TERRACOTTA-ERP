@@ -62,6 +62,7 @@ import { CreateRgaPage } from "@/components/rga/create-rga-page";
 import { RgaDashboardPage } from "@/components/rga/rga-dashboard-page";
 import { RgaDetailPage } from "@/components/rga/rga-detail-page";
 import { RgaSolutionPage } from "@/components/rga/rga-solution-page";
+import { AdminDashboard } from "@/components/admin/admin-dashboard";
 import { ModuleNav } from "./module-nav";
 import {
   addressSnapshotLines,
@@ -72,6 +73,7 @@ import {
   numberFormatter,
   timestampLabel,
 } from "@/lib/formatters";
+import { productPartRoleOptions } from "@/lib/product-part-roles";
 import {
   EmptyState,
   Metric,
@@ -676,19 +678,6 @@ type ProductHangingConfigDetail = {
   rod_length: string | null;
   wire_length: string | null;
 };
-
-const productPartRoleOptions = [
-  "Chain",
-  "Rod",
-  "Decor Glass",
-  "Glass Shade",
-  "Stone Shade",
-  "Other Decor",
-  "Fabric Shade",
-  "Decor Nut",
-  "Canopy",
-  "Others",
-];
 
 const countryOptions = [
   { code: "USA", name: "United States" },
@@ -10168,6 +10157,8 @@ export async function ErpRouter({
             notice={params.notice}
             saveAction={recordInvoicePaymentAction}
           />
+        ) : activeModule === "admin" ? (
+          <AdminDashboard />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

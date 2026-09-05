@@ -148,7 +148,7 @@ export function ProductPartsEditRows({
         ) : (
           <>
             <button name="part_save_action" type="submit" value="edit">
-              Edit Selected
+              Save Part Changes
             </button>
             <button className="secondary-action secondary-action--light" onClick={() => setShowParentPicker((current) => !current)} type="button">
               Add a Parent Product

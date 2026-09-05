@@ -813,21 +813,49 @@ export async function EditProductPartsForm({
         </fieldset>
 
         {product && activeAction !== "add" ? (
-          <fieldset>
-            <legend>Existing Parts</legend>
-            <ProductPartsEditRows
-              activeAction={activeAction}
-              initialSelectedPartIds={initialSelectedPartIds}
-              parentProductId={product.id}
-              parts={product.parts}
-              productOptions={productOptions.map((candidate) => ({
-                id: candidate.id,
-                name: candidate.name,
-                sku: candidate.sku,
-              }))}
-              roleOptions={productPartRoleOptions}
-            />
-          </fieldset>
+          <>
+            <fieldset>
+              <legend>Existing Parts</legend>
+              <ProductPartsEditRows
+                activeAction={activeAction}
+                initialSelectedPartIds={initialSelectedPartIds}
+                parentProductId={product.id}
+                parts={product.parts}
+                productOptions={productOptions.map((candidate) => ({
+                  id: candidate.id,
+                  name: candidate.name,
+                  sku: candidate.sku,
+                }))}
+                roleOptions={productPartRoleOptions}
+              />
+            </fieldset>
+
+            {activeAction === "edit" ? (
+              <fieldset>
+                <legend>Part Inventory</legend>
+                <p className="fieldset-note">
+                  Inventory is maintained per part, including its on-hand,
+                  allocated, and location balances.
+                </p>
+                <div className="compact-list">
+                  {product.parts.map((part) => (
+                    <div className="compact-row" key={part.id}>
+                      <div>
+                        <strong>{part.component_sku}</strong>
+                        <span>{part.component_name}</span>
+                      </div>
+                      <Link
+                        className="text-action"
+                        href={`/?module=edit-product-inventory&product=${part.component_product_id}&return_module=product-parts`}
+                      >
+                        Edit Inventory
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </fieldset>
+            ) : null}
+          </>
         ) : null}
 
         {activeAction === "add" ? (

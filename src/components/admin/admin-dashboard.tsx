@@ -54,9 +54,9 @@ export async function AdminDashboard({ selectedTab }: { selectedTab?: string }) 
           <div className="metric"><span>Legacy Bins / Locations</span><strong>{locations.length}</strong></div>
           <div className="metric"><span>Existing Bins / Locations</span><strong>{locations.length}</strong></div>
         </section>
-        <div className="section-title"><h3>Warehouse and Bin Setup</h3></div>
+        <div className="section-title"><h3>Warehouse and Bin Setup</h3><Link className="small-action" href="/?module=admin-warehouse">Add Warehouse</Link></div>
         <div className="table-wrap"><table className="data-table"><thead><tr><th>Warehouse</th><th>Code</th><th>Bins / Locations</th><th>Status</th></tr></thead><tbody>
-          {warehouses.map((warehouse) => { const count = locations.filter((location) => location.warehouse_id === warehouse.id).length; return <tr key={warehouse.id}><td>{warehouse.name}</td><td>{warehouse.warehouse_code}</td><td>{count}</td><td><StatusBadge tone={warehouse.is_active ? "good" : "warn"} value={warehouse.is_active ? "Active" : "Inactive"} /></td></tr>; })}
+          {warehouses.map((warehouse) => { const count = locations.filter((location) => location.warehouse_id === warehouse.id).length; return <tr key={warehouse.id}><td><Link className="record-link" href={`/?module=admin-warehouse&warehouse=${warehouse.id}`}>{warehouse.name}</Link></td><td>{warehouse.warehouse_code}</td><td>{count}</td><td><StatusBadge tone={warehouse.is_active ? "good" : "warn"} value={warehouse.is_active ? "Active" : "Inactive"} /></td></tr>; })}
           {warehouses.length === 0 ? <tr><td colSpan={4}>No warehouses have been configured.</td></tr> : null}
         </tbody></table></div>
         <div className="compact-list">

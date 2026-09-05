@@ -63,6 +63,7 @@ import { RgaDashboardPage } from "@/components/rga/rga-dashboard-page";
 import { RgaDetailPage } from "@/components/rga/rga-detail-page";
 import { RgaSolutionPage } from "@/components/rga/rga-solution-page";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
+import { WarehouseEditor } from "@/components/admin/warehouse-editor";
 import { ModuleNav } from "./module-nav";
 import {
   addressSnapshotLines,
@@ -172,6 +173,7 @@ export type SearchParams = Promise<{
   product_tab?: string;
   spec_section?: string;
   vendor_action?: string;
+  warehouse?: string;
   q?: string;
   tab?: string;
 }>;
@@ -933,6 +935,41 @@ function toLookup(options: SelectOption[]) {
   return Object.fromEntries(
     options.map((item) => [item.id, item.name]),
   ) as Lookup;
+}
+
+async function createWarehouseAction(formData: FormData) {
+  "use server";
+  const optionalText = (key: string) => textValue(formData, key) || null;
+  const warehouseCode = textValue(formData, "warehouse_code").toUpperCase();
+  const name = textValue(formData, "name");
+  if (!warehouseCode || !name) redirect("/?module=admin-warehouse&error=Warehouse%20code%20and%20name%20are%20required.");
+
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase.from("warehouse").insert({
+    address_line_1: optionalText("address_line_1"), address_line_2: optionalText("address_line_2"), city: optionalText("city"),
+    country: textValue(formData, "country") || "United States", country_code: (textValue(formData, "country_code") || "USA").toUpperCase(),
+    name, notes: optionalText("notes"), postal_code: optionalText("postal_code"), state_province: optionalText("state_province"), warehouse_code: warehouseCode,
+  }).select("id").single();
+  if (error) redirect(`/?module=admin-warehouse&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=admin-warehouse&warehouse=${data.id}`);
+}
+
+async function updateWarehouseAction(formData: FormData) {
+  "use server";
+  const optionalText = (key: string) => textValue(formData, key) || null;
+  const warehouseId = textValue(formData, "warehouse_id");
+  if (!warehouseId) redirect("/?module=admin&admin_tab=warehouse");
+  const update = formData.get("deactivate") === "true" ? { is_active: false } : {
+    address_line_1: optionalText("address_line_1"), address_line_2: optionalText("address_line_2"), city: optionalText("city"),
+    country: textValue(formData, "country") || "United States", country_code: (textValue(formData, "country_code") || "USA").toUpperCase(),
+    name: textValue(formData, "name"), notes: optionalText("notes"), postal_code: optionalText("postal_code"),
+    state_province: optionalText("state_province"), warehouse_code: textValue(formData, "warehouse_code").toUpperCase(),
+  };
+  const { error } = await createSupabaseAdminClient().from("warehouse").update(update).eq("id", warehouseId);
+  if (error) redirect(`/?module=admin-warehouse&warehouse=${warehouseId}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
 }
 
 async function createCustomerAction(formData: FormData) {
@@ -9403,6 +9440,7 @@ export async function ErpRouter({
     : null;
   const moduleLabels: Record<string, string> = {
     admin: "Admin",
+    "admin-warehouse": "Warehouse Settings",
     "add-contact": "Add Contact",
     "add-customer": "Add Customer",
     "add-location": "Add Location",
@@ -10158,6 +10196,8 @@ export async function ErpRouter({
             notice={params.notice}
             saveAction={recordInvoicePaymentAction}
           />
+        ) : activeModule === "admin-warehouse" ? (
+          <WarehouseEditor createAction={createWarehouseAction} error={params.error} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
           <AdminDashboard selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (

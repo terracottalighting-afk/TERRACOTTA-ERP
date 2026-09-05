@@ -86,6 +86,7 @@ import type { Database } from "@/types/supabase";
 
 export type SearchParams = Promise<{
   advanced?: string;
+  admin_tab?: string;
   agency?: string;
   contact?: string;
   customer?: string;
@@ -10158,7 +10159,7 @@ export async function ErpRouter({
             saveAction={recordInvoicePaymentAction}
           />
         ) : activeModule === "admin" ? (
-          <AdminDashboard />
+          <AdminDashboard selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

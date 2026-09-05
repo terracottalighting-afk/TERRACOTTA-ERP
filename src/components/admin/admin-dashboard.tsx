@@ -1,8 +1,11 @@
+import Link from "next/link";
 import { StatusBadge } from "@/components/ui";
 import { productPartRoleOptions } from "@/lib/product-part-roles";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-export async function AdminDashboard() {
+type AdminTab = "users" | "products" | "warehouse";
+
+export async function AdminDashboard({ selectedTab }: { selectedTab?: string }) {
   const supabase = createSupabaseAdminClient();
   const [warehousesResult, locationsResult, territoriesResult, brandsResult, suitesResult, categoriesResult, finishesResult, accountTypesResult, businessTypesResult, agenciesResult, salesRepsResult] = await Promise.all([
     supabase.from("warehouse").select("id, warehouse_code, name, is_active").order("name", { ascending: true }),
@@ -35,16 +38,22 @@ export async function AdminDashboard() {
     { label: "Sales Reps", value: salesRepsResult.data?.length ?? 0 },
   ];
 
+  const activeTab: AdminTab = selectedTab === "products" || selectedTab === "warehouse" ? selectedTab : "users";
+
   return <section className="dashboard-panel">
     <section className="account-header"><div><span className="eyebrow">System Administration</span><h2>Admin Dashboard</h2><p className="fieldset-note">Central register for operational setup, shared lists, and user access.</p></div></section>
-    <section className="metric-grid">
-      <div className="metric"><span>Warehouses</span><strong>{warehouses.length}</strong></div>
-      <div className="metric"><span>Bins / Locations</span><strong>{locations.length}</strong></div>
-      <div className="metric"><span>Territories</span><strong>{territories.length}</strong></div>
-      <div className="metric"><span>Users and Access</span><strong>Controlled</strong></div>
+    <section className="tab-strip" aria-label="Administration sections">
+      <Link aria-current={activeTab === "users" ? "page" : undefined} href="/?module=admin&admin_tab=users">Users and Roles</Link>
+      <Link aria-current={activeTab === "products" ? "page" : undefined} href="/?module=admin&admin_tab=products">Product Settings</Link>
+      <Link aria-current={activeTab === "warehouse" ? "page" : undefined} href="/?module=admin&admin_tab=warehouse">Warehouse Settings</Link>
     </section>
     <section className="section-stack">
-      <article className="data-section">
+      <article className={activeTab === "warehouse" ? "data-section" : "data-section tab-panel-hidden"}>
+        <section className="metric-grid">
+          <div className="metric"><span>Warehouses</span><strong>{warehouses.length}</strong></div>
+          <div className="metric"><span>Legacy Bins / Locations</span><strong>{locations.length}</strong></div>
+          <div className="metric"><span>Existing Bins / Locations</span><strong>{locations.length}</strong></div>
+        </section>
         <div className="section-title"><h3>Warehouse and Bin Setup</h3></div>
         <div className="table-wrap"><table className="data-table"><thead><tr><th>Warehouse</th><th>Code</th><th>Bins / Locations</th><th>Status</th></tr></thead><tbody>
           {warehouses.map((warehouse) => { const count = locations.filter((location) => location.warehouse_id === warehouse.id).length; return <tr key={warehouse.id}><td>{warehouse.name}</td><td>{warehouse.warehouse_code}</td><td>{count}</td><td><StatusBadge tone={warehouse.is_active ? "good" : "warn"} value={warehouse.is_active ? "Active" : "Inactive"} /></td></tr>; })}
@@ -55,13 +64,13 @@ export async function AdminDashboard() {
           {locations.length === 0 ? <p className="empty-state">No bins or warehouse locations have been configured.</p> : null}
         </div>
       </article>
-      <article className="data-section"><div className="section-title"><h3>Territories and Sales Coverage</h3></div><div className="compact-list">
+      <article className={activeTab === "warehouse" ? "data-section" : "data-section tab-panel-hidden"}><div className="section-title"><h3>Territories and Sales Coverage</h3></div><div className="compact-list">
         {territories.map((territory) => <div className="compact-row" key={territory.id}><div><strong>{territory.name}</strong><span>{territory.territory_code}</span></div><StatusBadge tone={territory.status === "active" ? "good" : "warn"} value={territory.status} /></div>)}
         {territories.length === 0 ? <p className="empty-state">No territories have been configured.</p> : null}
       </div></article>
-      <article className="data-section"><div className="section-title"><h3>Product Part Roles</h3></div><p className="fieldset-note">These roles are available when linking a component part to a product.</p><div className="badge-row">{productPartRoleOptions.map((role) => <StatusBadge key={role} value={role} />)}</div></article>
-      <article className="data-section"><div className="section-title"><h3>Users and Access Roles</h3></div><p className="fieldset-note">User accounts and security roles are intentionally protected from the general application database role. This dashboard now reserves the management area; its controlled user-administration screen will be added with the required access policy.</p></article>
-      <article className="data-section"><div className="section-title"><h3>Shared Master Data</h3></div><div className="metric-grid">{configurationCounts.map((item) => <div className="metric" key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}</div></article>
+      <article className={activeTab === "products" ? "data-section" : "data-section tab-panel-hidden"}><div className="section-title"><h3>Regular Product Settings</h3></div><p className="fieldset-note">Product categories, signature suites, and brands are the shared product lists used throughout Product Master.</p><div className="metric-grid">{configurationCounts.slice(0, 4).map((item) => <div className="metric" key={item.label}><span>{item.label}</span><strong>{item.value}</strong></div>)}</div></article>
+      <article className={activeTab === "products" ? "data-section" : "data-section tab-panel-hidden"}><div className="section-title"><h3>Part Roles</h3></div><p className="fieldset-note">These roles are available when linking a component part to a product.</p><div className="badge-row">{productPartRoleOptions.map((role) => <StatusBadge key={role} value={role} />)}</div></article>
+      <article className={activeTab === "users" ? "data-section" : "data-section tab-panel-hidden"}><div className="section-title"><h3>Users and Access Roles</h3></div><p className="fieldset-note">User accounts and security roles are intentionally protected from the general application database role. This tab reserves the management area; its controlled user-administration screen will be added with the required access policy.</p></article>
     </section>
   </section>;
 }

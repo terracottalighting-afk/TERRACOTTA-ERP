@@ -519,7 +519,11 @@ export async function EditProductImagesForm({
             </label>
             <label>
               Image Category
-              <select defaultValue={activeCategory} name="image_category">
+              <select
+                defaultValue={activeCategory}
+                key={`upload-image-category-${activeCategory}`}
+                name="image_category"
+              >
                 {imageCategories.map((category) => (
                   <option key={category.key} value={category.key}>
                     {category.label}

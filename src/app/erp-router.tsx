@@ -952,7 +952,7 @@ async function createWarehouseAction(formData: FormData) {
   }).select("id").single();
   if (error) redirect(`/?module=admin-warehouse&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");
-  redirect(`/?module=admin-warehouse&warehouse=${data.id}`);
+  redirect(`/?module=admin-warehouse&warehouse=${data.id}&notice=warehouse_created`);
 }
 
 async function updateWarehouseAction(formData: FormData) {
@@ -10197,7 +10197,7 @@ export async function ErpRouter({
             saveAction={recordInvoicePaymentAction}
           />
         ) : activeModule === "admin-warehouse" ? (
-          <WarehouseEditor createAction={createWarehouseAction} error={params.error} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
+          <WarehouseEditor createAction={createWarehouseAction} error={params.error} notice={params.notice} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
           <AdminDashboard selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (

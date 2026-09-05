@@ -6,11 +6,13 @@ type FormAction = (formData: FormData) => Promise<void>;
 export async function WarehouseEditor({
   createAction,
   error,
+  notice,
   saveAction,
   warehouseId,
 }: {
   createAction: FormAction;
   error?: string;
+  notice?: string;
   saveAction: FormAction;
   warehouseId?: string;
 }) {
@@ -25,6 +27,7 @@ export async function WarehouseEditor({
 
   if (warehouseError) throw new Error(warehouseError.message);
   const editing = Boolean(warehouse);
+  const created = notice === "warehouse_created" && warehouse;
 
   return (
     <section className="dashboard-panel">
@@ -38,6 +41,22 @@ export async function WarehouseEditor({
         </div>
       </section>
       {error ? <p className="form-error">{error}</p> : null}
+      {created ? (
+        <section className="section-stack">
+          <article className="data-section">
+            <div className="section-title"><h3>Warehouse Created</h3></div>
+            <section className="detail-grid detail-grid--inside">
+              <article className="info-panel"><h3>Warehouse</h3><dl><div><dt>Name</dt><dd>{warehouse.name}</dd></div><div><dt>Code</dt><dd>{warehouse.warehouse_code}</dd></div><div><dt>Status</dt><dd>Active</dd></div></dl></article>
+              <article className="info-panel"><h3>Address</h3><dl><div><dt>Address</dt><dd>{[warehouse.address_line_1, warehouse.address_line_2].filter(Boolean).join(", ") || "Not set"}</dd></div><div><dt>City / State</dt><dd>{[warehouse.city, warehouse.state_province, warehouse.postal_code].filter(Boolean).join(", ") || "Not set"}</dd></div><div><dt>Country</dt><dd>{warehouse.country}</dd></div></dl></article>
+            </section>
+            <div className="form-actions">
+              <Link className="primary-action" href="/?module=admin&admin_tab=warehouse">Confirm</Link>
+              <Link className="secondary-action" href={`/?module=admin-warehouse&warehouse=${warehouse.id}`}>Edit Warehouse</Link>
+            </div>
+          </article>
+        </section>
+      ) : null}
+      {!created ? (
       <form action={editing ? saveAction : createAction} className="form-stack">
         {editing ? <input name="warehouse_id" type="hidden" value={warehouse?.id ?? ""} /> : null}
         <fieldset>
@@ -61,6 +80,7 @@ export async function WarehouseEditor({
           <Link className="secondary-action" href="/?module=admin&admin_tab=warehouse">Cancel</Link>
         </div>
       </form>
+      ) : null}
     </section>
   );
 }

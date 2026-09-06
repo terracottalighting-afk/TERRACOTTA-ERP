@@ -999,21 +999,113 @@ async function createWarehouseAction(formData: FormData) {
   redirect(`/?module=admin-warehouse&warehouse=${data.id}&notice=warehouse_created`);
 }
 
+type TerritoryCountyRule = { county_geoid: string; coverage_mode: "include" | "exclude" };
+
+function postalCodesFromField(formData: FormData, key: string) {
+  const postalCodes = [...new Set(textValue(formData, key).split(/[\s,;]+/).map((code) => code.trim()).filter(Boolean))];
+  const invalidPostalCode = postalCodes.find((code) => !/^\d{5}$/.test(code));
+  if (invalidPostalCode) throw new Error(`\"${invalidPostalCode}\" is not a valid five-digit ZIP code.`);
+  return postalCodes;
+}
+
 function territoryCoverage(formData: FormData) {
   const stateCodes = [...new Set(formData.getAll("state_code").map((value) => String(value).trim().toUpperCase()).filter((code) => /^[A-Z]{2}$/.test(code)))];
-  const postalCodes = [...new Set(textValue(formData, "postal_codes").split(/[\s,;]+/).map((code) => code.trim()).filter(Boolean))];
-  const invalidPostalCode = postalCodes.find((code) => !/^\d{5}(-\d{4})?$/.test(code));
-  if (invalidPostalCode) throw new Error(`\"${invalidPostalCode}\" is not a valid ZIP code.`);
-  return { postalCodes, stateCodes };
+  const rawRules = textValue(formData, "county_rules_json") || "[]";
+  let countyRules: TerritoryCountyRule[];
+  try {
+    const parsed = JSON.parse(rawRules) as unknown;
+    if (!Array.isArray(parsed)) throw new Error();
+    countyRules = parsed.flatMap((rule) => {
+      if (!rule || typeof rule !== "object") return [];
+      const { county_geoid: countyGeoid, coverage_mode: coverageMode } = rule as Record<string, unknown>;
+      return typeof countyGeoid === "string" && /^\d{5}$/.test(countyGeoid) && (coverageMode === "include" || coverageMode === "exclude") ? [{ county_geoid: countyGeoid, coverage_mode: coverageMode }] : [];
+    });
+  } catch {
+    throw new Error("County coverage could not be read. Please add the county rule again.");
+  }
+  const ruleMap = new Map(countyRules.map((rule) => [rule.county_geoid, rule]));
+  const includedPostalCodes = postalCodesFromField(formData, "include_zip_codes");
+  const excludedPostalCodes = postalCodesFromField(formData, "exclude_zip_codes");
+  const conflictingPostalCode = includedPostalCodes.find((postalCode) => excludedPostalCodes.includes(postalCode));
+  if (conflictingPostalCode) throw new Error(`ZIP code ${conflictingPostalCode} cannot be both included and excluded.`);
+  return {
+    countyRules: [...ruleMap.values()],
+    excludedPostalCodes,
+    includedPostalCodes,
+    stateCodes,
+  };
+}
+
+async function listReferencePostalCodes(column: "county_geoid" | "state_code", values: string[]) {
+  const codes = new Set<string>();
+  const supabase = createSupabaseUntypedAdminClient();
+  for (let start = 0; start < values.length; start += 100) {
+    const valueGroup = values.slice(start, start + 100);
+    for (let page = 0; ; page += 1) {
+      const { data, error } = await supabase.from("zip_county_reference").select("postal_code").in(column, valueGroup).range(page * 1000, page * 1000 + 999);
+      if (error) throw new Error(error.message);
+      for (const row of data ?? []) codes.add(row.postal_code);
+      if (!data || data.length < 1000) break;
+    }
+  }
+  return codes;
+}
+
+async function resolveTerritoryZipCoverage(coverage: ReturnType<typeof territoryCoverage>) {
+  const selectedStateCodes = await listReferencePostalCodes("state_code", coverage.stateCodes);
+  const includedCountyCodes = await listReferencePostalCodes("county_geoid", coverage.countyRules.filter((rule) => rule.coverage_mode === "include").map((rule) => rule.county_geoid));
+  const excludedCountyCodes = await listReferencePostalCodes("county_geoid", coverage.countyRules.filter((rule) => rule.coverage_mode === "exclude").map((rule) => rule.county_geoid));
+  const hasReferenceSelection = coverage.stateCodes.length > 0 || coverage.countyRules.length > 0;
+  if (hasReferenceSelection && selectedStateCodes.size + includedCountyCodes.size + excludedCountyCodes.size === 0) {
+    throw new Error("The ZIP-to-county reference data has not been imported yet. Import it before saving state or county coverage.");
+  }
+  const postalCodes = new Set([...selectedStateCodes, ...includedCountyCodes]);
+  for (const postalCode of excludedCountyCodes) postalCodes.delete(postalCode);
+  for (const postalCode of coverage.includedPostalCodes) postalCodes.add(postalCode);
+  for (const postalCode of coverage.excludedPostalCodes) postalCodes.delete(postalCode);
+  return [...postalCodes].sort();
+}
+
+async function replaceTerritoryRules(territoryId: string, coverage: ReturnType<typeof territoryCoverage>) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { error: countyDeleteError } = await supabase.from("territory_county_coverage_rule").delete().eq("territory_id", territoryId);
+  if (countyDeleteError) throw new Error(countyDeleteError.message);
+  const { error: zipDeleteError } = await supabase.from("territory_zip_override").delete().eq("territory_id", territoryId);
+  if (zipDeleteError) throw new Error(zipDeleteError.message);
+  if (coverage.countyRules.length) {
+    const { error } = await supabase.from("territory_county_coverage_rule").insert(coverage.countyRules.map((rule) => ({ ...rule, territory_id: territoryId })));
+    if (error) throw new Error(error.message);
+  }
+  const zipOverrides = [
+    ...coverage.includedPostalCodes.map((postal_code) => ({ coverage_mode: "include", postal_code, territory_id: territoryId })),
+    ...coverage.excludedPostalCodes.map((postal_code) => ({ coverage_mode: "exclude", postal_code, territory_id: territoryId })),
+  ];
+  if (zipOverrides.length) {
+    const { error } = await supabase.from("territory_zip_override").insert(zipOverrides);
+    if (error) throw new Error(error.message);
+  }
 }
 
 async function replaceTerritoryZipCoverage(territoryId: string, postalCodes: string[]) {
   const supabase = createSupabaseUntypedAdminClient();
   const { error: deleteError } = await supabase.from("territory_zip_coverage").delete().eq("territory_id", territoryId);
   if (deleteError) throw new Error(deleteError.message);
-  if (!postalCodes.length) return;
-  const { error } = await supabase.from("territory_zip_coverage").insert(postalCodes.map((postalCode) => ({ postal_code: postalCode, territory_id: territoryId })));
-  if (error) throw new Error(error.message);
+  for (let start = 0; start < postalCodes.length; start += 1000) {
+    const { error } = await supabase.from("territory_zip_coverage").insert(postalCodes.slice(start, start + 1000).map((postalCode) => ({ postal_code: postalCode, territory_id: territoryId })));
+    if (error) throw new Error(error.message);
+  }
+}
+
+async function territoryOverlapCount(territoryId: string, postalCodes: string[]) {
+  if (!postalCodes.length) return 0;
+  const supabase = createSupabaseUntypedAdminClient();
+  const territoryIds = new Set<string>();
+  for (let start = 0; start < postalCodes.length; start += 500) {
+    const { data, error } = await supabase.from("territory_zip_coverage").select("territory_id").neq("territory_id", territoryId).in("postal_code", postalCodes.slice(start, start + 500));
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) territoryIds.add(row.territory_id);
+  }
+  return territoryIds.size;
 }
 
 async function createTerritoryAction(formData: FormData) {
@@ -1024,12 +1116,18 @@ async function createTerritoryAction(formData: FormData) {
   if (!territoryCode || !name) redirect("/?module=admin-territory-edit&error=Territory%20code%20and%20name%20are%20required.");
   let coverage: ReturnType<typeof territoryCoverage>;
   try { coverage = territoryCoverage(formData); } catch (error) { redirect(`/?module=admin-territory-edit&error=${encodeURIComponent(error instanceof Error ? error.message : "Invalid territory coverage.")}`); }
+  let postalCodes: string[];
+  try { postalCodes = await resolveTerritoryZipCoverage(coverage!); } catch (coverageError) { redirect(`/?module=admin-territory-edit&error=${encodeURIComponent(coverageError instanceof Error ? coverageError.message : "Unable to resolve ZIP coverage.")}`); }
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase.from("territory").insert({ description, name, state_codes_json: coverage!.stateCodes, territory_code: territoryCode }).select("id").single();
   if (error) redirect(`/?module=admin-territory-edit&error=${encodeURIComponent(error.message)}`);
-  try { await replaceTerritoryZipCoverage(data.id, coverage!.postalCodes); } catch (coverageError) { redirect(`/?module=admin-territory-edit&territory=${data.id}&error=${encodeURIComponent(coverageError instanceof Error ? coverageError.message : "Unable to save ZIP coverage.")}`); }
-  revalidatePath("/");
-  redirect("/?module=admin&admin_tab=territory");
+  try {
+    await replaceTerritoryRules(data.id, coverage!);
+    await replaceTerritoryZipCoverage(data.id, postalCodes!);
+    const overlapCount = await territoryOverlapCount(data.id, postalCodes!);
+    revalidatePath("/");
+    redirect(`/?module=admin-territory-edit&territory=${data.id}&notice=${encodeURIComponent(overlapCount ? `Territory created. Its ZIP coverage overlaps ${overlapCount} existing territor${overlapCount === 1 ? "y" : "ies"}; review the individual ZIP exclusions if needed.` : "Territory created.")}`);
+  } catch (coverageError) { redirect(`/?module=admin-territory-edit&territory=${data.id}&error=${encodeURIComponent(coverageError instanceof Error ? coverageError.message : "Unable to save ZIP coverage.")}`); }
 }
 
 async function updateTerritoryAction(formData: FormData) {
@@ -1043,9 +1141,14 @@ async function updateTerritoryAction(formData: FormData) {
   try { coverage = territoryCoverage(formData); } catch (error) { redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(error instanceof Error ? error.message : "Invalid territory coverage.")}`); }
   const { error } = await createSupabaseAdminClient().from("territory").update({ description: textValue(formData, "description") || null, name, state_codes_json: coverage!.stateCodes, status, territory_code: territoryCode }).eq("id", territoryId);
   if (error) redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(error.message)}`);
-  try { await replaceTerritoryZipCoverage(territoryId, coverage!.postalCodes); } catch (coverageError) { redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(coverageError instanceof Error ? coverageError.message : "Unable to save ZIP coverage.")}`); }
-  revalidatePath("/");
-  redirect("/?module=admin&admin_tab=territory");
+  try {
+    const postalCodes = await resolveTerritoryZipCoverage(coverage!);
+    await replaceTerritoryRules(territoryId, coverage!);
+    await replaceTerritoryZipCoverage(territoryId, postalCodes);
+    const overlapCount = await territoryOverlapCount(territoryId, postalCodes);
+    revalidatePath("/");
+    redirect(`/?module=admin-territory-edit&territory=${territoryId}&notice=${encodeURIComponent(overlapCount ? `Territory saved. Its ZIP coverage overlaps ${overlapCount} existing territor${overlapCount === 1 ? "y" : "ies"}; review the individual ZIP exclusions if needed.` : "Territory saved.")}`);
+  } catch (coverageError) { redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(coverageError instanceof Error ? coverageError.message : "Unable to save ZIP coverage.")}`); }
 }
 
 async function deactivateWarehousesAction(formData: FormData) {
@@ -10573,7 +10676,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse-edit" ? (
           <WarehouseEditor createAction={createWarehouseAction} error={params.error} notice={params.notice} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-territory-edit" ? (
-          <TerritoryEditor createAction={createTerritoryAction} error={params.error} saveAction={updateTerritoryAction} territoryId={params.territory} />
+          <TerritoryEditor createAction={createTerritoryAction} error={params.error} notice={params.notice} saveAction={updateTerritoryAction} territoryId={params.territory} />
         ) : activeModule === "admin-zone-add" ? (
           <ZoneEditor createAction={createWarehouseZoneAction} error={params.error} saveAction={updateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-zone-edit" ? (

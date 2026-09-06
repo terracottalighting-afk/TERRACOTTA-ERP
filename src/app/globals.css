@@ -603,6 +603,46 @@ input {
   padding: 8px 10px;
 }
 
+.territory-county-picker select[multiple] {
+  min-height: 190px;
+}
+
+.territory-rule-list {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0;
+}
+
+.territory-rule {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 9px 12px;
+}
+
+.territory-coverage-mode {
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 9px;
+}
+
+.territory-coverage-mode--include {
+  background: #eaf7ee;
+  border-color: #b7dfc0;
+  color: #087034;
+}
+
+.territory-coverage-mode--exclude {
+  background: #fff0ef;
+  border-color: #efc0bd;
+  color: #b42318;
+}
+
 .part-parent-product-picker {
   display: grid;
   gap: 10px;

@@ -565,6 +565,8 @@ type ProductDetail = {
   incoming_quantity: number | null;
   inventoryBalances: ProductInventoryBalance[];
   name: string;
+  material_ids: string[];
+  materials: string[];
   next_incoming_eta: string | null;
   no_box_needed: boolean;
   on_hand_quantity: number;
@@ -903,6 +905,39 @@ async function getFinishOptions() {
   })) as SelectOption[];
 }
 
+async function getMaterialOptions() {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data, error } = await supabase
+    .from("material")
+    .select("id, material_name")
+    .eq("is_active", true)
+    .order("material_name", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).map((material) => ({
+    id: material.id,
+    name: material.material_name,
+  })) as SelectOption[];
+}
+
+async function replaceProductMaterials(productId: string, formData: FormData) {
+  const materialIds = [...new Set(formData.getAll("material_id").map((value) => String(value).trim()).filter(Boolean))];
+  const supabase = createSupabaseUntypedAdminClient();
+  if (materialIds.length) {
+    const { data, error } = await supabase.from("material").select("id").eq("is_active", true).in("id", materialIds);
+    if (error) throw new Error(error.message);
+    if ((data ?? []).length !== materialIds.length) throw new Error("One or more selected materials are no longer available.");
+  }
+  const { error: deleteError } = await supabase.from("product_material").delete().eq("product_id", productId);
+  if (deleteError) throw new Error(deleteError.message);
+  if (!materialIds.length) return;
+  const { error } = await supabase.from("product_material").insert(materialIds.map((materialId) => ({ material_id: materialId, product_id: productId })));
+  if (error) throw new Error(error.message);
+}
+
 async function getWarehouseOptions() {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
@@ -1142,7 +1177,7 @@ async function saveProductSettingAction(formData: FormData) {
   const brandId = textValue(formData, "brand_id");
   const optionalText = (key: string) => textValue(formData, key) || null;
   const errorUrl = (message: string) => `/?module=admin&admin_tab=products&error=${encodeURIComponent(message)}`;
-  if (!["brand", "category", "suite", "style", "finish", "part_role"].includes(configurationType) || !name || (configurationType !== "finish" && !code)) redirect(errorUrl("A name and code are required."));
+  if (!["brand", "category", "suite", "style", "finish", "material", "part_role"].includes(configurationType) || !name || (!["finish", "material"].includes(configurationType) && !code)) redirect(errorUrl("A name and code are required."));
   if ((configurationType === "suite" || configurationType === "style") && !brandId) redirect(errorUrl("Choose a Brand."));
   const supabase = createSupabaseAdminClient();
   let error: { message: string } | null = null;
@@ -1172,6 +1207,10 @@ async function saveProductSettingAction(formData: FormData) {
   } else if (configurationType === "finish") {
     const value = { description: optionalText("description"), finish_name: name };
     ({ error } = configurationId ? await supabase.from("finish").update(value).eq("id", configurationId) : await supabase.from("finish").insert(value));
+  } else if (configurationType === "material") {
+    const materialSupabase = createSupabaseUntypedAdminClient();
+    const value = { description: optionalText("description"), material_name: name };
+    ({ error } = configurationId ? await materialSupabase.from("material").update(value).eq("id", configurationId) : await materialSupabase.from("material").insert(value));
   } else {
     const roleSupabase = createSupabaseUntypedAdminClient();
     const value = { name, role_code: code };
@@ -1188,7 +1227,7 @@ async function deactivateProductSettingAction(formData: FormData) {
   const configurationType = textValue(formData, "configuration_type");
   const configurationId = textValue(formData, "configuration_id");
   const errorUrl = (message: string) => `/?module=admin&admin_tab=products&error=${encodeURIComponent(message)}`;
-  if (!["brand", "category", "suite", "style", "finish", "part_role"].includes(configurationType) || !configurationId) redirect(errorUrl("Choose a product setting to deactivate."));
+  if (!["brand", "category", "suite", "style", "finish", "material", "part_role"].includes(configurationType) || !configurationId) redirect(errorUrl("Choose a product setting to deactivate."));
   const supabase = createSupabaseAdminClient();
   let error: { message: string } | null = null;
   if (configurationType === "brand") ({ error } = await supabase.from("brand").update({ is_active: false }).eq("id", configurationId));
@@ -1196,6 +1235,7 @@ async function deactivateProductSettingAction(formData: FormData) {
   else if (configurationType === "suite") ({ error } = await supabase.from("product_signature_suite").update({ is_active: false }).eq("id", configurationId));
   else if (configurationType === "style") ({ error } = await createSupabaseUntypedAdminClient().from("product_style").update({ is_active: false }).eq("id", configurationId));
   else if (configurationType === "finish") ({ error } = await supabase.from("finish").update({ is_active: false }).eq("id", configurationId));
+  else if (configurationType === "material") ({ error } = await createSupabaseUntypedAdminClient().from("material").update({ is_active: false }).eq("id", configurationId));
   else ({ error } = await createSupabaseUntypedAdminClient().from("product_part_role_setting").update({ is_active: false }).eq("id", configurationId));
   if (error) redirect(errorUrl(error.message));
   revalidatePath("/");
@@ -5037,6 +5077,12 @@ async function updateProductProfileAction(formData: FormData) {
     );
   }
 
+  try {
+    await replaceProductMaterials(productId, formData);
+  } catch (materialError) {
+    redirect(`/?module=edit-product-profile&product=${productId}&error=${encodeURIComponent(materialError instanceof Error ? materialError.message : "Unable to save materials.")}`);
+  }
+
   redirect(
     setupFlow
       ? `/?module=edit-product-specs&product=${productId}&spec_section=dimensions&setup=product`
@@ -5165,6 +5211,12 @@ async function createProductAction(formData: FormData) {
 
   if (error) {
     redirect(`/?module=add-product&error=${encodeURIComponent(error.message)}`);
+  }
+
+  try {
+    await replaceProductMaterials(data.id, formData);
+  } catch (materialError) {
+    redirect(`/?module=add-product&error=${encodeURIComponent(materialError instanceof Error ? materialError.message : "Unable to save materials.")}`);
   }
 
   revalidatePath("/");
@@ -7949,6 +8001,7 @@ async function getProductDetail(
 
   const [
     finishesResult,
+    materialsResult,
     summaryResult,
     boxesResult,
     inventoryResult,
@@ -7967,6 +8020,11 @@ async function getProductDetail(
       .eq("product_id", productId)
       .eq("is_active", true)
       .order("sort_order", { ascending: true }),
+    createSupabaseUntypedAdminClient()
+      .from("product_material")
+      .select("material(id, material_name)")
+      .eq("product_id", productId)
+      .order("created_at", { ascending: true }),
     supabase
       .from("inventory_sku_summary")
       .select("sellable_quantity, incoming_quantity, next_incoming_eta")
@@ -8054,6 +8112,7 @@ async function getProductDetail(
 
   const firstError = [
     finishesResult.error,
+    materialsResult.error,
     summaryResult.error,
     boxesResult.error,
     inventoryResult.error,
@@ -8481,6 +8540,8 @@ async function getProductDetail(
     incoming_quantity: summaryResult.data?.incoming_quantity ?? null,
     inventoryBalances,
     name: product.name,
+    material_ids: (materialsResult.data ?? []).flatMap((productMaterial) => productMaterial.material ?? []).map((material) => material.id),
+    materials: (materialsResult.data ?? []).flatMap((productMaterial) => productMaterial.material ?? []).map((material) => material.material_name),
     next_incoming_eta: summaryResult.data?.next_incoming_eta ?? null,
     no_box_needed: product.no_box_needed,
     on_hand_quantity: calculatedOnHandQuantity,
@@ -9669,6 +9730,7 @@ export async function ErpRouter({
     productStyleOptions,
     productCategoryOptions,
     finishOptions,
+    materialOptions,
     warehouseOptions,
     warehouseLocationOptions,
   ] = await Promise.all([
@@ -9680,6 +9742,7 @@ export async function ErpRouter({
     getProductStyleOptions(),
     getProductCategoryOptions(),
     getFinishOptions(),
+    getMaterialOptions(),
     getWarehouseOptions(),
     getWarehouseLocationOptions(),
   ]);
@@ -10222,6 +10285,7 @@ export async function ErpRouter({
             categoryOptions={productCategoryOptions}
             createProductAction={createProductAction}
             error={params.error}
+            materialOptions={materialOptions}
             styleOptions={productStyleOptions}
           />
         ) : activeModule === "edit-product-profile" ? (
@@ -10232,6 +10296,7 @@ export async function ErpRouter({
             loadProduct={getProductDetail}
             productId={params.product}
             setupFlow={params.setup === "product"}
+            materialOptions={materialOptions}
             styleOptions={productStyleOptions}
             updateProductProfileAction={updateProductProfileAction}
           />

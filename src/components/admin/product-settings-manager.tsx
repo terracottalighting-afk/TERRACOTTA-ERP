@@ -4,24 +4,25 @@ import { Fragment, useState } from "react";
 import { StatusBadge } from "@/components/ui";
 
 type FormAction = (formData: FormData) => Promise<void>;
-type SettingType = "brand" | "category" | "finish" | "part_role" | "style" | "suite";
+type SettingType = "brand" | "category" | "finish" | "material" | "part_role" | "style" | "suite";
 type Brand = { id: string; brand_code: string; name: string; legal_company_name: string | null; is_active: boolean };
 type Category = { id: string; category_code: string; name: string; is_active: boolean };
 type Suite = { id: string; suite_code: string; name: string; description: string | null; brand_id: string | null; is_active: boolean };
 type Style = { id: string; style_code: string; name: string; description: string | null; brand_id: string | null; signature_suite_id: string | null; is_active: boolean };
 type Finish = { id: string; finish_name: string; description: string | null; is_active: boolean };
+type Material = { id: string; material_name: string; description: string | null; is_active: boolean };
 type PartRole = { id: string; role_code: string; name: string; is_active: boolean };
-type RecordItem = Brand | Category | Suite | Style | Finish | PartRole;
+type RecordItem = Brand | Category | Suite | Style | Finish | Material | PartRole;
 
 const settingLabels: Record<SettingType, string> = {
-  brand: "Brands", category: "Product Types", finish: "Finishes", part_role: "Part Roles", style: "Styles", suite: "Signature Suites",
+  brand: "Brands", category: "Product Types", finish: "Finishes", material: "Materials", part_role: "Part Roles", style: "Styles", suite: "Signature Suites",
 };
 const settingSingularLabels: Record<SettingType, string> = {
-  brand: "Brand", category: "Product Type", finish: "Finish", part_role: "Part Role", style: "Style", suite: "Signature Suite",
+  brand: "Brand", category: "Product Type", finish: "Finish", material: "Material", part_role: "Part Role", style: "Style", suite: "Signature Suite",
 };
-const settingTypes: Exclude<SettingType, "style">[] = ["category", "part_role", "suite", "brand", "finish"];
+const settingTypes: Exclude<SettingType, "style">[] = ["category", "part_role", "suite", "brand", "material", "finish"];
 
-export function ProductSettingsManager({ assignStyleAction, brands, categories, deactivateAction, error, finishes, partRoles, saveAction, styles, suites }: { assignStyleAction: FormAction; brands: Brand[]; categories: Category[]; deactivateAction: FormAction; error?: string; finishes: Finish[]; partRoles: PartRole[]; saveAction: FormAction; styles: Style[]; suites: Suite[] }) {
+export function ProductSettingsManager({ assignStyleAction, brands, categories, deactivateAction, error, finishes, materials, partRoles, saveAction, styles, suites }: { assignStyleAction: FormAction; brands: Brand[]; categories: Category[]; deactivateAction: FormAction; error?: string; finishes: Finish[]; materials: Material[]; partRoles: PartRole[]; saveAction: FormAction; styles: Style[]; suites: Suite[] }) {
   const [settingType, setSettingType] = useState<SettingType>("category");
   const [showDeactivated, setShowDeactivated] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -30,7 +31,7 @@ export function ProductSettingsManager({ assignStyleAction, brands, categories, 
   const [addingSubstyleForSuiteId, setAddingSubstyleForSuiteId] = useState<string | null>(null);
   const [expandedSuiteId, setExpandedSuiteId] = useState<string | null>(null);
   const [selectedBrandId, setSelectedBrandId] = useState(brands.find((brand) => brand.is_active)?.id ?? "");
-  const allRecords = recordsFor(settingType, { brands, categories, finishes, partRoles, styles, suites });
+  const allRecords = recordsFor(settingType, { brands, categories, finishes, materials, partRoles, styles, suites });
   const records = settingType === "suite" || settingType === "style" ? allRecords.filter((record) => (record as Suite | Style).brand_id === selectedBrandId) : allRecords;
   const visibleRecords = records.filter((record) => record.is_active !== showDeactivated);
   const activeCount = records.filter((record) => record.is_active).length;
@@ -43,7 +44,7 @@ export function ProductSettingsManager({ assignStyleAction, brands, categories, 
   return <section className="product-settings-manager">
     <div aria-label="Product configuration types" className="metric-grid product-settings-tabs" role="tablist">
       {settingTypes.map((type) => {
-        const count = type === "suite" ? suites.filter((record) => record.is_active).length + styles.filter((record) => record.is_active).length : recordsFor(type, { brands, categories, finishes, partRoles, styles, suites }).filter((record) => record.is_active).length;
+        const count = type === "suite" ? suites.filter((record) => record.is_active).length + styles.filter((record) => record.is_active).length : recordsFor(type, { brands, categories, finishes, materials, partRoles, styles, suites }).filter((record) => record.is_active).length;
         const selected = settingType === type || (type === "suite" && settingType === "style");
         return <button aria-selected={selected} className={`metric product-settings-tab${selected ? " product-settings-tab--active" : ""}`} key={type} onClick={() => selectType(type)} role="tab" type="button"><span>{type === "suite" ? "Styles / Suites" : settingLabels[type]}</span><strong>{count}</strong></button>;
       })}
@@ -75,15 +76,15 @@ export function ProductSettingsManager({ assignStyleAction, brands, categories, 
 
 function ConfigurationRow({ brands, expanded, onAddSubstyle, onDeactivate, onEdit, onSelect, onToggle, record, selected, settingType, styles, suites }: { brands: Brand[]; expanded?: boolean; onAddSubstyle?: () => void; onDeactivate: () => void; onEdit: () => void; onSelect?: () => void; onToggle?: () => void; record: RecordItem; selected?: boolean; settingType: SettingType; styles: Style[]; suites: Suite[] }) {
   const code = settingType === "brand" ? (record as Brand).brand_code : settingType === "category" ? (record as Category).category_code : settingType === "part_role" ? (record as PartRole).role_code : settingType === "style" ? (record as Style).style_code : settingType === "suite" ? (record as Suite).suite_code : "-";
-  const detail = settingType === "brand" ? (record as Brand).legal_company_name ?? "-" : settingType === "style" ? [((record as Style).signature_suite_id ? suites.find((suite) => suite.id === (record as Style).signature_suite_id)?.name ?? "Signature Suite not set" : "Not assigned to a Signature Suite"), (record as Style).description].filter(Boolean).join(" - ") : settingType === "suite" ? [((record as Suite).brand_id ? brands.find((brand) => brand.id === (record as Suite).brand_id)?.name ?? "Brand not set" : "All brands"), (record as Suite).description, styles.filter((style) => style.signature_suite_id === record.id && style.is_active).map((style) => style.name).join(", ") || "No Styles assigned"].filter(Boolean).join(" - ") || "-" : settingType === "finish" ? (record as Finish).description ?? "-" : "-";
+  const detail = settingType === "brand" ? (record as Brand).legal_company_name ?? "-" : settingType === "style" ? [((record as Style).signature_suite_id ? suites.find((suite) => suite.id === (record as Style).signature_suite_id)?.name ?? "Signature Suite not set" : "Not assigned to a Signature Suite"), (record as Style).description].filter(Boolean).join(" - ") : settingType === "suite" ? [((record as Suite).brand_id ? brands.find((brand) => brand.id === (record as Suite).brand_id)?.name ?? "Brand not set" : "All brands"), (record as Suite).description, styles.filter((style) => style.signature_suite_id === record.id && style.is_active).map((style) => style.name).join(", ") || "No Styles assigned"].filter(Boolean).join(" - ") || "-" : settingType === "finish" ? (record as Finish).description ?? "-" : settingType === "material" ? (record as Material).description ?? "-" : "-";
   return <tr className={`${onToggle ? "suite-row--expandable" : ""}${selected ? " admin-row-selected style-row--selectable" : onSelect ? " style-row--selectable" : ""}`} onClick={onToggle ?? onSelect}><td>{onToggle ? <span className="suite-row-indicator" aria-hidden="true">{expanded ? "-" : "+"}</span> : null}{code}</td><td><strong>{recordName(settingType, record)}</strong></td><td>{detail}</td><td><div className="setting-row-status"><StatusBadge tone={record.is_active ? "good" : "warn"} value={record.is_active ? "Active" : "Deactivated"} />{settingType === "suite" ? <button className="text-action text-action--button" onClick={(event) => { event.stopPropagation(); onEdit(); }} type="button">Edit</button> : null}</div></td><td><div className="admin-hierarchy-links" onClick={(event) => event.stopPropagation()}>{onAddSubstyle ? <button className="text-action text-action--button" onClick={onAddSubstyle} type="button">Add Substyle</button> : null}{settingType !== "suite" ? <button className="text-action text-action--button" onClick={onEdit} type="button">Edit</button> : null}{record.is_active ? <button className="text-action text-action--button text-action--danger" onClick={onDeactivate} type="button">Deactivate</button> : null}</div></td></tr>;
 }
 
 function ProductSettingEditor({ brands, initialBrandId, onCancel, record, saveAction, settingType, suites }: { brands: Brand[]; initialBrandId: string; onCancel: () => void; record: RecordItem | null; saveAction: FormAction; settingType: SettingType; suites: Suite[] }) {
   const editing = Boolean(record);
   const code = settingType === "brand" ? (record as Brand | null)?.brand_code ?? "" : settingType === "category" ? (record as Category | null)?.category_code ?? "" : settingType === "part_role" ? (record as PartRole | null)?.role_code ?? "" : settingType === "style" ? (record as Style | null)?.style_code ?? "" : settingType === "suite" ? (record as Suite | null)?.suite_code ?? "" : "";
-  const name = settingType === "finish" ? (record as Finish | null)?.finish_name ?? "" : recordName(settingType, record);
-  const description = settingType === "suite" ? (record as Suite | null)?.description ?? "" : settingType === "style" ? (record as Style | null)?.description ?? "" : settingType === "finish" ? (record as Finish | null)?.description ?? "" : "";
+  const name = settingType === "finish" ? (record as Finish | null)?.finish_name ?? "" : settingType === "material" ? (record as Material | null)?.material_name ?? "" : recordName(settingType, record);
+  const description = settingType === "suite" ? (record as Suite | null)?.description ?? "" : settingType === "style" ? (record as Style | null)?.description ?? "" : settingType === "finish" ? (record as Finish | null)?.description ?? "" : settingType === "material" ? (record as Material | null)?.description ?? "" : "";
   const assignedSuiteId = settingType === "style" ? (record as Style | null)?.signature_suite_id ?? "" : "";
   const assignedSuite = suites.find((suite) => suite.id === assignedSuiteId);
   const recordBrandId = settingType === "suite" ? (record as Suite | null)?.brand_id ?? "" : settingType === "style" ? (record as Style | null)?.brand_id ?? "" : "";
@@ -92,7 +93,7 @@ function ProductSettingEditor({ brands, initialBrandId, onCancel, record, saveAc
   const selectedBrand = brands.find((brand) => brand.id === brandId);
   const lockedBrand = settingType === "style" && Boolean(assignedSuite);
   const brandField = lockedBrand ? <><input name="brand_id" type="hidden" value={brandId} /><label>Brand<input readOnly value={selectedBrand?.name ?? "Not set"} /></label></> : <label>Brand<select name="brand_id" onChange={(event) => setBrandId(event.target.value)} required value={brandId}><option value="">Select a Brand</option>{brands.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}</select></label>;
-  return <form action={saveAction} className="product-setting-editor"><input name="configuration_type" type="hidden" value={settingType} />{editing ? <input name="configuration_id" type="hidden" value={record?.id ?? ""} /> : null}<fieldset><legend>{editing ? `Edit ${settingSingularLabels[settingType]}` : `Add ${settingSingularLabels[settingType]}`}</legend><div className="form-grid">{settingType !== "finish" ? <label>Code<input defaultValue={code} name="code" required /></label> : null}<label>{settingType === "finish" ? "Finish Name" : "Name"}<input defaultValue={name} name="name" required /></label>{settingType === "brand" ? <label>Legal Company Name<input defaultValue={(record as Brand | null)?.legal_company_name ?? ""} name="legal_company_name" /></label> : null}{settingType === "suite" || settingType === "style" ? brandField : null}{settingType === "style" ? <><input name="current_signature_suite_id" type="hidden" value={assignedSuiteId} />{assignedSuite ? <label className="setting-assignment-toggle"><input defaultChecked name="retain_signature_suite_assignment" type="checkbox" />Assigned to {assignedSuite.name}</label> : <label>Assign to Signature Suite<select defaultValue="" name="signature_suite_id"><option value="">No Signature Suite</option>{applicableSuites.map((suite) => <option key={suite.id} value={suite.id}>{suite.name}</option>)}</select></label>}</> : null}{settingType === "suite" || settingType === "style" || settingType === "finish" ? <label>Description<textarea defaultValue={description} name="description" /></label> : null}</div></fieldset><div className="form-actions"><button className="primary-action" type="submit">{editing ? "Save Changes" : `Create ${settingSingularLabels[settingType]}`}</button><button className="secondary-action secondary-action--light" onClick={onCancel} type="button">Cancel</button></div></form>;
+  return <form action={saveAction} className="product-setting-editor"><input name="configuration_type" type="hidden" value={settingType} />{editing ? <input name="configuration_id" type="hidden" value={record?.id ?? ""} /> : null}<fieldset><legend>{editing ? `Edit ${settingSingularLabels[settingType]}` : `Add ${settingSingularLabels[settingType]}`}</legend><div className="form-grid">{settingType !== "finish" && settingType !== "material" ? <label>Code<input defaultValue={code} name="code" required /></label> : null}<label>{settingType === "finish" ? "Finish Name" : settingType === "material" ? "Material Name" : "Name"}<input defaultValue={name} name="name" required /></label>{settingType === "brand" ? <label>Legal Company Name<input defaultValue={(record as Brand | null)?.legal_company_name ?? ""} name="legal_company_name" /></label> : null}{settingType === "suite" || settingType === "style" ? brandField : null}{settingType === "style" ? <><input name="current_signature_suite_id" type="hidden" value={assignedSuiteId} />{assignedSuite ? <label className="setting-assignment-toggle"><input defaultChecked name="retain_signature_suite_assignment" type="checkbox" />Assigned to {assignedSuite.name}</label> : <label>Assign to Signature Suite<select defaultValue="" name="signature_suite_id"><option value="">No Signature Suite</option>{applicableSuites.map((suite) => <option key={suite.id} value={suite.id}>{suite.name}</option>)}</select></label>}</> : null}{settingType === "suite" || settingType === "style" || settingType === "finish" || settingType === "material" ? <label>Description<textarea defaultValue={description} name="description" /></label> : null}</div></fieldset><div className="form-actions"><button className="primary-action" type="submit">{editing ? "Save Changes" : `Create ${settingSingularLabels[settingType]}`}</button><button className="secondary-action secondary-action--light" onClick={onCancel} type="button">Cancel</button></div></form>;
 }
 
 function SuiteSubstylesRow({ styles }: { styles: Style[] }) {
@@ -103,11 +104,11 @@ function AssignSubstyleRow({ assignAction, onCancel, styles, suite }: { assignAc
   return <tr className="suite-substyle-editor"><td colSpan={5}><form action={assignAction}><strong>Add Substyle to {suite.name}</strong><input name="signature_suite_id" type="hidden" value={suite.id} />{styles.length ? <label>Style<select name="style_id" required><option value="">Select a Style</option>{styles.map((style) => <option key={style.id} value={style.id}>{style.name} ({style.style_code})</option>)}</select></label> : <span className="fieldset-note">No unassigned active Styles are available.</span>}<div className="form-actions">{styles.length ? <button className="primary-action" type="submit">Add Substyle</button> : null}<button className="secondary-action secondary-action--light" onClick={onCancel} type="button">Cancel</button></div></form></td></tr>;
 }
 
-function recordsFor(type: SettingType, data: { brands: Brand[]; categories: Category[]; finishes: Finish[]; partRoles: PartRole[]; styles: Style[]; suites: Suite[] }): RecordItem[] {
-  return type === "brand" ? data.brands : type === "category" ? data.categories : type === "part_role" ? data.partRoles : type === "style" ? data.styles : type === "suite" ? data.suites : data.finishes;
+function recordsFor(type: SettingType, data: { brands: Brand[]; categories: Category[]; finishes: Finish[]; materials: Material[]; partRoles: PartRole[]; styles: Style[]; suites: Suite[] }): RecordItem[] {
+  return type === "brand" ? data.brands : type === "category" ? data.categories : type === "part_role" ? data.partRoles : type === "style" ? data.styles : type === "suite" ? data.suites : type === "material" ? data.materials : data.finishes;
 }
 
 function recordName(settingType: SettingType, record: RecordItem | null) {
   if (!record) return "";
-  return settingType === "finish" ? (record as Finish).finish_name : (record as Brand | Category | Suite | Style | PartRole).name;
+  return settingType === "finish" ? (record as Finish).finish_name : settingType === "material" ? (record as Material).material_name : (record as Brand | Category | Suite | Style | PartRole).name;
 }

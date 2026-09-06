@@ -124,6 +124,7 @@ type ProductDetailDashboardProduct = {
   incoming_quantity: number | null;
   inventoryBalances: ProductInventoryBalance[];
   name: string;
+  materials: string[];
   next_incoming_eta: string | null;
   no_box_needed: boolean;
   on_hand_quantity: number;
@@ -274,6 +275,10 @@ export function ProductDetailDashboard({
                 <div>
                   <dt>Category</dt>
                   <dd>{product.category_name ?? "Not set"}</dd>
+                </div>
+                <div>
+                  <dt>Main Materials</dt>
+                  <dd>{product.materials.length ? product.materials.join(", ") : "Not set"}</dd>
                 </div>
                 <div>
                   <dt>Eligibility</dt>

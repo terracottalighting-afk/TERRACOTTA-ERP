@@ -52,6 +52,7 @@ type ProductEditProduct = {
     quantity_on_hand: number;
     warehouse_id: string;
   }[];
+  material_ids: string[];
   name: string;
   no_box_needed: boolean;
   packingBoxes: {
@@ -230,12 +231,14 @@ export function AddProductForm({
   categoryOptions,
   createProductAction,
   error,
+  materialOptions,
   styleOptions,
 }: {
   brandOptions: SelectOption[];
   categoryOptions: SelectOption[];
   createProductAction: FormAction;
   error?: string;
+  materialOptions: SelectOption[];
   styleOptions: SelectOption[];
 }) {
   return (
@@ -306,6 +309,13 @@ export function AddProductForm({
               Collection / Family
               <input name="collection" />
             </label>
+            <div className="full-width-field">
+              <span className="field-label">Main Materials</span>
+              <div className="checkbox-option-list">
+                {materialOptions.map((material) => <label className="checkbox-label" key={material.id}><input name="material_id" type="checkbox" value={material.id} />{material.name}</label>)}
+                {materialOptions.length === 0 ? <span className="fieldset-note">No active materials have been configured.</span> : null}
+              </div>
+            </div>
           </div>
         </fieldset>
 
@@ -1370,6 +1380,7 @@ export async function EditProductProfileForm({
   brandOptions,
   categoryOptions,
   error,
+  materialOptions,
   productId,
   setupFlow,
   styleOptions,
@@ -1379,6 +1390,7 @@ export async function EditProductProfileForm({
   brandOptions: SelectOption[];
   categoryOptions: SelectOption[];
   error?: string;
+  materialOptions: SelectOption[];
   productId?: string;
   setupFlow?: boolean;
   styleOptions: SelectOption[];
@@ -1489,6 +1501,13 @@ export async function EditProductProfileForm({
                 name="collection"
               />
             </label>
+            <div className="full-width-field">
+              <span className="field-label">Main Materials</span>
+              <div className="checkbox-option-list">
+                {materialOptions.map((material) => <label className="checkbox-label" key={material.id}><input defaultChecked={product.material_ids.includes(material.id)} name="material_id" type="checkbox" value={material.id} />{material.name}</label>)}
+                {materialOptions.length === 0 ? <span className="fieldset-note">No active materials have been configured.</span> : null}
+              </div>
+            </div>
           </div>
         </fieldset>
 

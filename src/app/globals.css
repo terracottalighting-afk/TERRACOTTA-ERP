@@ -581,6 +581,14 @@ input {
   padding: 10px 12px;
 }
 
+.field-label {
+  color: var(--muted);
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
 .part-parent-product-picker {
   display: grid;
   gap: 10px;

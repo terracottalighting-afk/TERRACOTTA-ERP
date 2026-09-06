@@ -1167,16 +1167,17 @@ async function deactivateTerritoryAction(formData: FormData) {
 async function removeTerritoryZipAction(formData: FormData) {
   "use server";
   const territoryId = textValue(formData, "territory_id");
-  const postalCode = textValue(formData, "postal_code");
+  const postalCodes = [...new Set(formData.getAll("postal_codes").map(String).filter((postalCode) => /^\d{5}$/.test(postalCode)))];
   const page = Math.max(1, Number.parseInt(textValue(formData, "territory_zip_page"), 10) || 1);
-  if (!territoryId || !/^\d{5}$/.test(postalCode)) redirect("/?module=admin&admin_tab=territory");
+  if (!territoryId) redirect("/?module=admin&admin_tab=territory");
+  if (postalCodes.length === 0) redirect(`/?module=admin-territory-edit&territory=${territoryId}&territory_zip_page=${page}&error=${encodeURIComponent("Select at least one ZIP code to remove.")}`);
   const supabase = createSupabaseUntypedAdminClient();
-  const { error: overrideError } = await supabase.from("territory_zip_override").upsert({ coverage_mode: "exclude", postal_code: postalCode, territory_id: territoryId }, { onConflict: "territory_id,postal_code" });
+  const { error: overrideError } = await supabase.from("territory_zip_override").upsert(postalCodes.map((postalCode) => ({ coverage_mode: "exclude", postal_code: postalCode, territory_id: territoryId })), { onConflict: "territory_id,postal_code" });
   if (overrideError) redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(overrideError.message)}`);
-  const { error: coverageError } = await supabase.from("territory_zip_coverage").delete().eq("territory_id", territoryId).eq("postal_code", postalCode);
+  const { error: coverageError } = await supabase.from("territory_zip_coverage").delete().eq("territory_id", territoryId).in("postal_code", postalCodes);
   if (coverageError) redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(coverageError.message)}`);
   revalidatePath("/");
-  redirect(`/?module=admin-territory-edit&territory=${territoryId}&territory_zip_page=${page}&notice=${encodeURIComponent(`${postalCode} was removed from this territory.`)}`);
+  redirect(`/?module=admin-territory-edit&territory=${territoryId}&territory_zip_page=${page}&notice=${encodeURIComponent(`${postalCodes.length} ZIP code${postalCodes.length === 1 ? " was" : "s were"} removed from this territory.`)}`);
 }
 
 async function deactivateWarehousesAction(formData: FormData) {

@@ -21,13 +21,18 @@ function chunks(values, size = 1000) {
 async function getCountyNames() {
   const counties = new Map();
   for (const state of states) {
-    const response = await fetch(`https://api.census.gov/data/2024/acs/acs5?get=NAME&for=county:*&in=state:${stateFips[state]}`);
+    const response = await fetch(`https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2024_Gazetteer/2024_gaz_counties_${stateFips[state]}.txt`);
     if (!response.ok) throw new Error(`Census county lookup failed for ${state}: ${response.status}`);
-    const [header, ...rows] = await response.json();
-    const nameIndex = header.indexOf("NAME");
-    const countyIndex = header.indexOf("county");
-    const stateIndex = header.indexOf("state");
-    for (const row of rows) counties.set(`${row[stateIndex]}${row[countyIndex]}`, { county_geoid: `${row[stateIndex]}${row[countyIndex]}`, county_name: row[nameIndex].replace(/,.*$/, ""), state_code: state });
+    const [header, ...rows] = (await response.text()).trim().split(/\r?\n/);
+    const columns = header.split("\t");
+    const geoidIndex = columns.indexOf("GEOID");
+    const nameIndex = columns.indexOf("NAME");
+    if (geoidIndex < 0 || nameIndex < 0) throw new Error(`Census county file for ${state} has an unexpected format.`);
+    for (const row of rows) {
+      const values = row.split("\t");
+      const county_geoid = values[geoidIndex];
+      if (/^\d{5}$/.test(county_geoid)) counties.set(county_geoid, { county_geoid, county_name: values[nameIndex], state_code: state });
+    }
   }
   return counties;
 }

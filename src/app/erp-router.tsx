@@ -1139,9 +1139,11 @@ async function saveProductSettingAction(formData: FormData) {
   const configurationId = textValue(formData, "configuration_id");
   const code = textValue(formData, "code").toUpperCase();
   const name = textValue(formData, "name");
+  const brandId = textValue(formData, "brand_id");
   const optionalText = (key: string) => textValue(formData, key) || null;
   const errorUrl = (message: string) => `/?module=admin&admin_tab=products&error=${encodeURIComponent(message)}`;
   if (!["brand", "category", "suite", "style", "finish", "part_role"].includes(configurationType) || !name || (configurationType !== "finish" && !code)) redirect(errorUrl("A name and code are required."));
+  if ((configurationType === "suite" || configurationType === "style") && !brandId) redirect(errorUrl("Choose a Brand."));
   const supabase = createSupabaseAdminClient();
   let error: { message: string } | null = null;
 
@@ -1152,7 +1154,7 @@ async function saveProductSettingAction(formData: FormData) {
     const value = { category_code: code, name };
     ({ error } = configurationId ? await supabase.from("product_category").update(value).eq("id", configurationId) : await supabase.from("product_category").insert(value));
   } else if (configurationType === "suite") {
-    const value = { brand_id: optionalText("brand_id"), description: optionalText("description"), name, suite_code: code };
+    const value = { brand_id: brandId, description: optionalText("description"), name, suite_code: code };
     ({ error } = configurationId ? await supabase.from("product_signature_suite").update(value).eq("id", configurationId) : await supabase.from("product_signature_suite").insert(value));
   } else if (configurationType === "style") {
     const styleSupabase = createSupabaseUntypedAdminClient();
@@ -1160,7 +1162,12 @@ async function saveProductSettingAction(formData: FormData) {
     const currentSuiteId = optionalText("current_signature_suite_id");
     const retainsCurrentSuite = formData.get("retain_signature_suite_assignment") === "on";
     const signatureSuiteId = selectedSuiteId || (retainsCurrentSuite ? currentSuiteId : null);
-    const value = { description: optionalText("description"), name, signature_suite_id: signatureSuiteId, style_code: code };
+    if (signatureSuiteId) {
+      const { data: signatureSuite, error: signatureSuiteError } = await styleSupabase.from("product_signature_suite").select("brand_id").eq("id", signatureSuiteId).single();
+      if (signatureSuiteError) redirect(errorUrl(signatureSuiteError.message));
+      if (signatureSuite.brand_id !== brandId) redirect(errorUrl("A Style and its Signature Suite must belong to the same Brand."));
+    }
+    const value = { brand_id: brandId, description: optionalText("description"), name, signature_suite_id: signatureSuiteId, style_code: code };
     ({ error } = configurationId ? await styleSupabase.from("product_style").update(value).eq("id", configurationId) : await styleSupabase.from("product_style").insert(value));
   } else if (configurationType === "finish") {
     const value = { description: optionalText("description"), finish_name: name };
@@ -1201,7 +1208,15 @@ async function assignStyleToSignatureSuiteAction(formData: FormData) {
   const styleId = textValue(formData, "style_id");
   const errorUrl = (message: string) => `/?module=admin&admin_tab=products&error=${encodeURIComponent(message)}`;
   if (!signatureSuiteId || !styleId) redirect(errorUrl("Select a Style to add under the Signature Suite."));
-  const { error } = await createSupabaseUntypedAdminClient().from("product_style").update({ signature_suite_id: signatureSuiteId }).eq("id", styleId).is("signature_suite_id", null);
+  const supabase = createSupabaseUntypedAdminClient();
+  const [{ data: signatureSuite, error: signatureSuiteError }, { data: style, error: styleError }] = await Promise.all([
+    supabase.from("product_signature_suite").select("brand_id").eq("id", signatureSuiteId).single(),
+    supabase.from("product_style").select("brand_id").eq("id", styleId).is("signature_suite_id", null).single(),
+  ]);
+  if (signatureSuiteError) redirect(errorUrl(signatureSuiteError.message));
+  if (styleError) redirect(errorUrl(styleError.message));
+  if (!signatureSuite.brand_id || signatureSuite.brand_id !== style.brand_id) redirect(errorUrl("A Style and its Signature Suite must belong to the same Brand."));
+  const { error } = await supabase.from("product_style").update({ signature_suite_id: signatureSuiteId }).eq("id", styleId).is("signature_suite_id", null);
   if (error) redirect(errorUrl(error.message));
   revalidatePath("/");
   redirect("/?module=admin&admin_tab=products");

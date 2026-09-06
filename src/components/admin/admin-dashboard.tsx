@@ -15,7 +15,7 @@ export async function AdminDashboard({ assignStyleAction, deactivateProductSetti
     supabase.from("territory").select("id, territory_code, name, status").order("name", { ascending: true }),
     supabase.from("brand").select("id, brand_code, name, legal_company_name, is_active").order("name", { ascending: true }),
     supabase.from("product_signature_suite").select("id, suite_code, name, description, brand_id, is_active").order("name", { ascending: true }),
-    untypedSupabase.from("product_style").select("id, style_code, name, description, signature_suite_id, is_active").order("name", { ascending: true }),
+    untypedSupabase.from("product_style").select("id, style_code, name, description, brand_id, signature_suite_id, is_active").order("name", { ascending: true }),
     supabase.from("product_category").select("id, category_code, name, is_active").order("name", { ascending: true }),
     supabase.from("finish").select("id, finish_name, description, is_active").order("finish_name", { ascending: true }),
     untypedSupabase.from("product_part_role_setting").select("id, role_code, name, is_active").order("name", { ascending: true }),

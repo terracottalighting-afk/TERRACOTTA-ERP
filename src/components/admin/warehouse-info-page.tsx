@@ -2,7 +2,19 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/ui";
 import { createSupabaseAdminClient, createSupabaseUntypedAdminClient } from "@/lib/supabase/admin";
 
-export async function WarehouseInfoPage({ warehouseId }: { warehouseId?: string }) {
+type FormAction = (formData: FormData) => Promise<void>;
+
+export async function WarehouseInfoPage({
+  deactivateAisleAction,
+  deactivateSectionAction,
+  deactivateZoneAction,
+  warehouseId,
+}: {
+  deactivateAisleAction: FormAction;
+  deactivateSectionAction: FormAction;
+  deactivateZoneAction: FormAction;
+  warehouseId?: string;
+}) {
   if (!warehouseId) return <section className="dashboard-panel"><p className="empty-state">Select a warehouse from Warehouse Settings.</p></section>;
 
   const supabase = createSupabaseAdminClient();
@@ -25,10 +37,15 @@ export async function WarehouseInfoPage({ warehouseId }: { warehouseId?: string 
       <div className="compact-list">
         {(zones ?? []).map((zone) => {
           const zoneAisles = (aisles ?? []).filter((aisle) => aisle.warehouse_zone_id === zone.id);
-          return <details className="admin-hierarchy" key={zone.id}><summary><span><strong>{zone.zone_code}</strong> {zone.name}</span><StatusBadge tone={zone.is_active ? "good" : "warn"} value={zone.is_active ? "Active" : "Inactive"} /></summary><p className="fieldset-note">{zone.description ?? "No zone description."}</p><div className="hierarchy-children">{zoneAisles.map((aisle) => { const aisleSections = (sections ?? []).filter((section) => section.warehouse_aisle_id === aisle.id); return <details key={aisle.id}><summary><span><strong>{aisle.aisle_code}</strong> {aisle.name}</span><StatusBadge tone={aisle.is_active ? "good" : "warn"} value={aisle.is_active ? "Active" : "Inactive"} /></summary><div className="compact-list">{aisleSections.map((section) => <div className="compact-row" key={section.id}><div><strong>{section.location_code}</strong><span>{section.location_name ?? "No section name"}</span></div><StatusBadge value={section.location_type} /></div>)}{aisleSections.length === 0 ? <p className="empty-state">No sections in this aisle.</p> : null}</div></details>; })}{zoneAisles.length === 0 ? <p className="empty-state">No aisles in this zone.</p> : null}</div></details>;
+          const zoneDeactivateFormId = `deactivate-zone-${zone.id}`;
+          return <details className="admin-hierarchy" key={zone.id}><summary><span><strong>{zone.zone_code}</strong> {zone.name}</span><HierarchyActions deactivateFormId={zoneDeactivateFormId} editHref={`/?module=admin-zone-edit&warehouse=${warehouse.id}&zone=${zone.id}`} isActive={zone.is_active} /></summary><form action={deactivateZoneAction} className="sr-only" id={zoneDeactivateFormId}><input name="warehouse_id" type="hidden" value={warehouse.id} /><input name="zone_id" type="hidden" value={zone.id} /></form><p className="fieldset-note">{zone.description ?? "No zone description."}</p><div className="hierarchy-children">{zoneAisles.map((aisle) => { const aisleSections = (sections ?? []).filter((section) => section.warehouse_aisle_id === aisle.id); const aisleDeactivateFormId = `deactivate-aisle-${aisle.id}`; return <details key={aisle.id}><summary><span><strong>{aisle.aisle_code}</strong> {aisle.name}</span><HierarchyActions deactivateFormId={aisleDeactivateFormId} editHref={`/?module=admin-aisle-edit&warehouse=${warehouse.id}&aisle=${aisle.id}`} isActive={aisle.is_active} /></summary><form action={deactivateAisleAction} className="sr-only" id={aisleDeactivateFormId}><input name="warehouse_id" type="hidden" value={warehouse.id} /><input name="aisle_id" type="hidden" value={aisle.id} /></form><div className="compact-list">{aisleSections.map((section) => { const sectionDeactivateFormId = `deactivate-section-${section.id}`; return <div className="compact-row" key={section.id}><div><strong>{section.location_code}</strong><span>{section.location_name ?? "No section name"}</span></div><div className="admin-hierarchy-actions"><StatusBadge tone={section.is_active ? "good" : "warn"} value={section.is_active ? section.location_type : "Deactivated"} /><span className="admin-hierarchy-links"><Link className="text-action" href={`/?module=admin-section-edit&warehouse=${warehouse.id}&section=${section.id}`}>Edit</Link>{section.is_active ? <button className="text-action text-action--button text-action--danger" form={sectionDeactivateFormId} type="submit">Deactivate</button> : null}</span><form action={deactivateSectionAction} className="sr-only" id={sectionDeactivateFormId}><input name="warehouse_id" type="hidden" value={warehouse.id} /><input name="section_id" type="hidden" value={section.id} /></form></div></div>; })}{aisleSections.length === 0 ? <p className="empty-state">No sections in this aisle.</p> : null}</div></details>; })}{zoneAisles.length === 0 ? <p className="empty-state">No aisles in this zone.</p> : null}</div></details>;
         })}
         {(zones ?? []).length === 0 ? <p className="empty-state">No zones have been added to this warehouse yet.</p> : null}
       </div>
     </article>
   </section>;
+}
+
+function HierarchyActions({ deactivateFormId, editHref, isActive }: { deactivateFormId: string; editHref: string; isActive: boolean }) {
+  return <span className="admin-hierarchy-actions"><StatusBadge tone={isActive ? "good" : "warn"} value={isActive ? "Active" : "Deactivated"} /><span className="admin-hierarchy-links"><Link className="text-action" href={editHref}>Edit</Link>{isActive ? <button className="text-action text-action--button text-action--danger" form={deactivateFormId} type="submit">Deactivate</button> : null}</span></span>;
 }

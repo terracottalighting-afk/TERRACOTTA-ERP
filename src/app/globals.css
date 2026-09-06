@@ -1941,6 +1941,17 @@ dd {
   padding: 14px;
 }
 
+.admin-hierarchy-actions,
+.admin-hierarchy-links {
+  align-items: center;
+  display: inline-flex;
+  gap: 10px;
+}
+
+.admin-hierarchy-actions {
+  justify-content: flex-end;
+}
+
 .attachment-upload-form {
   align-items: end;
   border-bottom: 1px solid var(--line);

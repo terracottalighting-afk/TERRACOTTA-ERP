@@ -178,6 +178,9 @@ export type SearchParams = Promise<{
   spec_section?: string;
   vendor_action?: string;
   warehouse?: string;
+  zone?: string;
+  aisle?: string;
+  section?: string;
   q?: string;
   tab?: string;
 }>;
@@ -1040,6 +1043,92 @@ async function createWarehouseSectionAction(formData: FormData) {
   if (!zone || aisleError || !aisle) redirect(`/?module=admin-section-add&warehouse=${warehouseId}&error=${encodeURIComponent(aisleError?.message ?? "Choose a valid zone and aisle.")}`);
   const { error } = await createSupabaseUntypedAdminClient().from("warehouse_location").insert({ warehouse_id: warehouseId, warehouse_zone_id: zoneId, warehouse_aisle_id: aisleId, location_code: sectionCode, location_name: sectionName, location_type: "bin", is_pickable: formData.get("is_pickable") === "on", notes: textValue(formData, "notes") || null });
   if (error) redirect(`/?module=admin-section-add&warehouse=${warehouseId}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
+}
+
+async function updateWarehouseZoneAction(formData: FormData) {
+  "use server";
+  const warehouseId = textValue(formData, "warehouse_id");
+  const zoneId = textValue(formData, "zone_id");
+  const zoneCode = textValue(formData, "zone_code").toUpperCase();
+  const name = textValue(formData, "name");
+  if (!warehouseId || !zoneId || !zoneCode || !name) redirect(`/?module=admin-zone-edit&warehouse=${warehouseId}&zone=${zoneId}&error=Zone%20code%20and%20name%20are%20required.`);
+  const { error } = await createSupabaseAdminClient().from("warehouse_zone").update({ description: textValue(formData, "description") || null, name, zone_code: zoneCode }).eq("id", zoneId).eq("warehouse_id", warehouseId);
+  if (error) redirect(`/?module=admin-zone-edit&warehouse=${warehouseId}&zone=${zoneId}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
+}
+
+async function updateWarehouseAisleAction(formData: FormData) {
+  "use server";
+  const warehouseId = textValue(formData, "warehouse_id");
+  const aisleId = textValue(formData, "aisle_id");
+  const zoneId = textValue(formData, "warehouse_zone_id");
+  const aisleCode = textValue(formData, "aisle_code").toUpperCase();
+  const name = textValue(formData, "name");
+  if (!warehouseId || !aisleId || !zoneId || !aisleCode || !name) redirect(`/?module=admin-aisle-edit&warehouse=${warehouseId}&aisle=${aisleId}&error=Zone%2C%20aisle%20code%2C%20and%20aisle%20name%20are%20required.`);
+  const { data: existingAisle } = await createSupabaseUntypedAdminClient().from("warehouse_aisle").select("warehouse_zone_id").eq("id", aisleId).maybeSingle();
+  const { data: existingZone } = existingAisle ? await createSupabaseAdminClient().from("warehouse_zone").select("id").eq("id", existingAisle.warehouse_zone_id).eq("warehouse_id", warehouseId).maybeSingle() : { data: null };
+  if (!existingZone) redirect(`/?module=admin-aisle-edit&warehouse=${warehouseId}&aisle=${aisleId}&error=Aisle%20not%20found%20for%20this%20warehouse.`);
+  const { data: zone } = await createSupabaseAdminClient().from("warehouse_zone").select("id").eq("id", zoneId).eq("warehouse_id", warehouseId).maybeSingle();
+  if (!zone) redirect(`/?module=admin-aisle-edit&warehouse=${warehouseId}&aisle=${aisleId}&error=Choose%20a%20zone%20from%20this%20warehouse.`);
+  const { error } = await createSupabaseUntypedAdminClient().from("warehouse_aisle").update({ aisle_code: aisleCode, description: textValue(formData, "description") || null, name, warehouse_zone_id: zoneId }).eq("id", aisleId);
+  if (error) redirect(`/?module=admin-aisle-edit&warehouse=${warehouseId}&aisle=${aisleId}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
+}
+
+async function updateWarehouseSectionAction(formData: FormData) {
+  "use server";
+  const warehouseId = textValue(formData, "warehouse_id");
+  const sectionId = textValue(formData, "section_id");
+  const zoneId = textValue(formData, "warehouse_zone_id");
+  const aisleId = textValue(formData, "warehouse_aisle_id");
+  const sectionCode = textValue(formData, "section_code").toUpperCase();
+  const sectionName = textValue(formData, "section_name");
+  if (!warehouseId || !sectionId || !zoneId || !aisleId || !sectionCode || !sectionName) redirect(`/?module=admin-section-edit&warehouse=${warehouseId}&section=${sectionId}&error=Zone%2C%20aisle%2C%20section%20code%2C%20and%20section%20name%20are%20required.`);
+  const { data: zone } = await createSupabaseAdminClient().from("warehouse_zone").select("id").eq("id", zoneId).eq("warehouse_id", warehouseId).maybeSingle();
+  const { data: aisle } = await createSupabaseUntypedAdminClient().from("warehouse_aisle").select("id").eq("id", aisleId).eq("warehouse_zone_id", zoneId).maybeSingle();
+  if (!zone || !aisle) redirect(`/?module=admin-section-edit&warehouse=${warehouseId}&section=${sectionId}&error=Choose%20a%20valid%20zone%20and%20aisle.`);
+  const { error } = await createSupabaseUntypedAdminClient().from("warehouse_location").update({ warehouse_zone_id: zoneId, warehouse_aisle_id: aisleId, location_code: sectionCode, location_name: sectionName, is_pickable: formData.get("is_pickable") === "on", notes: textValue(formData, "notes") || null }).eq("id", sectionId).eq("warehouse_id", warehouseId);
+  if (error) redirect(`/?module=admin-section-edit&warehouse=${warehouseId}&section=${sectionId}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
+}
+
+async function deactivateWarehouseZoneAction(formData: FormData) {
+  "use server";
+  const warehouseId = textValue(formData, "warehouse_id");
+  const zoneId = textValue(formData, "zone_id");
+  if (!warehouseId || !zoneId) redirect(`/?module=admin&admin_tab=warehouse`);
+  const { error } = await createSupabaseAdminClient().from("warehouse_zone").update({ is_active: false }).eq("id", zoneId).eq("warehouse_id", warehouseId);
+  if (error) redirect(`/?module=admin-warehouse&warehouse=${warehouseId}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
+}
+
+async function deactivateWarehouseAisleAction(formData: FormData) {
+  "use server";
+  const warehouseId = textValue(formData, "warehouse_id");
+  const aisleId = textValue(formData, "aisle_id");
+  if (!warehouseId || !aisleId) redirect(`/?module=admin&admin_tab=warehouse`);
+  const { data: aisle, error: aisleLookupError } = await createSupabaseUntypedAdminClient().from("warehouse_aisle").select("id, warehouse_zone_id").eq("id", aisleId).maybeSingle();
+  const { data: zone } = aisle ? await createSupabaseAdminClient().from("warehouse_zone").select("id").eq("id", aisle.warehouse_zone_id).eq("warehouse_id", warehouseId).maybeSingle() : { data: null };
+  if (aisleLookupError || !zone) redirect(`/?module=admin-warehouse&warehouse=${warehouseId}&error=${encodeURIComponent(aisleLookupError?.message ?? "Aisle not found for this warehouse.")}`);
+  const { error } = await createSupabaseUntypedAdminClient().from("warehouse_aisle").update({ is_active: false }).eq("id", aisleId).eq("warehouse_zone_id", zone.id);
+  if (error) redirect(`/?module=admin-warehouse&warehouse=${warehouseId}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
+}
+
+async function deactivateWarehouseSectionAction(formData: FormData) {
+  "use server";
+  const warehouseId = textValue(formData, "warehouse_id");
+  const sectionId = textValue(formData, "section_id");
+  if (!warehouseId || !sectionId) redirect(`/?module=admin&admin_tab=warehouse`);
+  const { error } = await createSupabaseUntypedAdminClient().from("warehouse_location").update({ is_active: false }).eq("id", sectionId).eq("warehouse_id", warehouseId);
+  if (error) redirect(`/?module=admin-warehouse&warehouse=${warehouseId}&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");
   redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
 }
@@ -9515,8 +9604,11 @@ export async function ErpRouter({
     "admin-warehouse": "Warehouse Information",
     "admin-warehouse-edit": "Edit Warehouse",
     "admin-zone-add": "Add Zone",
+    "admin-zone-edit": "Edit Zone",
     "admin-aisle-add": "Add Aisle",
+    "admin-aisle-edit": "Edit Aisle",
     "admin-section-add": "Add Section",
+    "admin-section-edit": "Edit Section",
     "add-contact": "Add Contact",
     "add-customer": "Add Customer",
     "add-location": "Add Location",
@@ -10275,13 +10367,19 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse-edit" ? (
           <WarehouseEditor createAction={createWarehouseAction} error={params.error} notice={params.notice} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-zone-add" ? (
-          <ZoneEditor createAction={createWarehouseZoneAction} error={params.error} warehouseId={params.warehouse} />
+          <ZoneEditor createAction={createWarehouseZoneAction} error={params.error} saveAction={updateWarehouseZoneAction} warehouseId={params.warehouse} />
+        ) : activeModule === "admin-zone-edit" ? (
+          <ZoneEditor createAction={createWarehouseZoneAction} error={params.error} saveAction={updateWarehouseZoneAction} warehouseId={params.warehouse} zoneId={params.zone} />
         ) : activeModule === "admin-aisle-add" ? (
-          <AisleEditor createAction={createWarehouseAisleAction} error={params.error} warehouseId={params.warehouse} />
+          <AisleEditor createAction={createWarehouseAisleAction} error={params.error} saveAction={updateWarehouseAisleAction} warehouseId={params.warehouse} />
+        ) : activeModule === "admin-aisle-edit" ? (
+          <AisleEditor aisleId={params.aisle} createAction={createWarehouseAisleAction} error={params.error} saveAction={updateWarehouseAisleAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-section-add" ? (
-          <SectionEditorPage createAction={createWarehouseSectionAction} error={params.error} warehouseId={params.warehouse} />
+          <SectionEditorPage createAction={createWarehouseSectionAction} error={params.error} saveAction={updateWarehouseSectionAction} warehouseId={params.warehouse} />
+        ) : activeModule === "admin-section-edit" ? (
+          <SectionEditorPage createAction={createWarehouseSectionAction} error={params.error} saveAction={updateWarehouseSectionAction} sectionId={params.section} warehouseId={params.warehouse} />
         ) : activeModule === "admin-warehouse" ? (
-          <WarehouseInfoPage warehouseId={params.warehouse} />
+          <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
           <AdminDashboard deactivateWarehousesAction={deactivateWarehousesAction} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (

@@ -1,0 +1,10 @@
+import Link from "next/link";
+
+type FormAction = (formData: FormData) => Promise<void>;
+
+export function TerritoryZipCoverageList({ page, removeAction, territoryId, totalCount, zipCodes }: { page: number; removeAction: FormAction; territoryId: string; totalCount: number; zipCodes: { postal_code: string }[] }) {
+  const pageSize = 100;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const pageUrl = (nextPage: number) => `/?module=admin-territory-edit&territory=${territoryId}&territory_zip_page=${nextPage}`;
+  return <section className="data-section territory-zip-coverage"><div className="section-title"><div><h3>Resolved ZIP Codes</h3><p>These ZIP codes currently belong to this territory. Removing one creates a persistent individual exclusion.</p></div></div><div className="table-wrap"><table className="data-table"><thead><tr><th>ZIP Code</th><th>Action</th></tr></thead><tbody>{zipCodes.map((zip) => <tr key={zip.postal_code}><td>{zip.postal_code}</td><td><form action={removeAction}><input name="territory_id" type="hidden" value={territoryId} /><input name="postal_code" type="hidden" value={zip.postal_code} /><input name="territory_zip_page" type="hidden" value={page} /><button className="text-action text-action--button text-action--danger" type="submit">Remove</button></form></td></tr>)}</tbody><tfoot><tr><td colSpan={2}><div className="pagination-footer"><span>Showing {Math.min((page - 1) * pageSize + 1, totalCount).toLocaleString()}-{Math.min(page * pageSize, totalCount).toLocaleString()} of {totalCount.toLocaleString()} ZIP codes</span><nav className="pagination-nav" aria-label="Territory ZIP code pages"><Link aria-disabled={page <= 1} className="pagination-link" href={pageUrl(Math.max(1, page - 1))}>Previous</Link><span aria-current="page" className="pagination-current">{page} of {totalPages}</span><Link aria-disabled={page >= totalPages} className="pagination-link" href={pageUrl(Math.min(totalPages, page + 1))}>Next</Link></nav></div></td></tr></tfoot></table></div></section>;
+}

@@ -2025,16 +2025,20 @@ dd {
   margin: 0;
 }
 
-.setting-assignment-toggle {
+.form-grid .setting-assignment-toggle {
   align-items: center;
   display: flex;
   gap: 8px;
   min-height: 40px;
 }
 
-.setting-assignment-toggle input {
+.form-grid .setting-assignment-toggle input {
+  appearance: auto;
+  border: 0;
+  height: auto;
   min-height: auto;
   padding: 0;
+  width: auto;
 }
 
 @media (max-width: 760px) {

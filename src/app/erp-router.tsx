@@ -1158,10 +1158,8 @@ async function saveProductSettingAction(formData: FormData) {
     const value = { description: optionalText("description"), finish_name: name };
     ({ error } = configurationId ? await supabase.from("finish").update(value).eq("id", configurationId) : await supabase.from("finish").insert(value));
   } else {
-    const sortOrder = Number(formData.get("sort_order") ?? 100);
-    if (!Number.isInteger(sortOrder) || sortOrder < 0) redirect(errorUrl("Display order must be a whole number of zero or greater."));
     const roleSupabase = createSupabaseUntypedAdminClient();
-    const value = { name, role_code: code, sort_order: sortOrder };
+    const value = { name, role_code: code };
     ({ error } = configurationId ? await roleSupabase.from("product_part_role_setting").update(value).eq("id", configurationId) : await roleSupabase.from("product_part_role_setting").insert(value));
   }
 

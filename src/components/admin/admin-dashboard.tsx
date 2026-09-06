@@ -17,7 +17,7 @@ export async function AdminDashboard({ deactivateProductSettingAction, deactivat
     supabase.from("product_signature_suite").select("id, suite_code, name, description, brand_id, is_active").order("name", { ascending: true }),
     supabase.from("product_category").select("id, category_code, name, is_active").order("name", { ascending: true }),
     supabase.from("finish").select("id, finish_name, description, is_active").order("finish_name", { ascending: true }),
-    untypedSupabase.from("product_part_role_setting").select("id, role_code, name, sort_order, is_active").order("sort_order", { ascending: true }).order("name", { ascending: true }),
+    untypedSupabase.from("product_part_role_setting").select("id, role_code, name, is_active").order("name", { ascending: true }),
   ]);
   const failedResult = [warehousesResult, deactivatedWarehousesResult, territoriesResult, brandsResult, suitesResult, categoriesResult, finishesResult, partRolesResult].find((result) => result.error);
   if (failedResult?.error) throw new Error(failedResult.error.message);

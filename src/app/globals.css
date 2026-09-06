@@ -1969,6 +1969,68 @@ dd {
   color: var(--foreground);
 }
 
+.suite-row--expandable {
+  cursor: pointer;
+}
+
+.suite-row--expandable:hover td {
+  background: var(--panel-soft);
+}
+
+.suite-row-indicator {
+  color: var(--accent);
+  display: inline-block;
+  font-weight: 800;
+  margin-right: 8px;
+  width: 10px;
+}
+
+.suite-substyles-row td,
+.suite-substyle-editor td {
+  background: var(--panel-soft);
+  padding: 0;
+}
+
+.suite-substyles,
+.suite-substyle-editor form {
+  display: grid;
+  gap: 10px;
+  margin-left: 28px;
+  padding: 14px 18px;
+}
+
+.suite-substyles-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.suite-substyles-list span {
+  color: var(--muted);
+}
+
+.suite-substyle-editor form {
+  grid-template-columns: minmax(180px, auto) minmax(260px, 440px) auto;
+  align-items: end;
+}
+
+.suite-substyle-editor label {
+  display: grid;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.suite-substyle-editor .form-actions {
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .suite-substyle-editor form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .product-settings-tab {
   color: var(--foreground);
   cursor: pointer;

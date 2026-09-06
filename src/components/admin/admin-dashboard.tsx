@@ -8,8 +8,9 @@ type AdminTab = "users" | "products" | "warehouse" | "territory";
 
 export async function AdminDashboard({ deactivateWarehousesAction, selectedTab }: { deactivateWarehousesAction: (formData: FormData) => Promise<void>; selectedTab?: string }) {
   const supabase = createSupabaseAdminClient();
-  const [warehousesResult, territoriesResult, brandsResult, suitesResult, categoriesResult, finishesResult, accountTypesResult, businessTypesResult, agenciesResult, salesRepsResult] = await Promise.all([
+  const [warehousesResult, deactivatedWarehousesResult, territoriesResult, brandsResult, suitesResult, categoriesResult, finishesResult, accountTypesResult, businessTypesResult, agenciesResult, salesRepsResult] = await Promise.all([
     supabase.from("warehouse").select("id, warehouse_code, name, is_active").eq("is_active", true).order("name", { ascending: true }),
+    supabase.from("warehouse").select("id, warehouse_code, name, is_active").eq("is_active", false).order("name", { ascending: true }),
     supabase.from("territory").select("id, territory_code, name, status").order("name", { ascending: true }),
     supabase.from("brand").select("id"),
     supabase.from("product_signature_suite").select("id"),
@@ -20,10 +21,11 @@ export async function AdminDashboard({ deactivateWarehousesAction, selectedTab }
     supabase.from("sales_rep_agency").select("id"),
     supabase.from("sales_rep").select("id"),
   ]);
-  const failedResult = [warehousesResult, territoriesResult, brandsResult, suitesResult, categoriesResult, finishesResult, accountTypesResult, businessTypesResult, agenciesResult, salesRepsResult].find((result) => result.error);
+  const failedResult = [warehousesResult, deactivatedWarehousesResult, territoriesResult, brandsResult, suitesResult, categoriesResult, finishesResult, accountTypesResult, businessTypesResult, agenciesResult, salesRepsResult].find((result) => result.error);
   if (failedResult?.error) throw new Error(failedResult.error.message);
 
   const warehouses = warehousesResult.data ?? [];
+  const deactivatedWarehouses = deactivatedWarehousesResult.data ?? [];
   const territories = territoriesResult.data ?? [];
   const configurationCounts = [
     { label: "Brands", value: brandsResult.data?.length ?? 0 },
@@ -48,10 +50,7 @@ export async function AdminDashboard({ deactivateWarehousesAction, selectedTab }
     </section>
     <section className="section-stack">
       <article className={activeTab === "warehouse" ? "data-section" : "data-section tab-panel-hidden"}>
-        <section className="metric-grid">
-          <div className="metric"><span>Warehouses</span><strong>{warehouses.length}</strong></div>
-        </section>
-        <WarehouseDirectory deactivateAction={deactivateWarehousesAction} warehouses={warehouses} />
+        <WarehouseDirectory deactivateAction={deactivateWarehousesAction} deactivatedWarehouses={deactivatedWarehouses} warehouses={warehouses} />
       </article>
       <article className={activeTab === "territory" ? "data-section" : "data-section tab-panel-hidden"}><div className="section-title"><h3>Territory Settings</h3></div><div className="compact-list">
         {territories.map((territory) => <div className="compact-row" key={territory.id}><div><strong>{territory.name}</strong><span>{territory.territory_code}</span></div><StatusBadge tone={territory.status === "active" ? "good" : "warn"} value={territory.status} /></div>)}

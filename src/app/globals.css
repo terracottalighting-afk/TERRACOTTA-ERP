@@ -1918,6 +1918,29 @@ dd {
   width: 224px;
 }
 
+.warehouse-directory-tabs {
+  grid-template-columns: repeat(2, minmax(180px, 288px));
+}
+
+.warehouse-directory-tab {
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.warehouse-directory-tab--active {
+  border-color: var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.warehouse-directory-toolbar {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px;
+}
+
 .attachment-upload-form {
   align-items: end;
   border-bottom: 1px solid var(--line);

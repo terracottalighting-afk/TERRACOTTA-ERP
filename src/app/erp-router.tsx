@@ -1141,7 +1141,7 @@ async function saveProductSettingAction(formData: FormData) {
   const name = textValue(formData, "name");
   const optionalText = (key: string) => textValue(formData, key) || null;
   const errorUrl = (message: string) => `/?module=admin&admin_tab=products&error=${encodeURIComponent(message)}`;
-  if (!["brand", "category", "suite", "finish"].includes(configurationType) || !name || (configurationType !== "finish" && !code)) redirect(errorUrl("A name and code are required."));
+  if (!["brand", "category", "suite", "finish", "part_role"].includes(configurationType) || !name || (configurationType !== "finish" && !code)) redirect(errorUrl("A name and code are required."));
   const supabase = createSupabaseAdminClient();
   let error: { message: string } | null = null;
 
@@ -1154,9 +1154,15 @@ async function saveProductSettingAction(formData: FormData) {
   } else if (configurationType === "suite") {
     const value = { brand_id: optionalText("brand_id"), description: optionalText("description"), name, suite_code: code };
     ({ error } = configurationId ? await supabase.from("product_signature_suite").update(value).eq("id", configurationId) : await supabase.from("product_signature_suite").insert(value));
-  } else {
+  } else if (configurationType === "finish") {
     const value = { description: optionalText("description"), finish_name: name };
     ({ error } = configurationId ? await supabase.from("finish").update(value).eq("id", configurationId) : await supabase.from("finish").insert(value));
+  } else {
+    const sortOrder = Number(formData.get("sort_order") ?? 100);
+    if (!Number.isInteger(sortOrder) || sortOrder < 0) redirect(errorUrl("Display order must be a whole number of zero or greater."));
+    const roleSupabase = createSupabaseUntypedAdminClient();
+    const value = { name, role_code: code, sort_order: sortOrder };
+    ({ error } = configurationId ? await roleSupabase.from("product_part_role_setting").update(value).eq("id", configurationId) : await roleSupabase.from("product_part_role_setting").insert(value));
   }
 
   if (error) redirect(errorUrl(error.message));
@@ -1169,13 +1175,14 @@ async function deactivateProductSettingAction(formData: FormData) {
   const configurationType = textValue(formData, "configuration_type");
   const configurationId = textValue(formData, "configuration_id");
   const errorUrl = (message: string) => `/?module=admin&admin_tab=products&error=${encodeURIComponent(message)}`;
-  if (!["brand", "category", "suite", "finish"].includes(configurationType) || !configurationId) redirect(errorUrl("Choose a product setting to deactivate."));
+  if (!["brand", "category", "suite", "finish", "part_role"].includes(configurationType) || !configurationId) redirect(errorUrl("Choose a product setting to deactivate."));
   const supabase = createSupabaseAdminClient();
   let error: { message: string } | null = null;
   if (configurationType === "brand") ({ error } = await supabase.from("brand").update({ is_active: false }).eq("id", configurationId));
   else if (configurationType === "category") ({ error } = await supabase.from("product_category").update({ is_active: false }).eq("id", configurationId));
   else if (configurationType === "suite") ({ error } = await supabase.from("product_signature_suite").update({ is_active: false }).eq("id", configurationId));
-  else ({ error } = await supabase.from("finish").update({ is_active: false }).eq("id", configurationId));
+  else if (configurationType === "finish") ({ error } = await supabase.from("finish").update({ is_active: false }).eq("id", configurationId));
+  else ({ error } = await createSupabaseUntypedAdminClient().from("product_part_role_setting").update({ is_active: false }).eq("id", configurationId));
   if (error) redirect(errorUrl(error.message));
   revalidatePath("/");
   redirect("/?module=admin&admin_tab=products");

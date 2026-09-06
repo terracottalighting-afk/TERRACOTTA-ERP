@@ -1942,7 +1942,7 @@ dd {
 }
 
 .product-settings-tabs {
-  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  grid-template-columns: repeat(5, minmax(160px, 1fr));
   padding: 14px;
 }
 

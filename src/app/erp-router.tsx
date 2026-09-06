@@ -1156,7 +1156,11 @@ async function saveProductSettingAction(formData: FormData) {
     ({ error } = configurationId ? await supabase.from("product_signature_suite").update(value).eq("id", configurationId) : await supabase.from("product_signature_suite").insert(value));
   } else if (configurationType === "style") {
     const styleSupabase = createSupabaseUntypedAdminClient();
-    const value = { description: optionalText("description"), name, style_code: code };
+    const selectedSuiteId = optionalText("signature_suite_id");
+    const currentSuiteId = optionalText("current_signature_suite_id");
+    const retainsCurrentSuite = formData.get("retain_signature_suite_assignment") === "on";
+    const signatureSuiteId = selectedSuiteId || (retainsCurrentSuite ? currentSuiteId : null);
+    const value = { description: optionalText("description"), name, signature_suite_id: signatureSuiteId, style_code: code };
     ({ error } = configurationId ? await styleSupabase.from("product_style").update(value).eq("id", configurationId) : await styleSupabase.from("product_style").insert(value));
   } else if (configurationType === "finish") {
     const value = { description: optionalText("description"), finish_name: name };

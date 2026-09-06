@@ -2025,6 +2025,18 @@ dd {
   margin: 0;
 }
 
+.setting-assignment-toggle {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.setting-assignment-toggle input {
+  min-height: auto;
+  padding: 0;
+}
+
 @media (max-width: 760px) {
   .suite-substyle-editor form {
     grid-template-columns: 1fr;

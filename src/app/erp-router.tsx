@@ -1121,13 +1121,14 @@ async function createTerritoryAction(formData: FormData) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase.from("territory").insert({ description, name, state_codes_json: coverage!.stateCodes, territory_code: territoryCode }).select("id").single();
   if (error) redirect(`/?module=admin-territory-edit&error=${encodeURIComponent(error.message)}`);
+  let overlapCount: number;
   try {
     await replaceTerritoryRules(data.id, coverage!);
     await replaceTerritoryZipCoverage(data.id, postalCodes!);
-    const overlapCount = await territoryOverlapCount(data.id, postalCodes!);
-    revalidatePath("/");
-    redirect(`/?module=admin-territory-edit&territory=${data.id}&notice=${encodeURIComponent(overlapCount ? `Territory created. Its ZIP coverage overlaps ${overlapCount} existing territor${overlapCount === 1 ? "y" : "ies"}; review the individual ZIP exclusions if needed.` : "Territory created.")}`);
+    overlapCount = await territoryOverlapCount(data.id, postalCodes!);
   } catch (coverageError) { redirect(`/?module=admin-territory-edit&territory=${data.id}&error=${encodeURIComponent(coverageError instanceof Error ? coverageError.message : "Unable to save ZIP coverage.")}`); }
+  revalidatePath("/");
+  redirect(`/?module=admin-territory-edit&territory=${data.id}&notice=${encodeURIComponent(overlapCount! ? `Territory created. Its ZIP coverage overlaps ${overlapCount} existing territor${overlapCount === 1 ? "y" : "ies"}; review the individual ZIP exclusions if needed.` : "Territory created.")}`);
 }
 
 async function updateTerritoryAction(formData: FormData) {
@@ -1141,14 +1142,15 @@ async function updateTerritoryAction(formData: FormData) {
   try { coverage = territoryCoverage(formData); } catch (error) { redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(error instanceof Error ? error.message : "Invalid territory coverage.")}`); }
   const { error } = await createSupabaseAdminClient().from("territory").update({ description: textValue(formData, "description") || null, name, state_codes_json: coverage!.stateCodes, status, territory_code: territoryCode }).eq("id", territoryId);
   if (error) redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(error.message)}`);
+  let overlapCount: number;
   try {
     const postalCodes = await resolveTerritoryZipCoverage(coverage!);
     await replaceTerritoryRules(territoryId, coverage!);
     await replaceTerritoryZipCoverage(territoryId, postalCodes);
-    const overlapCount = await territoryOverlapCount(territoryId, postalCodes);
-    revalidatePath("/");
-    redirect(`/?module=admin-territory-edit&territory=${territoryId}&notice=${encodeURIComponent(overlapCount ? `Territory saved. Its ZIP coverage overlaps ${overlapCount} existing territor${overlapCount === 1 ? "y" : "ies"}; review the individual ZIP exclusions if needed.` : "Territory saved.")}`);
+    overlapCount = await territoryOverlapCount(territoryId, postalCodes);
   } catch (coverageError) { redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(coverageError instanceof Error ? coverageError.message : "Unable to save ZIP coverage.")}`); }
+  revalidatePath("/");
+  redirect(`/?module=admin-territory-edit&territory=${territoryId}&notice=${encodeURIComponent(overlapCount! ? `Territory saved. Its ZIP coverage overlaps ${overlapCount} existing territor${overlapCount === 1 ? "y" : "ies"}; review the individual ZIP exclusions if needed.` : "Territory saved.")}`);
 }
 
 async function deactivateWarehousesAction(formData: FormData) {

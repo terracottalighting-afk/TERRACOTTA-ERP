@@ -1170,6 +1170,36 @@ async function deactivateTerritoryAction(formData: FormData) {
   redirect("/?module=admin&admin_tab=territory");
 }
 
+async function saveAgencyTerritoryAssignmentsAction(formData: FormData) {
+  "use server";
+  const agencyId = textValue(formData, "agency_id");
+  const territoryIds = [...new Set(formData.getAll("territory_ids").map(String).filter(Boolean))];
+  if (!agencyId) redirect("/?module=customers");
+  const supabase = createSupabaseUntypedAdminClient();
+  const [{ data: agency, error: agencyError }, { data: territories, error: territoryError }, { data: existingAssignments, error: assignmentsError }] = await Promise.all([
+    supabase.from("sales_rep_agency").select("id").eq("id", agencyId).maybeSingle(),
+    territoryIds.length ? supabase.from("territory").select("id").in("id", territoryIds).eq("status", "active") : Promise.resolve({ data: [], error: null }),
+    supabase.from("territory_assignment").select("id, territory_id").eq("sales_rep_agency_id", agencyId).eq("status", "active").is("end_date", null),
+  ]);
+  if (agencyError || !agency) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(agencyError?.message ?? "Sales rep agency not found.")}`);
+  if (territoryError || assignmentsError) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(territoryError?.message ?? assignmentsError?.message ?? "Unable to load territory assignments.")}`);
+  if ((territories ?? []).length !== territoryIds.length) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent("Choose active territories only.")}`);
+  const selected = new Set(territoryIds);
+  const existingByTerritory = new Map((existingAssignments ?? []).map((assignment) => [assignment.territory_id, assignment]));
+  const toEnd = (existingAssignments ?? []).filter((assignment) => !selected.has(assignment.territory_id)).map((assignment) => assignment.id);
+  if (toEnd.length) {
+    const { error } = await supabase.from("territory_assignment").update({ end_date: new Date().toISOString().slice(0, 10), status: "inactive" }).in("id", toEnd);
+    if (error) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(error.message)}`);
+  }
+  const toCreate = territoryIds.filter((territoryId) => !existingByTerritory.has(territoryId));
+  if (toCreate.length) {
+    const { error } = await supabase.from("territory_assignment").insert(toCreate.map((territory_id) => ({ sales_rep_agency_id: agencyId, territory_id })));
+    if (error) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(error.message)}`);
+  }
+  revalidatePath("/");
+  redirect(`/?module=sales-rep-agency&agency=${agencyId}`);
+}
+
 async function deactivateWarehousesAction(formData: FormData) {
   "use server";
   const warehouseIds = formData.getAll("warehouse_ids").map(String).filter(Boolean);
@@ -10446,7 +10476,7 @@ export async function ErpRouter({
             saveAction={updateFreightPolicyAction}
           />
         ) : activeModule === "sales-rep-agency" ? (
-          <SalesRepAgencyPage agencyId={params.agency} />
+          <SalesRepAgencyPage agencyId={params.agency} saveTerritoriesAction={saveAgencyTerritoryAssignmentsAction} />
         ) : activeModule === "new-order" ? (
           <NewOrderPage
             customerId={params.customer}

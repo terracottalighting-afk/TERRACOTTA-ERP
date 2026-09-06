@@ -652,6 +652,34 @@ input {
   margin: 14px 0;
 }
 
+.agency-territory-settings {
+  margin-top: 18px;
+}
+
+.territory-assignment-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+
+.territory-assignment-grid .checkbox-label {
+  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.territory-assignment-grid .checkbox-label span {
+  display: grid;
+  gap: 3px;
+}
+
+.territory-assignment-grid small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .territory-rule {
   align-items: center;
   border: 1px solid var(--line);

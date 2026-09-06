@@ -4,6 +4,7 @@ import { ModulePlaceholder, StatusBadge } from "@/components/ui";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type SalesRepAgency = {
+  id: string;
   agency_code: string;
   commission_default_percent: number;
   email: string | null;
@@ -13,10 +14,14 @@ type SalesRepAgency = {
   status: string;
 };
 
+type Territory = { id: string; territory_code: string; name: string; description: string | null };
+
 export async function SalesRepAgencyPage({
   agencyId,
+  saveTerritoriesAction,
 }: {
   agencyId?: string;
+  saveTerritoriesAction: (formData: FormData) => Promise<void>;
 }) {
   if (!agencyId) {
     return <ModulePlaceholder moduleName="Sales Rep Agency" />;
@@ -26,7 +31,7 @@ export async function SalesRepAgencyPage({
   const { data, error } = await supabase
     .from("sales_rep_agency")
     .select(
-      "agency_code, commission_default_percent, email, main_contact_name, name, phone, status",
+      "id, agency_code, commission_default_percent, email, main_contact_name, name, phone, status",
     )
     .eq("id", agencyId)
     .maybeSingle();
@@ -51,6 +56,12 @@ export async function SalesRepAgencyPage({
   }
 
   const agency = data as SalesRepAgency;
+  const [{ data: territories, error: territoryError }, { data: assignments, error: assignmentError }] = await Promise.all([
+    supabase.from("territory").select("id, territory_code, name, description").eq("status", "active").order("name", { ascending: true }),
+    supabase.from("territory_assignment").select("territory_id").eq("sales_rep_agency_id", agency.id).eq("status", "active").is("end_date", null),
+  ]);
+  if (territoryError || assignmentError) throw new Error(territoryError?.message ?? assignmentError?.message);
+  const assignedTerritoryIds = new Set((assignments ?? []).map((assignment) => assignment.territory_id));
 
   return (
     <section className="dashboard-panel">
@@ -95,6 +106,11 @@ export async function SalesRepAgencyPage({
             </div>
           </dl>
         </article>
+      </section>
+
+      <section className="data-section agency-territory-settings">
+        <div className="section-title"><div><h3>Assigned Territories</h3><p>Assign the base territories this agency covers. Individual reps can later receive a subset of these agency territories.</p></div></div>
+        <form action={saveTerritoriesAction} className="form-stack"><input name="agency_id" type="hidden" value={agency.id} /><div className="territory-assignment-grid">{(territories ?? []).map((territory: Territory) => <label className="checkbox-label" key={territory.id}><input defaultChecked={assignedTerritoryIds.has(territory.id)} name="territory_ids" type="checkbox" value={territory.id} /><span><strong>{territory.name}</strong><small>{territory.territory_code}{territory.description ? ` - ${territory.description}` : ""}</small></span></label>)}</div>{!(territories ?? []).length ? <p className="fieldset-note">No active territories are available to assign.</p> : null}<div className="form-actions"><button className="primary-action" type="submit">Save Territory Assignments</button></div></form>
       </section>
     </section>
   );

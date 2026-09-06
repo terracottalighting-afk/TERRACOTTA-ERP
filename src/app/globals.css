@@ -1941,6 +1941,36 @@ dd {
   padding: 14px;
 }
 
+.product-settings-tabs {
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  padding: 14px;
+}
+
+.product-settings-tab {
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.product-settings-tab--active {
+  border-color: var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.product-settings-title .fieldset-note {
+  margin: 4px 0 0;
+}
+
+.product-setting-editor {
+  border-bottom: 1px solid var(--line);
+  padding: 14px;
+}
+
+.product-setting-editor .form-actions {
+  margin-bottom: 0;
+}
+
 .admin-hierarchy-actions,
 .admin-hierarchy-links {
   align-items: center;

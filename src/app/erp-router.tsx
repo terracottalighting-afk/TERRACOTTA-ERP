@@ -959,6 +959,16 @@ async function createWarehouseAction(formData: FormData) {
   redirect(`/?module=admin-warehouse&warehouse=${data.id}&notice=warehouse_created`);
 }
 
+async function deactivateWarehousesAction(formData: FormData) {
+  "use server";
+  const warehouseIds = formData.getAll("warehouse_ids").map(String).filter(Boolean);
+  if (warehouseIds.length === 0) redirect("/?module=admin&admin_tab=warehouse");
+  const { error } = await createSupabaseAdminClient().from("warehouse").update({ is_active: false }).in("id", warehouseIds);
+  if (error) redirect(`/?module=admin&admin_tab=warehouse&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=warehouse");
+}
+
 async function updateWarehouseAction(formData: FormData) {
   "use server";
   const optionalText = (key: string) => textValue(formData, key) || null;
@@ -10273,7 +10283,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard selectedTab={params.admin_tab} />
+          <AdminDashboard deactivateWarehousesAction={deactivateWarehousesAction} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

@@ -2693,3 +2693,11 @@ tr:last-child td {
   border-left: 2px solid var(--line);
   padding-left: 12px;
 }
+
+.data-table tbody tr.admin-row-selected td {
+  background: #eaf6d8;
+}
+
+.data-table tbody tr.admin-row-selected:hover td {
+  background: #dcedc8;
+}

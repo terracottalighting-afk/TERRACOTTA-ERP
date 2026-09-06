@@ -2,13 +2,14 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/ui";
 import { productPartRoleOptions } from "@/lib/product-part-roles";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { WarehouseDirectory } from "./warehouse-directory";
 
 type AdminTab = "users" | "products" | "warehouse" | "territory";
 
-export async function AdminDashboard({ selectedTab }: { selectedTab?: string }) {
+export async function AdminDashboard({ deactivateWarehousesAction, selectedTab }: { deactivateWarehousesAction: (formData: FormData) => Promise<void>; selectedTab?: string }) {
   const supabase = createSupabaseAdminClient();
   const [warehousesResult, territoriesResult, brandsResult, suitesResult, categoriesResult, finishesResult, accountTypesResult, businessTypesResult, agenciesResult, salesRepsResult] = await Promise.all([
-    supabase.from("warehouse").select("id, warehouse_code, name, is_active").order("name", { ascending: true }),
+    supabase.from("warehouse").select("id, warehouse_code, name, is_active").eq("is_active", true).order("name", { ascending: true }),
     supabase.from("territory").select("id, territory_code, name, status").order("name", { ascending: true }),
     supabase.from("brand").select("id"),
     supabase.from("product_signature_suite").select("id"),
@@ -50,11 +51,7 @@ export async function AdminDashboard({ selectedTab }: { selectedTab?: string }) 
         <section className="metric-grid">
           <div className="metric"><span>Warehouses</span><strong>{warehouses.length}</strong></div>
         </section>
-        <div className="section-title"><h3>Warehouse Setup</h3><Link className="small-action" href="/?module=admin-warehouse-edit">Add Warehouse</Link></div>
-        <div className="table-wrap"><table className="data-table"><thead><tr><th>Warehouse</th><th>Code</th><th>Status</th></tr></thead><tbody>
-          {warehouses.map((warehouse) => <tr key={warehouse.id}><td><Link className="record-link" href={`/?module=admin-warehouse&warehouse=${warehouse.id}`}>{warehouse.name}</Link></td><td>{warehouse.warehouse_code}</td><td><StatusBadge tone={warehouse.is_active ? "good" : "warn"} value={warehouse.is_active ? "Active" : "Inactive"} /></td></tr>)}
-          {warehouses.length === 0 ? <tr><td colSpan={3}>No warehouses have been configured.</td></tr> : null}
-        </tbody></table></div>
+        <WarehouseDirectory deactivateAction={deactivateWarehousesAction} warehouses={warehouses} />
       </article>
       <article className={activeTab === "territory" ? "data-section" : "data-section tab-panel-hidden"}><div className="section-title"><h3>Territory Settings</h3></div><div className="compact-list">
         {territories.map((territory) => <div className="compact-row" key={territory.id}><div><strong>{territory.name}</strong><span>{territory.territory_code}</span></div><StatusBadge tone={territory.status === "active" ? "good" : "warn"} value={territory.status} /></div>)}

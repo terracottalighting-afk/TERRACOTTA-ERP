@@ -2025,6 +2025,19 @@ dd {
   margin: 0;
 }
 
+.style-row--selectable {
+  cursor: pointer;
+}
+
+.product-setting-editor-row td {
+  background: var(--panel-soft);
+  padding: 0;
+}
+
+.product-setting-editor-row .product-setting-editor {
+  border-bottom: 0;
+}
+
 .form-grid .setting-assignment-toggle {
   align-items: center;
   display: flex;

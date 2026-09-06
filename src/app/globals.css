@@ -1946,6 +1946,29 @@ dd {
   padding: 14px;
 }
 
+.product-settings-subtabs {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 22px;
+  padding: 0 18px;
+}
+
+.product-settings-subtabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 11px 2px 9px;
+}
+
+.product-settings-subtabs button[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--foreground);
+}
+
 .product-settings-tab {
   color: var(--foreground);
   cursor: pointer;

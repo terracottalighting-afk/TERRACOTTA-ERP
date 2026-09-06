@@ -65,6 +65,7 @@ import { RgaSolutionPage } from "@/components/rga/rga-solution-page";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
 import { WarehouseEditor } from "@/components/admin/warehouse-editor";
 import { WarehouseInfoPage } from "@/components/admin/warehouse-info-page";
+import { TerritoryEditor } from "@/components/admin/territory-editor";
 import { ZoneEditor } from "@/components/admin/zone-editor";
 import { AisleEditor } from "@/components/admin/aisle-editor";
 import { SectionEditorPage } from "@/components/admin/section-editor-page";
@@ -178,6 +179,7 @@ export type SearchParams = Promise<{
   spec_section?: string;
   vendor_action?: string;
   warehouse?: string;
+  territory?: string;
   zone?: string;
   aisle?: string;
   section?: string;
@@ -995,6 +997,55 @@ async function createWarehouseAction(formData: FormData) {
   if (error) redirect(`/?module=admin-warehouse-edit&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");
   redirect(`/?module=admin-warehouse&warehouse=${data.id}&notice=warehouse_created`);
+}
+
+function territoryCoverage(formData: FormData) {
+  const stateCodes = [...new Set(formData.getAll("state_code").map((value) => String(value).trim().toUpperCase()).filter((code) => /^[A-Z]{2}$/.test(code)))];
+  const postalCodes = [...new Set(textValue(formData, "postal_codes").split(/[\s,;]+/).map((code) => code.trim()).filter(Boolean))];
+  const invalidPostalCode = postalCodes.find((code) => !/^\d{5}(-\d{4})?$/.test(code));
+  if (invalidPostalCode) throw new Error(`\"${invalidPostalCode}\" is not a valid ZIP code.`);
+  return { postalCodes, stateCodes };
+}
+
+async function replaceTerritoryZipCoverage(territoryId: string, postalCodes: string[]) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { error: deleteError } = await supabase.from("territory_zip_coverage").delete().eq("territory_id", territoryId);
+  if (deleteError) throw new Error(deleteError.message);
+  if (!postalCodes.length) return;
+  const { error } = await supabase.from("territory_zip_coverage").insert(postalCodes.map((postalCode) => ({ postal_code: postalCode, territory_id: territoryId })));
+  if (error) throw new Error(error.message);
+}
+
+async function createTerritoryAction(formData: FormData) {
+  "use server";
+  const territoryCode = textValue(formData, "territory_code").toUpperCase();
+  const name = textValue(formData, "name");
+  const description = textValue(formData, "description") || null;
+  if (!territoryCode || !name) redirect("/?module=admin-territory-edit&error=Territory%20code%20and%20name%20are%20required.");
+  let coverage: ReturnType<typeof territoryCoverage>;
+  try { coverage = territoryCoverage(formData); } catch (error) { redirect(`/?module=admin-territory-edit&error=${encodeURIComponent(error instanceof Error ? error.message : "Invalid territory coverage.")}`); }
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase.from("territory").insert({ description, name, state_codes_json: coverage!.stateCodes, territory_code: territoryCode }).select("id").single();
+  if (error) redirect(`/?module=admin-territory-edit&error=${encodeURIComponent(error.message)}`);
+  try { await replaceTerritoryZipCoverage(data.id, coverage!.postalCodes); } catch (coverageError) { redirect(`/?module=admin-territory-edit&territory=${data.id}&error=${encodeURIComponent(coverageError instanceof Error ? coverageError.message : "Unable to save ZIP coverage.")}`); }
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=territory");
+}
+
+async function updateTerritoryAction(formData: FormData) {
+  "use server";
+  const territoryId = textValue(formData, "territory_id");
+  const territoryCode = textValue(formData, "territory_code").toUpperCase();
+  const name = textValue(formData, "name");
+  const status = textValue(formData, "status") === "inactive" ? "inactive" : "active";
+  if (!territoryId || !territoryCode || !name) redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=Territory%20code%20and%20name%20are%20required.`);
+  let coverage: ReturnType<typeof territoryCoverage>;
+  try { coverage = territoryCoverage(formData); } catch (error) { redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(error instanceof Error ? error.message : "Invalid territory coverage.")}`); }
+  const { error } = await createSupabaseAdminClient().from("territory").update({ description: textValue(formData, "description") || null, name, state_codes_json: coverage!.stateCodes, status, territory_code: territoryCode }).eq("id", territoryId);
+  if (error) redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(error.message)}`);
+  try { await replaceTerritoryZipCoverage(territoryId, coverage!.postalCodes); } catch (coverageError) { redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(coverageError instanceof Error ? coverageError.message : "Unable to save ZIP coverage.")}`); }
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=territory");
 }
 
 async function deactivateWarehousesAction(formData: FormData) {
@@ -9761,6 +9812,7 @@ export async function ErpRouter({
     "admin-aisle-edit": "Edit Aisle",
     "admin-section-add": "Add Section",
     "admin-section-edit": "Edit Section",
+    "admin-territory-edit": "Territory Settings",
     "add-contact": "Add Contact",
     "add-customer": "Add Customer",
     "add-location": "Add Location",
@@ -10520,6 +10572,8 @@ export async function ErpRouter({
           />
         ) : activeModule === "admin-warehouse-edit" ? (
           <WarehouseEditor createAction={createWarehouseAction} error={params.error} notice={params.notice} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
+        ) : activeModule === "admin-territory-edit" ? (
+          <TerritoryEditor createAction={createTerritoryAction} error={params.error} saveAction={updateTerritoryAction} territoryId={params.territory} />
         ) : activeModule === "admin-zone-add" ? (
           <ZoneEditor createAction={createWarehouseZoneAction} error={params.error} saveAction={updateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-zone-edit" ? (

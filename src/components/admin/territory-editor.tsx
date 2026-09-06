@@ -1,0 +1,18 @@
+import Link from "next/link";
+import { createSupabaseAdminClient, createSupabaseUntypedAdminClient } from "@/lib/supabase/admin";
+
+type FormAction = (formData: FormData) => Promise<void>;
+
+const US_STATES = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"];
+
+export async function TerritoryEditor({ createAction, error, saveAction, territoryId }: { createAction: FormAction; error?: string; saveAction: FormAction; territoryId?: string }) {
+  const supabase = createSupabaseAdminClient();
+  const { data: territory, error: territoryError } = territoryId ? await supabase.from("territory").select("id, territory_code, name, description, state_codes_json, status").eq("id", territoryId).maybeSingle() : { data: null, error: null };
+  if (territoryError) throw new Error(territoryError.message);
+  const { data: zipCoverage, error: zipError } = territory ? await createSupabaseUntypedAdminClient().from("territory_zip_coverage").select("postal_code").eq("territory_id", territory.id).order("postal_code", { ascending: true }) : { data: [], error: null };
+  if (zipError) throw new Error(zipError.message);
+  const editing = Boolean(territory);
+  const selectedStates = Array.isArray(territory?.state_codes_json) ? territory.state_codes_json.filter((state): state is string => typeof state === "string") : [];
+
+  return <section className="dashboard-panel"><section className="account-header"><div><span className="eyebrow">Territory Settings</span><h2>{editing ? `Edit ${territory?.name}` : "Add Territory"}</h2><Link className="text-action" href="/?module=admin&admin_tab=territory">Back to Territory Settings</Link></div></section>{error ? <p className="form-error">{decodeURIComponent(error)}</p> : null}<form action={editing ? saveAction : createAction} className="form-stack">{editing ? <input name="territory_id" type="hidden" value={territory?.id ?? ""} /> : null}<fieldset><legend>Territory Profile</legend><div className="form-grid"><label>Territory Code<input defaultValue={territory?.territory_code ?? ""} name="territory_code" required /></label><label>Territory Name<input defaultValue={territory?.name ?? ""} name="name" required /></label><label className="full-width-field">Description<textarea defaultValue={territory?.description ?? ""} name="description" /></label>{editing ? <label>Status<select defaultValue={territory?.status ?? "active"} name="status"><option value="active">Active</option><option value="inactive">Inactive</option></select></label> : null}</div></fieldset><fieldset><legend>Coverage</legend><p className="fieldset-note">Select a state only when this territory covers the entire state. Use ZIP codes for partial state coverage.</p><div className="territory-state-grid">{US_STATES.map((state) => <label className="checkbox-label" key={state}><input defaultChecked={selectedStates.includes(state)} name="state_code" type="checkbox" value={state} />{state}</label>)}</div><label className="full-width-field">Partial Coverage ZIP Codes<textarea defaultValue={(zipCoverage ?? []).map((coverage) => coverage.postal_code).join("\n")} name="postal_codes" placeholder="Enter one ZIP code per line, or separate codes with commas" /></label></fieldset><div className="form-actions"><button className="primary-action" type="submit">{editing ? "Save Territory Changes" : "Create Territory"}</button><Link className="secondary-action" href="/?module=admin&admin_tab=territory">Cancel</Link></div></form></section>;
+}

@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { StatusBadge } from "@/components/ui";
 import { createSupabaseAdminClient, createSupabaseUntypedAdminClient } from "@/lib/supabase/admin";
 import { ProductSettingsManager } from "./product-settings-manager";
+import { TerritoryDirectory } from "./territory-directory";
 import { WarehouseDirectory } from "./warehouse-directory";
 
 type AdminTab = "users" | "products" | "warehouse" | "territory";
@@ -12,7 +12,7 @@ export async function AdminDashboard({ assignStyleAction, deactivateProductSetti
   const [warehousesResult, deactivatedWarehousesResult, territoriesResult, brandsResult, suitesResult, stylesResult, categoriesResult, materialsResult, finishesResult, partRolesResult] = await Promise.all([
     supabase.from("warehouse").select("id, warehouse_code, name, is_active").eq("is_active", true).order("name", { ascending: true }),
     supabase.from("warehouse").select("id, warehouse_code, name, is_active").eq("is_active", false).order("name", { ascending: true }),
-    supabase.from("territory").select("id, territory_code, name, status").order("name", { ascending: true }),
+    supabase.from("territory").select("id, territory_code, name, description, state_codes_json, status").order("name", { ascending: true }),
     supabase.from("brand").select("id, brand_code, name, legal_company_name, is_active").order("name", { ascending: true }),
     supabase.from("product_signature_suite").select("id, suite_code, name, description, brand_id, is_active").order("name", { ascending: true }),
     untypedSupabase.from("product_style").select("id, style_code, name, description, brand_id, signature_suite_id, is_active").order("name", { ascending: true }),
@@ -42,10 +42,7 @@ export async function AdminDashboard({ assignStyleAction, deactivateProductSetti
       <article className={activeTab === "warehouse" ? "data-section" : "data-section tab-panel-hidden"}>
         <WarehouseDirectory deactivateAction={deactivateWarehousesAction} deactivatedWarehouses={deactivatedWarehouses} warehouses={warehouses} />
       </article>
-      <article className={activeTab === "territory" ? "data-section" : "data-section tab-panel-hidden"}><div className="section-title"><h3>Territory Settings</h3></div><div className="compact-list">
-        {territories.map((territory) => <div className="compact-row" key={territory.id}><div><strong>{territory.name}</strong><span>{territory.territory_code}</span></div><StatusBadge tone={territory.status === "active" ? "good" : "warn"} value={territory.status} /></div>)}
-        {territories.length === 0 ? <p className="empty-state">No territories have been configured.</p> : null}
-      </div></article>
+      <article className={activeTab === "territory" ? "data-section" : "data-section tab-panel-hidden"}><TerritoryDirectory territories={territories} /></article>
       <article className={activeTab === "products" ? "data-section tab-panel--flush" : "data-section tab-panel-hidden"}><ProductSettingsManager assignStyleAction={assignStyleAction} brands={brandsResult.data ?? []} categories={categoriesResult.data ?? []} deactivateAction={deactivateProductSettingAction} error={error} finishes={finishesResult.data ?? []} materials={materialsResult.data ?? []} partRoles={partRolesResult.data ?? []} saveAction={saveProductSettingAction} styles={stylesResult.data ?? []} suites={suitesResult.data ?? []} /></article>
       <article className={activeTab === "users" ? "data-section" : "data-section tab-panel-hidden"}><div className="section-title"><h3>Users and Access Roles</h3></div><p className="fieldset-note">User accounts and security roles are intentionally protected from the general application database role. This tab reserves the management area; its controlled user-administration screen will be added with the required access policy.</p></article>
     </section>

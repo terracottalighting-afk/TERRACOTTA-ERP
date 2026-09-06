@@ -589,6 +589,20 @@ input {
   margin-bottom: 8px;
 }
 
+.territory-state-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  margin: 14px 0;
+}
+
+.territory-state-grid .checkbox-label {
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
 .part-parent-product-picker {
   display: grid;
   gap: 10px;

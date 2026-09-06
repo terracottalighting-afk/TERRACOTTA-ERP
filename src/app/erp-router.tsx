@@ -1153,6 +1153,16 @@ async function updateTerritoryAction(formData: FormData) {
   redirect(`/?module=admin-territory-edit&territory=${territoryId}&notice=${encodeURIComponent(overlapCount! ? `Territory saved. Its ZIP coverage overlaps ${overlapCount} existing territor${overlapCount === 1 ? "y" : "ies"}; review the individual ZIP exclusions if needed.` : "Territory saved.")}`);
 }
 
+async function deactivateTerritoryAction(formData: FormData) {
+  "use server";
+  const territoryId = textValue(formData, "territory_id");
+  if (!territoryId) redirect("/?module=admin&admin_tab=territory");
+  const { error } = await createSupabaseAdminClient().from("territory").update({ status: "inactive" }).eq("id", territoryId);
+  if (error) redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=territory");
+}
+
 async function deactivateWarehousesAction(formData: FormData) {
   "use server";
   const warehouseIds = formData.getAll("warehouse_ids").map(String).filter(Boolean);
@@ -10678,7 +10688,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse-edit" ? (
           <WarehouseEditor createAction={createWarehouseAction} error={params.error} notice={params.notice} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-territory-edit" ? (
-          <TerritoryEditor createAction={createTerritoryAction} error={params.error} notice={params.notice} saveAction={updateTerritoryAction} territoryId={params.territory} />
+          <TerritoryEditor createAction={createTerritoryAction} deactivateAction={deactivateTerritoryAction} error={params.error} notice={params.notice} saveAction={updateTerritoryAction} territoryId={params.territory} />
         ) : activeModule === "admin-zone-add" ? (
           <ZoneEditor createAction={createWarehouseZoneAction} error={params.error} saveAction={updateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-zone-edit" ? (

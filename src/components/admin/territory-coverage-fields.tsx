@@ -4,15 +4,18 @@ import { useState } from "react";
 
 type County = { county_geoid: string; county_name: string };
 type CountyRule = { county_geoid: string; county_name: string; coverage_mode: "include" | "exclude"; state_code: string };
+const US_STATES = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"];
 
-export function TerritoryCoverageFields({ countyRules, excludedPostalCodes, includedPostalCodes, resolvedZipCount }: { countyRules: CountyRule[]; excludedPostalCodes: string[]; includedPostalCodes: string[]; resolvedZipCount: number }) {
+export function TerritoryCoverageFields({ countyRules, excludedPostalCodes, includedPostalCodes, resolvedZipCount, selectedFullStates }: { countyRules: CountyRule[]; excludedPostalCodes: string[]; includedPostalCodes: string[]; resolvedZipCount: number; selectedFullStates: string[] }) {
+  const [fullStateCodes, setFullStateCodes] = useState(selectedFullStates);
   const [selectedState, setSelectedState] = useState("");
   const [counties, setCounties] = useState<County[]>([]);
   const [selectedCountyIds, setSelectedCountyIds] = useState<string[]>([]);
   const [mode, setMode] = useState<"include" | "exclude">("include");
-  const [rules, setRules] = useState(countyRules);
+  const [rules, setRules] = useState(() => countyRules.filter((rule) => !selectedFullStates.includes(rule.state_code)));
   const [loading, setLoading] = useState(false);
   const [lookupError, setLookupError] = useState("");
+  const availableStates = US_STATES.filter((state) => !fullStateCodes.includes(state));
 
   async function loadCounties(state: string) {
     setSelectedState(state);
@@ -43,13 +46,38 @@ export function TerritoryCoverageFields({ countyRules, excludedPostalCodes, incl
     setSelectedCountyIds([]);
   }
 
+  function toggleFullState(state: string) {
+    const isFullState = fullStateCodes.includes(state);
+    setFullStateCodes((current) => isFullState ? current.filter((code) => code !== state) : [...current, state]);
+    if (!isFullState) {
+      setRules((current) => current.filter((rule) => rule.state_code !== state));
+      if (selectedState === state) {
+        setSelectedState("");
+        setSelectedCountyIds([]);
+        setCounties([]);
+      }
+    }
+  }
+
+  function addCounty(countyId: string) {
+    setSelectedCountyIds((current) => current.includes(countyId) ? current : [...current, countyId]);
+  }
+
+  function removeCounty(countyId: string) {
+    setSelectedCountyIds((current) => current.filter((id) => id !== countyId));
+  }
+
+  const availableCounties = counties.filter((county) => !selectedCountyIds.includes(county.county_geoid));
+  const chosenCounties = counties.filter((county) => selectedCountyIds.includes(county.county_geoid));
+
   return <>
     <input name="county_rules_json" type="hidden" value={JSON.stringify(rules.map(({ county_geoid, coverage_mode }) => ({ county_geoid, coverage_mode })))} />
-    <p className="fieldset-note">A full state expands to its ZIP codes automatically. For partial coverage, add county inclusions or exclusions; individual ZIP additions and exclusions take final priority.</p>
+    <p className="fieldset-note">Select a whole state or set up partial coverage by county. Whole-state selection is exclusive and removes county rules for that state.</p>
+    <div className="territory-state-grid">{US_STATES.map((state) => <label className="checkbox-label" key={state}><input checked={fullStateCodes.includes(state)} name="state_code" onChange={() => toggleFullState(state)} type="checkbox" value={state} />{state}</label>)}</div>
     <div className="form-grid territory-county-picker">
-      <label>State for County Coverage<select onChange={(event) => void loadCounties(event.target.value)} value={selectedState}><option value="">Select a state</option>{["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"].map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
+      <label>State for Partial Coverage<select onChange={(event) => void loadCounties(event.target.value)} value={selectedState}><option value="">Select a state</option>{availableStates.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
       <label>County Rule<select onChange={(event) => setMode(event.target.value as "include" | "exclude")} value={mode}><option value="include">Include selected counties</option><option value="exclude">Exclude selected counties</option></select></label>
-      <label className="full-width-field">Counties<select disabled={!selectedState || loading} multiple onChange={(event) => setSelectedCountyIds(Array.from(event.target.selectedOptions, (option) => option.value))} value={selectedCountyIds}>{counties.map((county) => <option key={county.county_geoid} value={county.county_geoid}>{county.county_name}</option>)}</select></label>
+      <div className="full-width-field territory-county-lists"><div><span className="field-label">Available Counties</span><div className="territory-county-list">{availableCounties.map((county) => <button disabled={loading} key={county.county_geoid} onDoubleClick={() => addCounty(county.county_geoid)} type="button">{county.county_name}</button>)}{selectedState && !loading && !availableCounties.length ? <span>No counties available.</span> : null}</div></div><div><span className="field-label">Selected Counties</span><div className="territory-county-list">{chosenCounties.map((county) => <button key={county.county_geoid} onDoubleClick={() => removeCounty(county.county_geoid)} type="button">{county.county_name}</button>)}{selectedState && !loading && !chosenCounties.length ? <span>No counties selected.</span> : null}</div></div></div>
     </div>
     {loading ? <p className="fieldset-note">Loading counties...</p> : null}{lookupError ? <p className="form-error">{lookupError}</p> : null}
     <button className="secondary-action" disabled={!selectedCountyIds.length} onClick={addRules} type="button">Add County Rule</button>

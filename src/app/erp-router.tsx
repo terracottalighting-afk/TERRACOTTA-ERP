@@ -1408,6 +1408,45 @@ async function deactivateProductSettingAction(formData: FormData) {
   redirect("/?module=admin&admin_tab=products");
 }
 
+async function saveCustomerSettingAction(formData: FormData) {
+  "use server";
+  const configurationType = textValue(formData, "configuration_type");
+  const configurationId = textValue(formData, "configuration_id");
+  const code = textValue(formData, "code").toLowerCase().replace(/\s+/g, "_");
+  const name = textValue(formData, "name");
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=customers&error=${encodeURIComponent(message)}`;
+  if (!name || !/^[a-z][a-z0-9_]*$/.test(code) || !["account_type", "business_type", "status"].includes(configurationType)) redirect(errorUrl("A valid code and name are required."));
+  const supabase = createSupabaseUntypedAdminClient();
+  const description = textValue(formData, "description") || null;
+  let error: { message: string } | null = null;
+  if (configurationType === "account_type") {
+    const value = { description, is_rep_type: formData.get("is_rep_type") === "on", name, type_code: code };
+    ({ error } = configurationId ? await supabase.from("customer_account_type").update(value).eq("id", configurationId) : await supabase.from("customer_account_type").insert(value));
+  } else if (configurationType === "business_type") {
+    const value = { description, name, type_code: code };
+    ({ error } = configurationId ? await supabase.from("customer_business_type").update(value).eq("id", configurationId) : await supabase.from("customer_business_type").insert(value));
+  } else {
+    const value = { description, name, status_code: code };
+    ({ error } = configurationId ? await supabase.from("customer_status_setting").update(value).eq("id", configurationId) : await supabase.from("customer_status_setting").insert(value));
+  }
+  if (error) redirect(errorUrl(error.message));
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=customers");
+}
+
+async function deactivateCustomerSettingAction(formData: FormData) {
+  "use server";
+  const configurationType = textValue(formData, "configuration_type");
+  const configurationId = textValue(formData, "configuration_id");
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=customers&error=${encodeURIComponent(message)}`;
+  if (!configurationId || !["account_type", "business_type", "status"].includes(configurationType)) redirect(errorUrl("Choose a customer setting to deactivate."));
+  const table = configurationType === "account_type" ? "customer_account_type" : configurationType === "business_type" ? "customer_business_type" : "customer_status_setting";
+  const { error } = await createSupabaseUntypedAdminClient().from(table).update({ is_active: false }).eq("id", configurationId);
+  if (error) redirect(errorUrl(error.message));
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=customers");
+}
+
 async function assignStyleToSignatureSuiteAction(formData: FormData) {
   "use server";
   const signatureSuiteId = textValue(formData, "signature_suite_id");
@@ -10704,7 +10743,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveProductSettingAction={saveProductSettingAction} selectedTab={params.admin_tab} />
+          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveProductSettingAction={saveProductSettingAction} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

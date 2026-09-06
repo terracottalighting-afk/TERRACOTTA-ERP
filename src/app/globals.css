@@ -2002,6 +2002,13 @@ dd {
   background: var(--panel-soft);
 }
 
+.setting-row-status {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  white-space: nowrap;
+}
+
 .suite-row-indicator {
   color: var(--accent);
   display: inline-block;

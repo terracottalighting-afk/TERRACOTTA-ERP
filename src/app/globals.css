@@ -603,29 +603,6 @@ input {
   padding: 8px 10px;
 }
 
-.territory-zip-grid {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(auto-fill, minmax(82px, 1fr));
-  margin: 14px 0;
-}
-
-.territory-zip-grid .checkbox-label {
-  align-items: center;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font-family: var(--font-mono);
-  padding: 8px 10px;
-}
-
-.territory-zip-actions {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  justify-content: space-between;
-}
-
 .territory-county-picker select[multiple] {
   min-height: 190px;
 }

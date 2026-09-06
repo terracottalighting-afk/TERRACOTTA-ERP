@@ -100,7 +100,6 @@ export type SearchParams = Promise<{
   location?: string;
   module?: string;
   notice?: string;
-  territory_zip_page?: string;
   product_brand?: string;
   product_category?: string;
   product_eligibility?: string;
@@ -1162,22 +1161,6 @@ async function deactivateTerritoryAction(formData: FormData) {
   if (error) redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");
   redirect("/?module=admin&admin_tab=territory");
-}
-
-async function removeTerritoryZipAction(formData: FormData) {
-  "use server";
-  const territoryId = textValue(formData, "territory_id");
-  const postalCodes = [...new Set(formData.getAll("postal_codes").map(String).filter((postalCode) => /^\d{5}$/.test(postalCode)))];
-  const page = Math.max(1, Number.parseInt(textValue(formData, "territory_zip_page"), 10) || 1);
-  if (!territoryId) redirect("/?module=admin&admin_tab=territory");
-  if (postalCodes.length === 0) redirect(`/?module=admin-territory-edit&territory=${territoryId}&territory_zip_page=${page}&error=${encodeURIComponent("Select at least one ZIP code to remove.")}`);
-  const supabase = createSupabaseUntypedAdminClient();
-  const { error: overrideError } = await supabase.from("territory_zip_override").upsert(postalCodes.map((postalCode) => ({ coverage_mode: "exclude", postal_code: postalCode, territory_id: territoryId })), { onConflict: "territory_id,postal_code" });
-  if (overrideError) redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(overrideError.message)}`);
-  const { error: coverageError } = await supabase.from("territory_zip_coverage").delete().eq("territory_id", territoryId).in("postal_code", postalCodes);
-  if (coverageError) redirect(`/?module=admin-territory-edit&territory=${territoryId}&error=${encodeURIComponent(coverageError.message)}`);
-  revalidatePath("/");
-  redirect(`/?module=admin-territory-edit&territory=${territoryId}&territory_zip_page=${page}&notice=${encodeURIComponent(`${postalCodes.length} ZIP code${postalCodes.length === 1 ? " was" : "s were"} removed from this territory.`)}`);
 }
 
 async function deactivateWarehousesAction(formData: FormData) {
@@ -10705,7 +10688,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse-edit" ? (
           <WarehouseEditor createAction={createWarehouseAction} error={params.error} notice={params.notice} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-territory-edit" ? (
-          <TerritoryEditor createAction={createTerritoryAction} deactivateAction={deactivateTerritoryAction} error={params.error} notice={params.notice} removeZipAction={removeTerritoryZipAction} saveAction={updateTerritoryAction} territoryId={params.territory} zipPage={Math.max(1, Number.parseInt(params.territory_zip_page ?? "1", 10) || 1)} />
+          <TerritoryEditor createAction={createTerritoryAction} deactivateAction={deactivateTerritoryAction} error={params.error} notice={params.notice} saveAction={updateTerritoryAction} territoryId={params.territory} />
         ) : activeModule === "admin-zone-add" ? (
           <ZoneEditor createAction={createWarehouseZoneAction} error={params.error} saveAction={updateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-zone-edit" ? (

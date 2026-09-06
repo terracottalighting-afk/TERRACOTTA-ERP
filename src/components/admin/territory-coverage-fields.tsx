@@ -56,8 +56,8 @@ export function TerritoryCoverageFields({ countyRules, excludedPostalCodes, incl
     {rules.length ? <div className="territory-rule-list">{rules.map((rule) => <div className="territory-rule" key={rule.county_geoid}><span>{rule.state_code} / {rule.county_name}</span><span className={`territory-coverage-mode territory-coverage-mode--${rule.coverage_mode}`}>{rule.coverage_mode === "include" ? "Included" : "Excluded"}</span><button className="text-action" onClick={() => setRules((current) => current.filter((item) => item.county_geoid !== rule.county_geoid))} type="button">Remove</button></div>)}</div> : null}
     <div className="form-grid">
       <label>Individual ZIP Additions<textarea defaultValue={includedPostalCodes.join("\n")} name="include_zip_codes" placeholder="One ZIP code per line, or separate with commas" /></label>
-      <label>Individual ZIP Exclusions<textarea defaultValue={excludedPostalCodes.join("\n")} name="exclude_zip_codes" placeholder="Removes these ZIP codes from this territory" /></label>
+      <label>ZIP Codes to Remove<textarea defaultValue={excludedPostalCodes.join("\n")} name="exclude_zip_codes" placeholder="Paste ZIP codes here: one per line or separated with commas" /></label>
     </div>
-    <p className="fieldset-note">{resolvedZipCount ? `${resolvedZipCount.toLocaleString()} ZIP codes are currently resolved for this territory.` : "The resolved ZIP list is created when the territory is saved."}</p>
+    <p className="fieldset-note">{resolvedZipCount ? `${resolvedZipCount.toLocaleString()} ZIP codes are currently resolved for this territory. ZIP codes entered above are removed when the territory is saved.` : "The resolved ZIP list is created when the territory is saved."}</p>
   </>;
 }

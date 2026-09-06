@@ -3,7 +3,7 @@ import { StatusBadge } from "@/components/ui";
 import { productPartRoleOptions } from "@/lib/product-part-roles";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-type AdminTab = "users" | "products" | "warehouse";
+type AdminTab = "users" | "products" | "warehouse" | "territory";
 
 export async function AdminDashboard({ selectedTab }: { selectedTab?: string }) {
   const supabase = createSupabaseAdminClient();
@@ -35,7 +35,7 @@ export async function AdminDashboard({ selectedTab }: { selectedTab?: string }) 
     { label: "Sales Reps", value: salesRepsResult.data?.length ?? 0 },
   ];
 
-  const activeTab: AdminTab = selectedTab === "products" || selectedTab === "warehouse" ? selectedTab : "users";
+  const activeTab: AdminTab = selectedTab === "products" || selectedTab === "warehouse" || selectedTab === "territory" ? selectedTab : "users";
 
   return <section className="dashboard-panel">
     <section className="account-header"><div><span className="eyebrow">System Administration</span><h2>Admin Dashboard</h2><p className="fieldset-note">Central register for operational setup, shared lists, and user access.</p></div></section>
@@ -43,6 +43,7 @@ export async function AdminDashboard({ selectedTab }: { selectedTab?: string }) 
       <Link aria-current={activeTab === "users" ? "page" : undefined} href="/?module=admin&admin_tab=users">Users and Roles</Link>
       <Link aria-current={activeTab === "products" ? "page" : undefined} href="/?module=admin&admin_tab=products">Product Settings</Link>
       <Link aria-current={activeTab === "warehouse" ? "page" : undefined} href="/?module=admin&admin_tab=warehouse">Warehouse Settings</Link>
+      <Link aria-current={activeTab === "territory" ? "page" : undefined} href="/?module=admin&admin_tab=territory">Territory Settings</Link>
     </section>
     <section className="section-stack">
       <article className={activeTab === "warehouse" ? "data-section" : "data-section tab-panel-hidden"}>
@@ -55,7 +56,7 @@ export async function AdminDashboard({ selectedTab }: { selectedTab?: string }) 
           {warehouses.length === 0 ? <tr><td colSpan={3}>No warehouses have been configured.</td></tr> : null}
         </tbody></table></div>
       </article>
-      <article className={activeTab === "warehouse" ? "data-section" : "data-section tab-panel-hidden"}><div className="section-title"><h3>Territories and Sales Coverage</h3></div><div className="compact-list">
+      <article className={activeTab === "territory" ? "data-section" : "data-section tab-panel-hidden"}><div className="section-title"><h3>Territory Settings</h3></div><div className="compact-list">
         {territories.map((territory) => <div className="compact-row" key={territory.id}><div><strong>{territory.name}</strong><span>{territory.territory_code}</span></div><StatusBadge tone={territory.status === "active" ? "good" : "warn"} value={territory.status} /></div>)}
         {territories.length === 0 ? <p className="empty-state">No territories have been configured.</p> : null}
       </div></article>

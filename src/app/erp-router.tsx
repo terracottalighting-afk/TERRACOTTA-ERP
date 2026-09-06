@@ -66,6 +66,7 @@ import { AdminDashboard } from "@/components/admin/admin-dashboard";
 import { WarehouseEditor } from "@/components/admin/warehouse-editor";
 import { WarehouseInfoPage } from "@/components/admin/warehouse-info-page";
 import { ZoneEditor } from "@/components/admin/zone-editor";
+import { AisleEditor } from "@/components/admin/aisle-editor";
 import { ModuleNav } from "./module-nav";
 import {
   addressSnapshotLines,
@@ -84,7 +85,7 @@ import {
   ModulePlaceholder,
   StatusBadge,
 } from "@/components/ui";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseAdminClient, createSupabaseUntypedAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/supabase";
 
 export type SearchParams = Promise<{
@@ -989,6 +990,28 @@ async function createWarehouseZoneAction(formData: FormData) {
     zone_code: zoneCode,
   });
   if (error) redirect(`/?module=admin-zone-add&warehouse=${warehouseId}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
+}
+
+async function createWarehouseAisleAction(formData: FormData) {
+  "use server";
+  const warehouseId = textValue(formData, "warehouse_id");
+  const zoneId = textValue(formData, "warehouse_zone_id");
+  const aisleCode = textValue(formData, "aisle_code").toUpperCase();
+  const name = textValue(formData, "name");
+  if (!warehouseId || !zoneId || !aisleCode || !name) {
+    redirect(`/?module=admin-aisle-add&warehouse=${warehouseId}&error=Zone%2C%20aisle%20code%2C%20and%20aisle%20name%20are%20required.`);
+  }
+  const { data: zone, error: zoneError } = await createSupabaseAdminClient().from("warehouse_zone").select("id").eq("id", zoneId).eq("warehouse_id", warehouseId).maybeSingle();
+  if (zoneError || !zone) redirect(`/?module=admin-aisle-add&warehouse=${warehouseId}&error=${encodeURIComponent(zoneError?.message ?? "Choose a zone from this warehouse.")}`);
+  const { error } = await createSupabaseUntypedAdminClient().from("warehouse_aisle").insert({
+    aisle_code: aisleCode,
+    description: textValue(formData, "description") || null,
+    name,
+    warehouse_zone_id: zoneId,
+  });
+  if (error) redirect(`/?module=admin-aisle-add&warehouse=${warehouseId}&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");
   redirect(`/?module=admin-warehouse&warehouse=${warehouseId}`);
 }
@@ -9464,6 +9487,7 @@ export async function ErpRouter({
     "admin-warehouse": "Warehouse Information",
     "admin-warehouse-edit": "Edit Warehouse",
     "admin-zone-add": "Add Zone",
+    "admin-aisle-add": "Add Aisle",
     "add-contact": "Add Contact",
     "add-customer": "Add Customer",
     "add-location": "Add Location",
@@ -10223,6 +10247,8 @@ export async function ErpRouter({
           <WarehouseEditor createAction={createWarehouseAction} error={params.error} notice={params.notice} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-zone-add" ? (
           <ZoneEditor createAction={createWarehouseZoneAction} error={params.error} warehouseId={params.warehouse} />
+        ) : activeModule === "admin-aisle-add" ? (
+          <AisleEditor createAction={createWarehouseAisleAction} error={params.error} warehouseId={params.warehouse} />
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (

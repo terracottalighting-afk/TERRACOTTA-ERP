@@ -2660,3 +2660,36 @@ tr:last-child td {
     grid-template-columns: 1fr;
   }
 }
+
+.admin-hierarchy,
+.admin-hierarchy .hierarchy-children > details {
+  border-top: 1px solid var(--line);
+}
+
+.admin-hierarchy:first-child {
+  border-top: 0;
+}
+
+.admin-hierarchy summary,
+.admin-hierarchy .hierarchy-children > details > summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 14px 12px;
+}
+
+.admin-hierarchy summary::marker {
+  color: var(--accent);
+}
+
+.admin-hierarchy .fieldset-note,
+.admin-hierarchy .hierarchy-children {
+  margin: 0 12px 12px;
+}
+
+.admin-hierarchy .hierarchy-children {
+  border-left: 2px solid var(--line);
+  padding-left: 12px;
+}

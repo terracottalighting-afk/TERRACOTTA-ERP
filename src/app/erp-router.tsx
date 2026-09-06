@@ -1141,7 +1141,7 @@ async function saveProductSettingAction(formData: FormData) {
   const name = textValue(formData, "name");
   const optionalText = (key: string) => textValue(formData, key) || null;
   const errorUrl = (message: string) => `/?module=admin&admin_tab=products&error=${encodeURIComponent(message)}`;
-  if (!["brand", "category", "suite", "finish", "part_role"].includes(configurationType) || !name || (configurationType !== "finish" && !code)) redirect(errorUrl("A name and code are required."));
+  if (!["brand", "category", "suite", "style", "finish", "part_role"].includes(configurationType) || !name || (configurationType !== "finish" && !code)) redirect(errorUrl("A name and code are required."));
   const supabase = createSupabaseAdminClient();
   let error: { message: string } | null = null;
 
@@ -1154,6 +1154,10 @@ async function saveProductSettingAction(formData: FormData) {
   } else if (configurationType === "suite") {
     const value = { brand_id: optionalText("brand_id"), description: optionalText("description"), name, suite_code: code };
     ({ error } = configurationId ? await supabase.from("product_signature_suite").update(value).eq("id", configurationId) : await supabase.from("product_signature_suite").insert(value));
+  } else if (configurationType === "style") {
+    const styleSupabase = createSupabaseUntypedAdminClient();
+    const value = { description: optionalText("description"), name, style_code: code };
+    ({ error } = configurationId ? await styleSupabase.from("product_style").update(value).eq("id", configurationId) : await styleSupabase.from("product_style").insert(value));
   } else if (configurationType === "finish") {
     const value = { description: optionalText("description"), finish_name: name };
     ({ error } = configurationId ? await supabase.from("finish").update(value).eq("id", configurationId) : await supabase.from("finish").insert(value));
@@ -1173,14 +1177,27 @@ async function deactivateProductSettingAction(formData: FormData) {
   const configurationType = textValue(formData, "configuration_type");
   const configurationId = textValue(formData, "configuration_id");
   const errorUrl = (message: string) => `/?module=admin&admin_tab=products&error=${encodeURIComponent(message)}`;
-  if (!["brand", "category", "suite", "finish", "part_role"].includes(configurationType) || !configurationId) redirect(errorUrl("Choose a product setting to deactivate."));
+  if (!["brand", "category", "suite", "style", "finish", "part_role"].includes(configurationType) || !configurationId) redirect(errorUrl("Choose a product setting to deactivate."));
   const supabase = createSupabaseAdminClient();
   let error: { message: string } | null = null;
   if (configurationType === "brand") ({ error } = await supabase.from("brand").update({ is_active: false }).eq("id", configurationId));
   else if (configurationType === "category") ({ error } = await supabase.from("product_category").update({ is_active: false }).eq("id", configurationId));
   else if (configurationType === "suite") ({ error } = await supabase.from("product_signature_suite").update({ is_active: false }).eq("id", configurationId));
+  else if (configurationType === "style") ({ error } = await createSupabaseUntypedAdminClient().from("product_style").update({ is_active: false }).eq("id", configurationId));
   else if (configurationType === "finish") ({ error } = await supabase.from("finish").update({ is_active: false }).eq("id", configurationId));
   else ({ error } = await createSupabaseUntypedAdminClient().from("product_part_role_setting").update({ is_active: false }).eq("id", configurationId));
+  if (error) redirect(errorUrl(error.message));
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=products");
+}
+
+async function assignStyleToSignatureSuiteAction(formData: FormData) {
+  "use server";
+  const signatureSuiteId = textValue(formData, "signature_suite_id");
+  const styleId = textValue(formData, "style_id");
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=products&error=${encodeURIComponent(message)}`;
+  if (!signatureSuiteId || !styleId) redirect(errorUrl("Select a Style to add under the Signature Suite."));
+  const { error } = await createSupabaseUntypedAdminClient().from("product_style").update({ signature_suite_id: signatureSuiteId }).eq("id", styleId).is("signature_suite_id", null);
   if (error) redirect(errorUrl(error.message));
   revalidatePath("/");
   redirect("/?module=admin&admin_tab=products");
@@ -10434,7 +10451,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveProductSettingAction={saveProductSettingAction} selectedTab={params.admin_tab} />
+          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveProductSettingAction={saveProductSettingAction} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

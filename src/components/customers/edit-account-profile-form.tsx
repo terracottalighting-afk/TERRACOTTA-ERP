@@ -29,6 +29,7 @@ export async function EditAccountProfileForm({
   error,
   loadCustomerDashboard,
   saveAction,
+  statusOptions,
 }: {
   accountTypeOptions: SelectOption[];
   businessTypeOptions: SelectOption[];
@@ -38,6 +39,7 @@ export async function EditAccountProfileForm({
     customerId: string,
   ) => Promise<CustomerDashboardForAccountProfile>;
   saveAction: (formData: FormData) => void | Promise<void>;
+  statusOptions: SelectOption[];
 }) {
   if (!customerId) {
     return (
@@ -90,13 +92,7 @@ export async function EditAccountProfileForm({
             </label>
             <label>
               Status
-              <select defaultValue={customer.status} name="status">
-                <option value="pending">Pending</option>
-                <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
-                <option value="credit_hold">Credit Hold</option>
-                <option value="obsolete">Obsolete</option>
-              </select>
+              <select defaultValue={customer.status} name="status">{statusOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select>
             </label>
             <label>
               Account Type

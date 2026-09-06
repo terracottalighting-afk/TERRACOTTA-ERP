@@ -766,6 +766,7 @@ async function getCustomerOptions(
   const { data, error } = await supabase
     .from(table)
     .select("id, name")
+    .eq("is_active", true)
     .order("name", { ascending: true });
 
   if (error) {
@@ -773,6 +774,12 @@ async function getCustomerOptions(
   }
 
   return (data ?? []) as SelectOption[];
+}
+
+async function getCustomerStatusOptions() {
+  const { data, error } = await createSupabaseUntypedAdminClient().from("customer_status_setting").select("status_code, name").eq("is_active", true).order("sort_order", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((status) => ({ id: status.status_code, name: status.name })) as SelectOption[];
 }
 
 async function getTerritoryOptions() {
@@ -9929,6 +9936,7 @@ export async function ErpRouter({
   const [
     accountTypeOptions,
     businessTypeOptions,
+    customerStatusOptions,
     territoryOptions,
     salesRepOptions,
     productBrandOptions,
@@ -9941,6 +9949,7 @@ export async function ErpRouter({
   ] = await Promise.all([
     getCustomerOptions("customer_account_type"),
     getCustomerOptions("customer_business_type"),
+    getCustomerStatusOptions(),
     getTerritoryOptions(),
     getSalesRepOptions(),
     getProductBrandOptions(),
@@ -10349,6 +10358,7 @@ export async function ErpRouter({
             error={params.error}
             salesRepOptions={salesRepOptions}
             saveAction={createCustomerAction}
+            statusOptions={customerStatusOptions}
             territoryOptions={territoryOptions}
           />
         ) : activeModule === "edit-account-profile" ? (
@@ -10359,6 +10369,7 @@ export async function ErpRouter({
             error={params.error}
             loadCustomerDashboard={getCustomerDashboard}
             saveAction={updateAccountProfileAction}
+            statusOptions={customerStatusOptions}
           />
         ) : activeModule === "edit-billing-credit" ? (
           <EditBillingCreditForm

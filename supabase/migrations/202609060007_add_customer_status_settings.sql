@@ -25,6 +25,13 @@ values
   ('obsolete', 'Obsolete', 'Legacy account retained only for history.', 50)
 on conflict (status_code) do nothing;
 
+alter table customer_account alter column status drop default;
+alter table customer_account alter column status type text using status::text;
+alter table customer_account alter column status set default 'pending';
+alter table customer_account
+  add constraint customer_account_status_setting_fkey
+  foreign key (status) references customer_status_setting(status_code);
+
 grant select, insert, update, delete on table customer_account_type to service_role;
 grant select, insert, update, delete on table customer_business_type to service_role;
 grant select, insert, update, delete on table customer_status_setting to service_role;

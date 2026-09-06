@@ -23,6 +23,7 @@ export function AddCustomerForm({
   error,
   salesRepOptions,
   saveAction,
+  statusOptions,
   territoryOptions,
 }: {
   accountTypeOptions: SelectOption[];
@@ -30,6 +31,7 @@ export function AddCustomerForm({
   error?: string;
   salesRepOptions: RepOption[];
   saveAction: (formData: FormData) => void | Promise<void>;
+  statusOptions: SelectOption[];
   territoryOptions: SelectOption[];
 }) {
   return (
@@ -89,12 +91,7 @@ export function AddCustomerForm({
             </label>
             <label>
               Status
-              <select name="status" defaultValue="active">
-                <option value="active">Active</option>
-                <option value="pending">Pending</option>
-                <option value="inactive">Inactive</option>
-                <option value="credit_hold">Credit Hold</option>
-              </select>
+              <select name="status" defaultValue="active">{statusOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select>
             </label>
             <label>
               Default Discount %

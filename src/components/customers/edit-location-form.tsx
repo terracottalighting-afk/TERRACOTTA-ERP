@@ -27,7 +27,9 @@ type LocationForEdit = {
 type LocationEditData = {
   location: LocationForEdit;
   primaryShowroom: unknown | null;
-  territory: { name: string; territory_code: string } | null;
+  territory: { id: string; name: string; territory_code: string } | null;
+  territoryAssignmentSource: "auto" | "manual_unassigned";
+  suggestedTerritory: { id: string; name: string; territory_code: string } | null;
 };
 
 export async function EditLocationForm({
@@ -55,7 +57,17 @@ export async function EditLocationForm({
     loadCustomer(customerId),
     loadLocation(locationId),
   ]);
-  const { location, primaryShowroom, territory } = locationData;
+  const {
+    location,
+    primaryShowroom,
+    suggestedTerritory,
+    territory,
+    territoryAssignmentSource,
+  } = locationData;
+  const selectableTerritory = territory ?? suggestedTerritory;
+  const defaultTerritoryId = territory?.id ?? (
+    territoryAssignmentSource === "manual_unassigned" ? "" : suggestedTerritory?.id ?? ""
+  );
 
   return (
     <section className="dashboard-panel">
@@ -141,10 +153,14 @@ export async function EditLocationForm({
             </label>
             <label>
               Assigned Territory
-              <input
-                readOnly
-                value={territory ? `${territory.territory_code} - ${territory.name}` : "Not assigned"}
-              />
+              <select defaultValue={defaultTerritoryId} name="territory_id">
+                {selectableTerritory ? (
+                  <option value={selectableTerritory.id}>
+                    {selectableTerritory.territory_code} - {selectableTerritory.name}
+                  </option>
+                ) : null}
+                <option value="">Not assigned</option>
+              </select>
             </label>
             <LocationRoleFields
               defaultBillingAddress={Boolean(location.is_billing_address)}

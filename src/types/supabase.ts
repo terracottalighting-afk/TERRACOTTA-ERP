@@ -2336,6 +2336,7 @@ export type Database = {
           showroom_location_code: string | null
           state_province: string | null
           status: Database["public"]["Enums"]["customer_location_status"]
+          territory_assignment_source: string
           territory_id: string | null
           updated_at: string
           updated_by_user_id: string | null
@@ -2369,6 +2370,7 @@ export type Database = {
           showroom_location_code?: string | null
           state_province?: string | null
           status?: Database["public"]["Enums"]["customer_location_status"]
+          territory_assignment_source?: string
           territory_id?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
@@ -2402,6 +2404,7 @@ export type Database = {
           showroom_location_code?: string | null
           state_province?: string | null
           status?: Database["public"]["Enums"]["customer_location_status"]
+          territory_assignment_source?: string
           territory_id?: string | null
           updated_at?: string
           updated_by_user_id?: string | null

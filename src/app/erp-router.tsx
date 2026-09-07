@@ -260,6 +260,7 @@ type LocationEditRecord = CustomerLocation & {
   country: string;
   email: string | null;
   postal_code: string | null;
+  territory_assignment_source: "auto" | "manual_unassigned";
   territory_id: string | null;
 };
 
@@ -7478,6 +7479,21 @@ async function resolveLocationTerritory(postalCode: string | null) {
   return territories?.length === 1 ? (territories[0] as LocationTerritory) : null;
 }
 
+async function selectedLocationTerritory(territoryId: string | null) {
+  if (!territoryId) return null;
+
+  const { data, error } = await createSupabaseUntypedAdminClient()
+    .from("territory")
+    .select("id, territory_code, name")
+    .eq("id", territoryId)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Choose an active territory or Not assigned.");
+  return data as LocationTerritory;
+}
+
 async function addLocationAction(formData: FormData) {
   "use server";
 
@@ -7533,6 +7549,7 @@ async function addLocationAction(formData: FormData) {
       postal_code: optionalText("postal_code"),
       state_province: optionalText("state_province"),
       status: "active",
+      territory_assignment_source: "auto",
       territory_id: territory?.id ?? null,
     })
     .select("id")
@@ -7591,10 +7608,11 @@ async function updateLocationAction(formData: FormData) {
   const isShowroom = formData.get("is_showroom") === "on";
   const isPrimaryShowroom =
     isShowroom && formData.get("is_primary_showroom") === "on";
+  const selectedTerritoryId = optionalText("territory_id");
   let territory: LocationTerritory | null;
 
   try {
-    territory = await resolveLocationTerritory(optionalText("postal_code"));
+    territory = await selectedLocationTerritory(selectedTerritoryId);
   } catch (territoryError) {
     redirect(
       `/?module=edit-location&customer=${customerId}&location=${locationId}&error=${encodeURIComponent(territoryError instanceof Error ? territoryError.message : "Unable to resolve the location territory.")}`,
@@ -7624,6 +7642,7 @@ async function updateLocationAction(formData: FormData) {
         String(formData.get("status") ?? "active") === "inactive"
           ? "inactive"
           : "active",
+      territory_assignment_source: territory ? "auto" : "manual_unassigned",
       territory_id: territory?.id ?? null,
     })
     .eq("id", locationId)
@@ -10019,7 +10038,7 @@ async function getLocationForEdit(locationId: string) {
   const { data: location, error: locationError } = await supabase
     .from("customer_location")
     .select(
-      "id, customer_account_id, location_code, location_name, location_type, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, email, is_shipping_address, is_default_ship_to, is_billing_address, is_showroom, status, territory_id",
+      "id, customer_account_id, location_code, location_name, location_type, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, email, is_shipping_address, is_default_ship_to, is_billing_address, is_showroom, status, territory_assignment_source, territory_id",
     )
     .eq("id", locationId)
     .single();
@@ -10040,6 +10059,8 @@ async function getLocationForEdit(locationId: string) {
     throw new Error(territoryError.message);
   }
 
+  const suggestedTerritory = territory ?? await resolveLocationTerritory(location.postal_code);
+
   const { data: showroom, error: showroomError } = await supabase
     .from("primary_showroom_enrollment")
     .select(
@@ -10057,6 +10078,8 @@ async function getLocationForEdit(locationId: string) {
     location: location as LocationEditRecord,
     primaryShowroom: showroom as PrimaryShowroomEnrollment | null,
     territory: territory as LocationTerritory | null,
+    territoryAssignmentSource: location.territory_assignment_source as "auto" | "manual_unassigned",
+    suggestedTerritory: suggestedTerritory as LocationTerritory | null,
   };
 }
 

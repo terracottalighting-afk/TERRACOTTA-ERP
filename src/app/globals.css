@@ -248,6 +248,28 @@ input {
   line-height: 1.5;
 }
 
+.agency-dashboard-tabs {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.agency-dashboard-tab {
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 12px;
+  white-space: nowrap;
+}
+
+.agency-dashboard-tab--active,
+.agency-dashboard-tab:hover {
+  border-bottom-color: var(--accent);
+  color: var(--foreground);
+}
+
 .secondary-action {
   align-items: center;
   display: inline-flex;

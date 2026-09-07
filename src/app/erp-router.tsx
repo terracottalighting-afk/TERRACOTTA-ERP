@@ -1260,13 +1260,18 @@ async function createAgencySalesRepAction(formData: FormData) {
   const name = textValue(formData, "name");
   if (!agencyId || !name) redirect(`/?module=sales-rep-edit&agency=${agencyId}&error=Sales%20rep%20name%20is%20required.`);
   const { error } = await createSupabaseUntypedAdminClient().from("sales_rep").insert({
+    address_line_1: textValue(formData, "address_line_1") || null,
+    address_line_2: textValue(formData, "address_line_2") || null,
+    city: textValue(formData, "city") || null,
     email: textValue(formData, "email") || null,
     is_principal: formData.get("is_principal") === "on",
     name,
     notes: textValue(formData, "notes") || null,
     phone: textValue(formData, "phone") || null,
+    postal_code: textValue(formData, "postal_code") || null,
     role_title: textValue(formData, "role_title") || null,
     sales_rep_agency_id: agencyId,
+    state_province: textValue(formData, "state_province") || null,
   });
   if (error) redirect(`/?module=sales-rep-edit&agency=${agencyId}&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");

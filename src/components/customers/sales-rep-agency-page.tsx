@@ -21,7 +21,7 @@ type SalesRepAgency = {
 };
 
 type Territory = { id: string; territory_code: string; name: string; description: string | null };
-type SalesRep = { id: string; name: string; email: string | null; phone: string | null; role_title: string | null; is_principal: boolean };
+type SalesRep = { id: string; name: string; email: string | null; phone: string | null; role_title: string | null; is_principal: boolean; city: string | null; state_province: string | null };
 
 export async function SalesRepAgencyPage({ agencyId }: { agencyId?: string }) {
   if (!agencyId) return <ModulePlaceholder moduleName="Sales Rep Agency" />;
@@ -48,7 +48,7 @@ export async function SalesRepAgencyPage({ agencyId }: { agencyId?: string }) {
   const territoryIds = (assignments ?? []).map((assignment) => assignment.territory_id);
   const [{ data: territories, error: territoriesError }, { data: salesReps, error: salesRepsError }] = await Promise.all([
     territoryIds.length ? supabase.from("territory").select("id, territory_code, name, description").in("id", territoryIds).order("name", { ascending: true }) : Promise.resolve({ data: [] as Territory[], error: null }),
-    supabase.from("sales_rep").select("id, name, email, phone, role_title, is_principal").eq("sales_rep_agency_id", agency.id).eq("status", "active").order("name", { ascending: true }),
+    supabase.from("sales_rep").select("id, name, email, phone, role_title, is_principal, city, state_province").eq("sales_rep_agency_id", agency.id).eq("status", "active").order("name", { ascending: true }),
   ]);
   if (territoriesError || salesRepsError) throw new Error(territoriesError?.message ?? salesRepsError?.message);
 
@@ -63,7 +63,7 @@ export async function SalesRepAgencyPage({ agencyId }: { agencyId?: string }) {
         <article className="info-panel"><div className="section-title"><h3>Agency Address</h3><Link className="text-action" href={`/?module=sales-rep-agency-edit&agency=${agency.id}`}>Edit</Link></div><dl><div><dt>Address</dt><dd>{agency.address_line_1 ?? "Not set"}{agency.address_line_2 ? <><br />{agency.address_line_2}</> : null}</dd></div><div><dt>City / State</dt><dd>{[agency.city, agency.state_province].filter(Boolean).join(", ") || "Not set"}</dd></div><div><dt>ZIP / Postal Code</dt><dd>{agency.postal_code ?? "Not set"}</dd></div></dl></article>
       </section>
 
-      <section className="data-section"><div className="section-title"><div><h3>Sales Reps</h3><p>Individual sales reps working under this agency.</p></div><Link className="small-action" href={`/?module=sales-rep-edit&agency=${agency.id}`}>Add Sales Rep</Link></div>{salesReps?.length ? <div className="compact-list">{(salesReps as SalesRep[]).map((rep) => <div className="compact-row" key={rep.id}><div><strong>{rep.name}{rep.is_principal ? " - Principal" : ""}</strong><span>{[rep.role_title, rep.email, rep.phone].filter(Boolean).join(" | ") || "No contact information"}</span></div><StatusBadge tone="good" value="Active" /></div>)}</div> : <p className="fieldset-note">No individual sales reps have been added.</p>}</section>
+      <section className="data-section"><div className="section-title"><div><h3>Sales Reps</h3><p>Individual sales reps working under this agency.</p></div><Link className="small-action" href={`/?module=sales-rep-edit&agency=${agency.id}`}>Add Sales Rep</Link></div>{salesReps?.length ? <div className="compact-list">{(salesReps as SalesRep[]).map((rep) => <div className="compact-row" key={rep.id}><div><strong>{rep.name}{rep.is_principal ? " - Principal" : ""}</strong><span>{[rep.role_title, rep.email, rep.phone].filter(Boolean).join(" | ") || "No contact information"}{rep.city || rep.state_province ? ` - ${[rep.city, rep.state_province].filter(Boolean).join(", ")}` : ""}</span></div><StatusBadge tone="good" value="Active" /></div>)}</div> : <p className="fieldset-note">No individual sales reps have been added.</p>}</section>
 
       <section className="data-section"><div className="section-title"><div><h3>Assigned Territories</h3><p>Base territories this agency covers. Individual sales reps can later receive a subset of these territories.</p></div></div>{territories?.length ? <div className="compact-list">{territories.map((territory: Territory) => <div className="compact-row" key={territory.id}><div><strong>{territory.name}</strong><span>{territory.territory_code}{territory.description ? ` - ${territory.description}` : ""}</span></div></div>)}</div> : <p className="fieldset-note">No territories are assigned to this agency.</p>}</section>
     </section>

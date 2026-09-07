@@ -1,10 +1,13 @@
 import Link from "next/link";
 
 import { ModulePlaceholder } from "@/components/ui";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseUntypedAdminClient } from "@/lib/supabase/admin";
 
 type Agency = {
+  address_line_1: string | null;
+  address_line_2: string | null;
   agency_code: string;
+  city: string | null;
   commission_default_percent: number;
   email: string | null;
   id: string;
@@ -12,6 +15,8 @@ type Agency = {
   name: string;
   notes: string | null;
   phone: string | null;
+  postal_code: string | null;
+  state_province: string | null;
   status: string;
 };
 
@@ -19,13 +24,13 @@ type Territory = { id: string; territory_code: string; name: string; description
 type FormAction = (formData: FormData) => void | Promise<void>;
 
 export async function SalesRepAgencyEditor({ agencyId, createAction, error, saveAction }: { agencyId?: string; createAction: FormAction; error?: string; saveAction: FormAction }) {
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseUntypedAdminClient();
   let agency: Agency | null = null;
   let assignedTerritoryIds = new Set<string>();
 
   if (agencyId) {
     const [{ data: agencyData, error: agencyError }, { data: assignments, error: assignmentsError }] = await Promise.all([
-      supabase.from("sales_rep_agency").select("id, agency_code, commission_default_percent, email, main_contact_name, name, notes, phone, status").eq("id", agencyId).maybeSingle(),
+      supabase.from("sales_rep_agency").select("id, address_line_1, address_line_2, agency_code, city, commission_default_percent, email, main_contact_name, name, notes, phone, postal_code, state_province, status").eq("id", agencyId).maybeSingle(),
       supabase.from("territory_assignment").select("territory_id").eq("sales_rep_agency_id", agencyId).eq("status", "active").is("end_date", null),
     ]);
     if (agencyError || assignmentsError) throw new Error(agencyError?.message ?? assignmentsError?.message);
@@ -46,6 +51,7 @@ export async function SalesRepAgencyEditor({ agencyId, createAction, error, save
       <form action={isEditing ? saveAction : createAction} className="customer-form">
         {isEditing ? <input name="agency_id" type="hidden" value={agency!.id} /> : null}
         <fieldset><legend>Agency Profile</legend><div className="form-grid"><label>Agency Code<input defaultValue={agency?.agency_code ?? ""} name="agency_code" required /></label><label>Agency Name<input defaultValue={agency?.name ?? ""} name="name" required /></label><label>Main Contact<input defaultValue={agency?.main_contact_name ?? ""} name="main_contact_name" /></label><label>Email<input defaultValue={agency?.email ?? ""} name="email" type="email" /></label><label>Phone<input defaultValue={agency?.phone ?? ""} name="phone" /></label><label>Default Commission (%)<input defaultValue={agency?.commission_default_percent ?? 0} min="0" name="commission_default_percent" step="0.01" type="number" /></label>{isEditing ? <label>Status<select defaultValue={agency?.status ?? "active"} name="status"><option value="active">Active</option><option value="inactive">Inactive</option></select></label> : null}<label className="form-grid-span">Notes<textarea defaultValue={agency?.notes ?? ""} name="notes" rows={3} /></label></div></fieldset>
+        <fieldset><legend>Agency Address</legend><div className="form-grid"><label className="form-grid-span">Address Line 1<input defaultValue={agency?.address_line_1 ?? ""} name="address_line_1" /></label><label className="form-grid-span">Address Line 2<input defaultValue={agency?.address_line_2 ?? ""} name="address_line_2" /></label><label>City<input defaultValue={agency?.city ?? ""} name="city" /></label><label>State / Province<input defaultValue={agency?.state_province ?? ""} name="state_province" /></label><label>ZIP / Postal Code<input defaultValue={agency?.postal_code ?? ""} name="postal_code" /></label></div></fieldset>
         <fieldset><legend>Assigned Territories</legend><p className="fieldset-note">Select the reusable base territories this agency covers. Individual reps can later receive a subset of them.</p><div className="territory-assignment-grid">{(territories ?? []).map((territory: Territory) => <label className="checkbox-label" key={territory.id}><input defaultChecked={assignedTerritoryIds.has(territory.id)} name="territory_ids" type="checkbox" value={territory.id} /><span><strong>{territory.name}</strong><small>{territory.territory_code}{territory.description ? ` - ${territory.description}` : ""}</small></span></label>)}</div>{!(territories ?? []).length ? <p className="fieldset-note">No active territories are available to assign.</p> : null}</fieldset>
         <div className="form-actions"><button className="primary-action" type="submit">{isEditing ? "Save Agency Changes" : "Create Agency"}</button><Link className="secondary-action secondary-action--light" href={cancelUrl}>Cancel</Link></div>
       </form>

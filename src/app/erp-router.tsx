@@ -1206,13 +1206,18 @@ function agencyProfileValues(formData: FormData) {
   const commission = Number(textValue(formData, "commission_default_percent") || 0);
   if (!Number.isFinite(commission) || commission < 0) throw new Error("Default commission must be zero or greater.");
   return {
+    address_line_1: textValue(formData, "address_line_1") || null,
+    address_line_2: textValue(formData, "address_line_2") || null,
     agency_code: textValue(formData, "agency_code").toUpperCase(),
+    city: textValue(formData, "city") || null,
     commission_default_percent: commission,
     email: textValue(formData, "email") || null,
     main_contact_name: textValue(formData, "main_contact_name") || null,
     name: textValue(formData, "name"),
     notes: textValue(formData, "notes") || null,
     phone: textValue(formData, "phone") || null,
+    postal_code: textValue(formData, "postal_code") || null,
+    state_province: textValue(formData, "state_province") || null,
     status: textValue(formData, "status") === "inactive" ? "inactive" : "active",
   };
 }

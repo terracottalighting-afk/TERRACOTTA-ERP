@@ -20,6 +20,7 @@ import { EditLocationForm } from "@/components/customers/edit-location-form";
 import { EditSalesRepForm } from "@/components/customers/edit-sales-rep-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
+import { SalesRepAgenciesDashboard } from "@/components/customers/sales-rep-agencies-dashboard";
 import { InvoiceConfirmationPage } from "@/components/financial/invoice-confirmation-page";
 import { InvoiceCreatePage } from "@/components/financial/invoice-create-page";
 import { InvoiceCreatedPage } from "@/components/financial/invoice-created-page";
@@ -815,6 +816,12 @@ async function getSalesRepOptions() {
     id: rep.id,
     name: rep.name,
   })) as RepOption[];
+}
+
+async function getSalesRepAgencies() {
+  const { data, error } = await createSupabaseAdminClient().from("sales_rep_agency").select("id, agency_code, name, main_contact_name, email, commission_default_percent, status").order("name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as { id: string; agency_code: string; name: string; main_contact_name: string | null; email: string | null; commission_default_percent: number; status: "active" | "inactive" }[];
 }
 
 async function getCustomerRepAssignmentsForEdit(customerId: string) {
@@ -10049,6 +10056,7 @@ export async function ErpRouter({
     "rga-detail": "RGA Review",
     "rga-solution": "RGA Solution",
     "sales-rep-agency": "Sales Rep Agency",
+    "sales-rep-agencies": "Sales Rep Agencies",
     shipping: "Shipments",
     "view-contact": "Contact",
     "view-location": "Location",
@@ -10475,6 +10483,8 @@ export async function ErpRouter({
             loadFreightPolicy={getDefaultFreightPolicy}
             saveAction={updateFreightPolicyAction}
           />
+        ) : activeModule === "sales-rep-agencies" ? (
+          <SalesRepAgenciesDashboard agencies={await getSalesRepAgencies()} />
         ) : activeModule === "sales-rep-agency" ? (
           <SalesRepAgencyPage agencyId={params.agency} saveTerritoriesAction={saveAgencyTerritoryAssignmentsAction} />
         ) : activeModule === "new-order" ? (

@@ -23,6 +23,7 @@ import { SalesRepAgencyEditor } from "@/components/customers/sales-rep-agency-ed
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { SalesRepAgenciesDashboard } from "@/components/customers/sales-rep-agencies-dashboard";
 import { SalesRepEditor } from "@/components/customers/sales-rep-editor";
+import { SalesRepPage } from "@/components/customers/sales-rep-page";
 import { InvoiceConfirmationPage } from "@/components/financial/invoice-confirmation-page";
 import { InvoiceCreatePage } from "@/components/financial/invoice-create-page";
 import { InvoiceCreatedPage } from "@/components/financial/invoice-created-page";
@@ -113,6 +114,7 @@ export type SearchParams = Promise<{
   product_status?: string;
   product_style?: string;
   product?: string;
+  rep?: string;
   quote?: string;
   order?: string;
   order_action?: string;
@@ -1276,6 +1278,31 @@ async function createAgencySalesRepAction(formData: FormData) {
   if (error) redirect(`/?module=sales-rep-edit&agency=${agencyId}&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");
   redirect(`/?module=sales-rep-agency&agency=${agencyId}`);
+}
+
+async function updateAgencySalesRepAction(formData: FormData) {
+  "use server";
+  const agencyId = textValue(formData, "agency_id");
+  const salesRepId = textValue(formData, "sales_rep_id");
+  const name = textValue(formData, "name");
+  if (!agencyId || !salesRepId || !name) redirect(`/?module=sales-rep-edit&agency=${agencyId}&rep=${salesRepId}&error=Sales%20rep%20name%20is%20required.`);
+  const { error } = await createSupabaseUntypedAdminClient().from("sales_rep").update({
+    address_line_1: textValue(formData, "address_line_1") || null,
+    address_line_2: textValue(formData, "address_line_2") || null,
+    city: textValue(formData, "city") || null,
+    email: textValue(formData, "email") || null,
+    is_principal: formData.get("is_principal") === "on",
+    name,
+    notes: textValue(formData, "notes") || null,
+    phone: textValue(formData, "phone") || null,
+    postal_code: textValue(formData, "postal_code") || null,
+    role_title: textValue(formData, "role_title") || null,
+    state_province: textValue(formData, "state_province") || null,
+    status: textValue(formData, "status") === "inactive" ? "inactive" : "active",
+  }).eq("id", salesRepId).eq("sales_rep_agency_id", agencyId);
+  if (error) redirect(`/?module=sales-rep-edit&agency=${agencyId}&rep=${salesRepId}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=sales-rep&rep=${salesRepId}`);
 }
 
 async function deactivateWarehousesAction(formData: FormData) {
@@ -10130,6 +10157,7 @@ export async function ErpRouter({
     "sales-rep-agency-edit": "Sales Rep Agency",
     "sales-rep-agencies": "Sales Rep Agencies",
     "sales-rep-edit": "Add Sales Rep",
+    "sales-rep": "Sales Rep",
     shipping: "Shipments",
     "view-contact": "Contact",
     "view-location": "Location",
@@ -10568,7 +10596,9 @@ export async function ErpRouter({
         ) : activeModule === "sales-rep-agency" ? (
           <SalesRepAgencyPage agencyId={params.agency} />
         ) : activeModule === "sales-rep-edit" ? (
-          <SalesRepEditor agencyId={params.agency} createAction={createAgencySalesRepAction} error={params.error} />
+          <SalesRepEditor agencyId={params.agency} createAction={createAgencySalesRepAction} error={params.error} salesRepId={params.rep} saveAction={updateAgencySalesRepAction} />
+        ) : activeModule === "sales-rep" ? (
+          <SalesRepPage salesRepId={params.rep} />
         ) : activeModule === "new-order" ? (
           <NewOrderPage
             customerId={params.customer}

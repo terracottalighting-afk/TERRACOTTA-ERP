@@ -124,11 +124,21 @@ type LocationDashboard = {
   territory: LocationTerritory | null;
 };
 
+type LocationTab =
+  | "profile"
+  | "contacts"
+  | "orders"
+  | "shipments"
+  | "rga"
+  | "invoices"
+  | "primary-showroom";
+
 export async function LocationInfoPage({
   customerId,
   locationId,
   loadCustomer,
   loadLocationDashboard,
+  selectedTab,
 }: {
   customerId?: string;
   locationId?: string;
@@ -137,6 +147,7 @@ export async function LocationInfoPage({
     customerId: string,
     locationId: string,
   ) => Promise<LocationDashboard>;
+  selectedTab?: string;
 }) {
   if (!customerId || !locationId) {
     return (
@@ -159,18 +170,24 @@ export async function LocationInfoPage({
     rgas,
     territory,
   } = dashboard;
-  const locationTabs = [
-    "Profile",
-    "Contacts",
-    "Orders",
-    "Shipments",
-    "RGA",
-    "Invoices",
+  const locationTabs: { key: LocationTab; label: string }[] = [
+    { key: "profile", label: "Profile" },
+    { key: "contacts", label: "Contacts" },
+    { key: "orders", label: "Orders" },
+    { key: "shipments", label: "Shipments" },
+    { key: "rga", label: "RGA" },
+    { key: "invoices", label: "Invoices" },
   ];
 
   if (primaryShowroom) {
-    locationTabs.push("Primary Showroom");
+    locationTabs.push({ key: "primary-showroom", label: "Primary Showroom" });
   }
+
+  const activeTab: LocationTab = locationTabs.some(
+    (tab) => tab.key === selectedTab,
+  )
+    ? (selectedTab as LocationTab)
+    : "profile";
 
   return (
     <section className="dashboard-panel">
@@ -221,19 +238,19 @@ export async function LocationInfoPage({
       </section>
 
       <section className="tab-strip" aria-label="Location dashboard sections">
-        {locationTabs.map((item, index) => (
-          <a
-            aria-current={index === 0 ? "page" : undefined}
-            href={`#${item.toLowerCase().replaceAll(" ", "-")}`}
-            key={item}
+        {locationTabs.map((tab) => (
+          <Link
+            aria-current={activeTab === tab.key ? "page" : undefined}
+            href={`/?module=view-location&customer=${customerId}&location=${locationId}&location_tab=${tab.key}`}
+            key={tab.key}
           >
-            {item}
-          </a>
+            {tab.label}
+          </Link>
         ))}
       </section>
 
       <section className="section-stack">
-        <article className="data-section" id="profile">
+        {activeTab === "profile" ? <article className="data-section">
           <div className="section-title">
             <h3>Profile</h3>
             <Link
@@ -323,9 +340,9 @@ export async function LocationInfoPage({
             ) : null}
             {location.is_showroom ? <StatusBadge value="Showroom" /> : null}
           </div>
-        </article>
+        </article> : null}
 
-        <article className="data-section" id="contacts">
+        {activeTab === "contacts" ? <article className="data-section">
           <div className="section-title">
             <h3>Contacts</h3>
             <div className="section-actions">
@@ -362,9 +379,9 @@ export async function LocationInfoPage({
               </div>
             ))}
           </div>
-        </article>
+        </article> : null}
 
-        <article className="data-section" id="orders">
+        {activeTab === "orders" ? <article className="data-section">
           <div className="section-title">
             <h3>Orders</h3>
             <span>{orders.length}</span>
@@ -418,9 +435,9 @@ export async function LocationInfoPage({
               </table>
             ) : null}
           </div>
-        </article>
+        </article> : null}
 
-        <article className="data-section" id="shipments">
+        {activeTab === "shipments" ? <article className="data-section">
           <div className="section-title">
             <h3>Shipments</h3>
             <span>{packingLists.length}</span>
@@ -440,9 +457,9 @@ export async function LocationInfoPage({
               </div>
             ))}
           </div>
-        </article>
+        </article> : null}
 
-        <article className="data-section" id="rga">
+        {activeTab === "rga" ? <article className="data-section">
           <div className="section-title">
             <h3>RGA</h3>
             <span>{rgas.length}</span>
@@ -462,9 +479,9 @@ export async function LocationInfoPage({
               </div>
             ))}
           </div>
-        </article>
+        </article> : null}
 
-        <article className="data-section" id="invoices">
+        {activeTab === "invoices" ? <article className="data-section">
           <div className="section-title">
             <h3>Invoices</h3>
             <span>{invoices.length}</span>
@@ -484,10 +501,10 @@ export async function LocationInfoPage({
               </div>
             ))}
           </div>
-        </article>
+        </article> : null}
 
-        {primaryShowroom ? (
-          <article className="data-section" id="primary-showroom">
+        {activeTab === "primary-showroom" && primaryShowroom ? (
+          <article className="data-section">
             <div className="section-title">
               <h3>Primary Showroom</h3>
               <span>{displays.length}</span>

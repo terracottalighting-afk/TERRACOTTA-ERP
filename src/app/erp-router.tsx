@@ -105,6 +105,7 @@ export type SearchParams = Promise<{
   customer?: string;
   error?: string;
   location?: string;
+  location_tab?: string;
   module?: string;
   notice?: string;
   product_brand?: string;
@@ -10758,6 +10759,7 @@ export async function ErpRouter({
             loadCustomer={getCustomerName}
             loadLocationDashboard={getLocationDashboard}
             locationId={params.location}
+            selectedTab={params.location_tab}
           />
         ) : activeModule === "edit-location" ? (
           <EditLocationForm

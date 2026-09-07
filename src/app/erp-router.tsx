@@ -840,6 +840,47 @@ async function getSalesRepAgencies() {
   return (data ?? []) as { id: string; agency_code: string; name: string; main_contact_name: string | null; email: string | null; commission_default_percent: number; status: "active" | "inactive" }[];
 }
 
+async function getSalesRepsForDashboard() {
+  const { data, error } = await createSupabaseAdminClient()
+    .from("sales_rep")
+    .select("id, name, role_title, email, phone, status, sales_rep_agency(id, name)")
+    .order("name", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map((salesRep) => ({
+    agency: salesRep.sales_rep_agency
+      ? {
+          id: salesRep.sales_rep_agency.id,
+          name: salesRep.sales_rep_agency.name,
+        }
+      : null,
+    email: salesRep.email,
+    id: salesRep.id,
+    name: salesRep.name,
+    phone: salesRep.phone,
+    role_title: salesRep.role_title,
+    status: salesRep.status,
+  })) as {
+    agency: { id: string; name: string } | null;
+    email: string | null;
+    id: string;
+    name: string;
+    phone: string | null;
+    role_title: string | null;
+    status: "active" | "inactive";
+  }[];
+}
+
+async function getSalesCoverageDashboard() {
+  const [agencies, salesReps] = await Promise.all([
+    getSalesRepAgencies(),
+    getSalesRepsForDashboard(),
+  ]);
+
+  return { agencies, salesReps };
+}
+
 async function getCustomerRepAssignmentsForEdit(customerId: string) {
   const supabase = createSupabaseAdminClient();
   const { data: locations, error: locationsError } = await supabase
@@ -10789,7 +10830,7 @@ export async function ErpRouter({
             saveAction={updateFreightPolicyAction}
           />
         ) : activeModule === "sales-rep-agencies" ? (
-          <SalesRepAgenciesDashboard agencies={await getSalesRepAgencies()} />
+          <SalesRepAgenciesDashboard {...(await getSalesCoverageDashboard())} />
         ) : activeModule === "sales-rep-agency-edit" ? (
           <SalesRepAgencyEditor
             agencyId={params.agency}

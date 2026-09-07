@@ -275,6 +275,10 @@ input {
   margin-bottom: 16px;
 }
 
+.agency-directory-tabs {
+  grid-template-columns: repeat(3, minmax(180px, 288px));
+}
+
 .agency-customer-type-tab {
   cursor: pointer;
   text-align: left;

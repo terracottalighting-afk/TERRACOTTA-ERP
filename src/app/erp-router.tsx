@@ -1352,6 +1352,40 @@ async function deactivateSalesRepSubTerritoryAction(formData: FormData) {
   redirect(`/?module=sales-rep&rep=${salesRepId}`);
 }
 
+async function removeSalesRepFromAgencyAction(formData: FormData) {
+  "use server";
+  const agencyId = textValue(formData, "agency_id");
+  const salesRepId = textValue(formData, "sales_rep_id");
+  if (!agencyId || !salesRepId) redirect(`/?module=sales-rep-agency&agency=${agencyId}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { error: salesRepError } = await supabase.from("sales_rep").update({ sales_rep_agency_id: null }).eq("id", salesRepId).eq("sales_rep_agency_id", agencyId);
+  if (salesRepError) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(salesRepError.message)}`);
+  const { error: subTerritoryError } = await supabase.from("sales_rep_territory_assignment").update({ end_date: new Date().toISOString().slice(0, 10), status: "inactive" }).eq("sales_rep_id", salesRepId).eq("status", "active").is("end_date", null);
+  if (subTerritoryError) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(subTerritoryError.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=sales-rep-agency&agency=${agencyId}`);
+}
+
+async function removeTerritoryFromAgencyAction(formData: FormData) {
+  "use server";
+  const agencyId = textValue(formData, "agency_id");
+  const assignmentId = textValue(formData, "assignment_id");
+  const territoryId = textValue(formData, "territory_id");
+  if (!agencyId || !assignmentId || !territoryId) redirect(`/?module=sales-rep-agency&agency=${agencyId}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: agencySalesReps, error: salesRepsError } = await supabase.from("sales_rep").select("id").eq("sales_rep_agency_id", agencyId);
+  if (salesRepsError) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(salesRepsError.message)}`);
+  const { error: assignmentError } = await supabase.from("territory_assignment").update({ end_date: new Date().toISOString().slice(0, 10), status: "inactive" }).eq("id", assignmentId).eq("sales_rep_agency_id", agencyId).eq("territory_id", territoryId).eq("status", "active").is("end_date", null);
+  if (assignmentError) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(assignmentError.message)}`);
+  const salesRepIds = (agencySalesReps ?? []).map((rep) => rep.id);
+  if (salesRepIds.length) {
+    const { error: subTerritoryError } = await supabase.from("sales_rep_territory_assignment").update({ end_date: new Date().toISOString().slice(0, 10), status: "inactive" }).in("sales_rep_id", salesRepIds).eq("territory_id", territoryId).eq("status", "active").is("end_date", null);
+    if (subTerritoryError) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(subTerritoryError.message)}`);
+  }
+  revalidatePath("/");
+  redirect(`/?module=sales-rep-agency&agency=${agencyId}`);
+}
+
 async function deactivateWarehousesAction(formData: FormData) {
   "use server";
   const warehouseIds = formData.getAll("warehouse_ids").map(String).filter(Boolean);
@@ -10642,7 +10676,7 @@ export async function ErpRouter({
             saveAction={updateSalesRepAgencyAction}
           />
         ) : activeModule === "sales-rep-agency" ? (
-          <SalesRepAgencyPage agencyId={params.agency} />
+          <SalesRepAgencyPage agencyId={params.agency} removeSalesRepAction={removeSalesRepFromAgencyAction} removeTerritoryAction={removeTerritoryFromAgencyAction} />
         ) : activeModule === "sales-rep-edit" ? (
           <SalesRepEditor agencyId={params.agency} createAction={createAgencySalesRepAction} error={params.error} salesRepId={params.rep} saveAction={updateAgencySalesRepAction} />
         ) : activeModule === "sales-rep" ? (

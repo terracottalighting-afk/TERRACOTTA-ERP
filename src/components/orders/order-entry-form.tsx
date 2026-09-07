@@ -34,9 +34,11 @@ type OrderLine = OrderProductOption & {
 
 type Props = {
   accountName: string;
+  agencyId?: string;
   customerId: string;
   defaultDiscountPercent: number;
   defaultLocationId?: string;
+  isAgencyOrder?: boolean;
   parts: OrderPartOption[];
   products: OrderProductOption[];
   saveAction: (formData: FormData) => void;
@@ -45,7 +47,7 @@ type Props = {
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
-export function OrderEntryForm({ accountName, customerId, defaultDiscountPercent, defaultLocationId, parts, products, saveAction, shipToOptions }: Props) {
+export function OrderEntryForm({ accountName, agencyId, customerId, defaultDiscountPercent, defaultLocationId, isAgencyOrder = false, parts, products, saveAction, shipToOptions }: Props) {
   const [productQuery, setProductQuery] = useState("");
   const [searchParts, setSearchParts] = useState(false);
   const [partSearchMode, setPartSearchMode] = useState<"parent" | "generic">("parent");
@@ -107,7 +109,7 @@ export function OrderEntryForm({ accountName, customerId, defaultDiscountPercent
         return current.map((line) => (line.id === product.id ? { ...line, quantity: line.quantity + 1 } : line));
       }
 
-      return [...current, { ...product, discountPercent: defaultDiscountPercent, quantity: 1, unitPrice: product.defaultPrice }];
+      return [...current, { ...product, discountPercent: orderType === "catalog_marketing" ? 100 : defaultDiscountPercent, quantity: 1, unitPrice: product.defaultPrice }];
     });
     setProductQuery("");
   }
@@ -134,6 +136,7 @@ export function OrderEntryForm({ accountName, customerId, defaultDiscountPercent
   return (
     <form action={saveAction} className="customer-form order-entry-form" data-default-discount={defaultDiscountPercent}>
       <input name="customer_id" type="hidden" value={customerId} />
+      {agencyId ? <input name="sales_rep_agency_id" type="hidden" value={agencyId} /> : null}
       <input data-order-lines name="order_lines" type="hidden" value={JSON.stringify(lines.map((line) => ({ discountPercent: line.discountPercent, productId: line.id, quantity: line.quantity, unitPrice: line.unitPrice })))} />
 
       <fieldset>
@@ -165,10 +168,15 @@ export function OrderEntryForm({ accountName, customerId, defaultDiscountPercent
           </label>
           <label>
             Order Type
-            <select name="order_type" onChange={(event) => setOrderType(event.target.value)} onInput={(event) => setOrderType(event.currentTarget.value)} value={orderType}>
+            <select name="order_type" onChange={(event) => {
+              const nextOrderType = event.target.value;
+              setOrderType(nextOrderType);
+              if (nextOrderType === "catalog_marketing") {
+                setLines((current) => current.map((line) => ({ ...line, discountPercent: 100 })));
+              }
+            }} onInput={(event) => setOrderType(event.currentTarget.value)} value={orderType}>
               <option value="regular">Regular Order</option>
-              <option value="display">Display Order</option>
-              <option value="quote">Quote</option>
+              {isAgencyOrder ? <option value="catalog_marketing">Catalog / Marketing Materials (No Charge)</option> : <><option value="display">Display Order</option><option value="quote">Quote</option></>}
             </select>
           </label>
           {orderType === "display" ? (
@@ -335,7 +343,7 @@ export function OrderEntryForm({ accountName, customerId, defaultDiscountPercent
                       <td>{line.sku}</td><td>{line.name}</td><td>{line.brandName}</td><td>{line.inventory}</td>
                       <td><input min="1" onChange={(event) => updateLine(line.id, { quantity: Math.max(1, Number(event.target.value) || 1) })} step="1" type="number" value={line.quantity} /></td>
                       <td><input min="0" onChange={(event) => updateLine(line.id, { unitPrice: Math.max(0, Number(event.target.value) || 0) })} step="0.01" type="number" value={line.unitPrice} /></td>
-                      <td><input min="0" onChange={(event) => updateLine(line.id, { discountPercent: Math.max(0, Number(event.target.value) || 0) })} step="0.01" type="number" value={line.discountPercent} /></td>
+                      <td><input disabled={orderType === "catalog_marketing"} min="0" onChange={(event) => updateLine(line.id, { discountPercent: Math.max(0, Number(event.target.value) || 0) })} step="0.01" type="number" value={line.discountPercent} /></td>
                       <td>{money.format(lineTotal)}</td>
                       <td><button aria-label={`Remove ${line.sku}`} className="icon-text-action" onClick={() => setLines((current) => current.filter((item) => item.id !== line.id))} type="button">Remove</button></td>
                     </tr>

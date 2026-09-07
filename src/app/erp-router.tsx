@@ -2080,6 +2080,7 @@ async function createSalesOrderAction(formData: FormData) {
   "use server";
 
   const customerId = textValue(formData, "customer_id");
+  const salesRepAgencyId = textValue(formData, "sales_rep_agency_id") || null;
   const customerPoNumber = textValue(formData, "customer_po_number");
   const orderDate = textValue(formData, "order_date");
   const orderSource = textValue(formData, "order_source") || "manual";
@@ -2089,7 +2090,9 @@ async function createSalesOrderAction(formData: FormData) {
   const locationId = textValue(formData, "customer_location_id") || null;
   const notes = textValue(formData, "notes") || null;
   const productSearch = textValue(formData, "product_search");
-  const fallbackUrl = `/?module=new-order&customer=${customerId}`;
+  const fallbackUrl = salesRepAgencyId
+    ? `/?module=sales-rep-agency-order&agency=${salesRepAgencyId}`
+    : `/?module=new-order&customer=${customerId}`;
 
   let requestedLines: {
     discountPercent: number;
@@ -2140,6 +2143,7 @@ async function createSalesOrderAction(formData: FormData) {
       : undefined;
   const [
     accountResult,
+    agencyResult,
     billingResult,
     invoiceResult,
     freightResult,
@@ -2154,6 +2158,13 @@ async function createSalesOrderAction(formData: FormData) {
       )
       .eq("id", customerId)
       .single(),
+    salesRepAgencyId
+      ? createSupabaseUntypedAdminClient()
+          .from("sales_rep_agency")
+          .select("id, customer_account_id")
+          .eq("id", salesRepAgencyId)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
     supabase
       .from("customer_billing_profile")
       .select("payment_terms, credit_limit")
@@ -2214,6 +2225,7 @@ async function createSalesOrderAction(formData: FormData) {
 
   const failure = [
     accountResult,
+    agencyResult,
     billingResult,
     invoiceResult,
     freightResult,
@@ -2230,6 +2242,15 @@ async function createSalesOrderAction(formData: FormData) {
   if (!accountResult.data || (!isDropship && !locationResult.data)) {
     redirect(
       `${fallbackUrl}&error=The%20customer%20or%20selected%20shipping%20address%20is%20not%20available.`,
+    );
+  }
+
+  if (
+    salesRepAgencyId &&
+    (!agencyResult.data || agencyResult.data.customer_account_id !== customerId)
+  ) {
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent("The agency order account is not available.")}`,
     );
   }
 
@@ -2252,9 +2273,13 @@ async function createSalesOrderAction(formData: FormData) {
           ]
         : [];
 
+  const pricedLines = orderType === "catalog_marketing"
+    ? effectiveLines.map((line) => ({ ...line, discountPercent: 100 }))
+    : effectiveLines;
+
   if (
-    effectiveLines.length === 0 ||
-    productById.size !== effectiveLines.length
+    pricedLines.length === 0 ||
+    productById.size !== pricedLines.length
   ) {
     redirect(
       `${fallbackUrl}&error=One%20or%20more%20selected%20products%20are%20no%20longer%20available.`,
@@ -2372,7 +2397,7 @@ async function createSalesOrderAction(formData: FormData) {
       customer_location_id: isDropship ? null : locationId,
       customer_name_snapshot: account.name,
       customer_po_number: customerPoNumber,
-      invoice_required: orderType !== "quote",
+      invoice_required: !["quote", "catalog_marketing"].includes(orderType),
       sales_order_number: quoteNumber,
       display_order_type:
         orderType === "display"
@@ -2395,13 +2420,14 @@ async function createSalesOrderAction(formData: FormData) {
       notes,
       order_date: orderDate,
       order_source: orderSource as "manual",
-      order_type: orderType as "regular" | "display" | "quote",
+      order_type: orderType as "regular" | "display" | "quote" | "catalog_marketing",
       payment_terms_snapshot: billingResult.data?.payment_terms ?? null,
       ship_to_display_name_snapshot: isDropship
         ? dropshipName
         : savedLocation!.location_name,
       ship_to_snapshot_json: shipToSnapshot,
       ship_to_type: isDropship ? "dropship" : "saved_location",
+      sales_rep_agency_id_snapshot: salesRepAgencyId,
       status: "open",
       shipping_readiness_status: "not_ready",
     })
@@ -2414,7 +2440,7 @@ async function createSalesOrderAction(formData: FormData) {
     );
   }
 
-  const lineRows = effectiveLines.map((line, index) => {
+  const lineRows = pricedLines.map((line, index) => {
     const product = productById.get(line.productId)!;
     const unitPrice = Number(line.unitPrice);
     const discountPercent = Number(line.discountPercent);
@@ -2452,8 +2478,9 @@ async function createSalesOrderAction(formData: FormData) {
     redirect(`${fallbackUrl}&error=${encodeURIComponent(linesError.message)}`);
   }
 
-  redirect(
-    `/?module=orders&order=${order.id}&notice=${encodeURIComponent(orderType === "quote" ? "Quote created." : "Order created.")}`,
+  redirect(salesRepAgencyId
+    ? `/?module=sales-rep-agency&agency=${salesRepAgencyId}&agency_tab=orders&notice=${encodeURIComponent(orderType === "catalog_marketing" ? "No-charge marketing order created." : "Agency order created.")}`
+    : `/?module=orders&order=${order.id}&notice=${encodeURIComponent(orderType === "quote" ? "Quote created." : "Order created.")}`,
   );
 }
 
@@ -9659,6 +9686,122 @@ async function getOrderEntryData(customerId: string) {
   };
 }
 
+async function ensureSalesRepAgencyOrderAccount(agencyId: string) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: agency, error: agencyError } = await supabase
+    .from("sales_rep_agency")
+    .select("id, name, main_contact_name, email, phone, address_line_1, address_line_2, city, state_province, postal_code, customer_account_id")
+    .eq("id", agencyId)
+    .maybeSingle();
+  if (agencyError || !agency) {
+    throw new Error(agencyError?.message ?? "Sales rep agency not found.");
+  }
+
+  let customerAccountId = agency.customer_account_id as string | null;
+  if (!customerAccountId) {
+    const [{ data: repAccountType, error: accountTypeError }, { data: businessType, error: businessTypeError }] = await Promise.all([
+      supabase.from("customer_account_type").select("id").eq("type_code", "rep").eq("is_active", true).maybeSingle(),
+      supabase.from("customer_business_type").select("id").eq("type_code", "other").eq("is_active", true).maybeSingle(),
+    ]);
+    if (accountTypeError || businessTypeError || !repAccountType || !businessType) {
+      throw new Error(accountTypeError?.message ?? businessTypeError?.message ?? "The Rep customer account settings are not available.");
+    }
+    const { data: account, error: accountError } = await supabase
+      .from("customer_account")
+      .insert({
+        account_type_id: repAccountType.id,
+        billing_contact_name: agency.main_contact_name,
+        billing_email: agency.email,
+        business_type_id: businessType.id,
+        linked_sales_rep_agency_id: agency.id,
+        main_email: agency.email,
+        main_phone: agency.phone,
+        name: agency.name,
+        purchase_contact_name: agency.main_contact_name,
+        purchase_email: agency.email,
+        status: "active",
+      })
+      .select("id")
+      .single();
+    if (accountError || !account) {
+      throw new Error(accountError?.message ?? "The agency customer account could not be created.");
+    }
+    customerAccountId = account.id;
+    const { error: agencyUpdateError } = await supabase
+      .from("sales_rep_agency")
+      .update({ customer_account_id: customerAccountId })
+      .eq("id", agency.id);
+    if (agencyUpdateError) throw new Error(agencyUpdateError.message);
+  }
+
+  const [{ data: reps, error: repsError }, { data: existingLocations, error: locationsError }] = await Promise.all([
+    supabase.from("sales_rep").select("id, name, email, phone, address_line_1, address_line_2, city, state_province, postal_code").eq("sales_rep_agency_id", agency.id).eq("status", "active").order("name", { ascending: true }),
+    supabase.from("customer_location").select("id, legacy_location_code").eq("customer_account_id", customerAccountId),
+  ]);
+  if (repsError || locationsError) throw new Error(repsError?.message ?? locationsError?.message ?? "The agency shipping addresses could not be loaded.");
+
+  const existingByCode = new Map((existingLocations ?? []).map((location) => [location.legacy_location_code, location.id]));
+  const candidates = [
+    {
+      address_line_1: agency.address_line_1,
+      address_line_2: agency.address_line_2,
+      city: agency.city,
+      code: `agency-order-office:${agency.id}`,
+      email: agency.email,
+      is_billing_address: true,
+      is_default_ship_to: true,
+      location_name: `${agency.name} - Main Office`,
+      phone: agency.phone,
+      receiver_name: agency.main_contact_name,
+      state_province: agency.state_province,
+      postal_code: agency.postal_code,
+    },
+    ...(reps ?? []).map((rep) => ({
+      address_line_1: rep.address_line_1,
+      address_line_2: rep.address_line_2,
+      city: rep.city,
+      code: `agency-order-rep:${rep.id}`,
+      email: rep.email,
+      is_billing_address: false,
+      is_default_ship_to: false,
+      location_name: rep.name,
+      phone: rep.phone,
+      receiver_name: rep.name,
+      state_province: rep.state_province,
+      postal_code: rep.postal_code,
+    })),
+  ].filter((location) => Boolean(location.address_line_1 && location.city && location.state_province && location.postal_code));
+
+  for (const location of candidates) {
+    const payload = {
+      address_line_1: location.address_line_1,
+      address_line_2: location.address_line_2,
+      city: location.city,
+      country: "United States",
+      country_code: "USA",
+      email: location.email,
+      is_billing_address: location.is_billing_address,
+      is_default_ship_to: location.is_default_ship_to,
+      is_shipping_address: true,
+      legacy_location_code: location.code,
+      location_name: location.location_name,
+      location_type: "ship_to",
+      phone: location.phone,
+      postal_code: location.postal_code,
+      receiver_name: location.receiver_name,
+      state_province: location.state_province,
+      status: "active",
+    };
+    const locationId = existingByCode.get(location.code);
+    const result = locationId
+      ? await supabase.from("customer_location").update(payload).eq("id", locationId)
+      : await supabase.from("customer_location").insert({ ...payload, customer_account_id: customerAccountId });
+    if (result.error) throw new Error(result.error.message);
+  }
+
+  return { customerAccountId: customerAccountId!, name: agency.name };
+}
+
 async function getSalesOrderDetail(
   orderId: string,
 ): Promise<SalesOrderDetail | null> {
@@ -10848,6 +10991,15 @@ export async function ErpRouter({
           <SalesRepPage deactivateSubTerritoryAction={deactivateSalesRepSubTerritoryAction} salesRepId={params.rep} />
         ) : activeModule === "sales-rep-sub-territory-add" ? (
           <SalesRepSubTerritoryEditor error={params.error} salesRepId={params.rep} saveAction={addSalesRepSubTerritoriesAction} />
+        ) : activeModule === "sales-rep-agency-order" && params.agency ? (
+          <NewOrderPage
+            agencyId={params.agency ?? undefined}
+            customerId={(await ensureSalesRepAgencyOrderAccount(params.agency ?? "")).customerAccountId}
+            error={params.error}
+            getOrderEntryData={getOrderEntryData}
+            isAgencyOrder
+            saveAction={createSalesOrderAction}
+          />
         ) : activeModule === "new-order" ? (
           <NewOrderPage
             customerId={params.customer}

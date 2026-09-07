@@ -12,6 +12,7 @@ type SalesRepAgency = {
   agency_code: string;
   city: string | null;
   commission_default_percent: number;
+  customer_account_id: string | null;
   email: string | null;
   main_contact_name: string | null;
   name: string;
@@ -21,6 +22,7 @@ type SalesRepAgency = {
   state_province: string | null;
   status: string;
 };
+type AgencyOrder = { customer_po_number: string; id: string; invoice_required: boolean; order_date: string; order_type: string; sales_order_number: string; status: string; total_amount: number };
 
 type Territory = { id: string; territory_code: string; name: string; description: string | null };
 type SalesRep = { id: string; name: string; email: string | null; phone: string | null; role_title: string | null; is_principal: boolean; city: string | null; state_province: string | null };
@@ -37,7 +39,7 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
   const supabase = createSupabaseUntypedAdminClient();
   const { data, error } = await supabase
     .from("sales_rep_agency")
-    .select("id, address_line_1, address_line_2, agency_code, city, commission_default_percent, email, main_contact_name, name, notes, phone, postal_code, state_province, status")
+    .select("id, address_line_1, address_line_2, agency_code, city, commission_default_percent, customer_account_id, email, main_contact_name, name, notes, phone, postal_code, state_province, status")
     .eq("id", agencyId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -69,6 +71,15 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
     supabase.from("sales_rep").select("id, name, email, phone, role_title, is_principal, city, state_province").eq("sales_rep_agency_id", agency.id).eq("status", "active").order("name", { ascending: true }),
   ]);
   if (territoriesError || salesRepsError) throw new Error(territoriesError?.message ?? salesRepsError?.message);
+  const { data: orders, error: ordersError } = activeTab === "orders"
+    ? await supabase
+        .from("sales_order")
+        .select("id, sales_order_number, customer_po_number, order_date, order_type, status, total_amount, invoice_required")
+        .eq("sales_rep_agency_id_snapshot", agency.id)
+        .order("order_date", { ascending: false })
+        .limit(100)
+    : { data: [] as AgencyOrder[], error: null };
+  if (ordersError) throw new Error(ordersError.message);
   const { data: accountTypes, error: accountTypesError } = activeTab === "customers"
     ? await supabase
         .from("customer_account_type")
@@ -144,7 +155,8 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
 
       {activeTab === "territories" ? <section className="data-section"><div className="section-title"><div><h3>Assigned Territories</h3><p>Base territories this agency covers. Individual sales reps can later receive a subset of these territories.</p></div><Link className="small-action" href={`/?module=sales-rep-agency-territory-add&agency=${agency.id}`}>Add Territory</Link></div>{territories?.length ? <div className="compact-list">{territories.map((territory: Territory) => <div className="compact-row" key={territory.id}><div><strong>{territory.name}</strong><span>{territory.territory_code}{territory.description ? ` - ${territory.description}` : ""}</span></div><form action={removeTerritoryAction}><input name="agency_id" type="hidden" value={agency.id} /><input name="assignment_id" type="hidden" value={assignmentByTerritory.get(territory.id)} /><input name="territory_id" type="hidden" value={territory.id} /><ConfirmRemoveButton message="This removes the territory from the agency and clears it from every sales rep’s sub-territory coverage at this agency." /></form></div>)}</div> : <p className="fieldset-note">No territories are assigned to this agency.</p>}</section> : null}
       {activeTab === "customers" ? <section className="data-section"><div className="section-title"><div><h3>Customers</h3><p>Customer accounts with an active location in this agency&apos;s assigned territories.</p></div></div><AgencyCustomersDashboard accountTypes={eligibleAccountTypes.map((accountType) => ({ id: accountType.id, name: accountType.name }))} customers={coveredCustomers} /></section> : null}
-      {["commissions", "orders"].includes(activeTab) ? <section className="data-section"><div className="section-title"><div><h3>{tabs.find((tab) => tab.key === activeTab)?.label}</h3><p>This section will be available in a later phase.</p></div></div></section> : null}
+      {activeTab === "orders" ? <section className="data-section"><div className="section-title"><div><h3>Orders</h3><p>Orders placed directly by this sales agency.</p></div><Link className="small-action" href={`/?module=sales-rep-agency-order&agency=${agency.id}`}>Place Order</Link></div>{orders?.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Order</th><th>PO / Reference</th><th>Type</th><th>Order Date</th><th>Amount</th><th>Invoice</th><th>Status</th></tr></thead><tbody>{(orders as AgencyOrder[]).map((order) => <tr key={order.id}><td><Link className="table-link" href={`/?module=orders&order=${order.id}`}>{order.sales_order_number}</Link></td><td>{order.customer_po_number}</td><td>{order.order_type === "catalog_marketing" ? "Catalog / Marketing" : order.order_type.replaceAll("_", " ")}</td><td>{order.order_date}</td><td>{new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(order.total_amount ?? 0))}</td><td>{order.invoice_required ? "Required" : "No charge"}</td><td>{order.status.replaceAll("_", " ")}</td></tr>)}</tbody></table></div> : <p className="fieldset-note">No orders have been placed by this agency.</p>}</section> : null}
+      {activeTab === "commissions" ? <section className="data-section"><div className="section-title"><div><h3>Commissions</h3><p>This section will be available in a later phase.</p></div></div></section> : null}
     </section>
   );
 }

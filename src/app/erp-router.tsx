@@ -25,6 +25,7 @@ import { SalesRepAgenciesDashboard } from "@/components/customers/sales-rep-agen
 import { SalesRepEditor } from "@/components/customers/sales-rep-editor";
 import { SalesRepPage } from "@/components/customers/sales-rep-page";
 import { SalesRepSubTerritoryEditor } from "@/components/customers/sales-rep-sub-territory-editor";
+import { AgencyTerritoryEditor } from "@/components/customers/agency-territory-editor";
 import { InvoiceConfirmationPage } from "@/components/financial/invoice-confirmation-page";
 import { InvoiceCreatePage } from "@/components/financial/invoice-create-page";
 import { InvoiceCreatedPage } from "@/components/financial/invoice-created-page";
@@ -1385,6 +1386,30 @@ async function removeTerritoryFromAgencyAction(formData: FormData) {
   }
   revalidatePath("/");
   redirect(`/?module=sales-rep-agency&agency=${agencyId}`);
+}
+
+async function addTerritoriesToAgencyAction(formData: FormData) {
+  "use server";
+  const agencyId = textValue(formData, "agency_id");
+  const territoryIds = [...new Set(formData.getAll("territory_ids").map(String).filter(Boolean))];
+  if (!agencyId || !territoryIds.length) redirect(`/?module=sales-rep-agency-territory-add&agency=${agencyId}&error=Select%20at%20least%20one%20territory.`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const [{ data: agency, error: agencyError }, { data: territories, error: territoriesError }, { data: existingAssignments, error: assignmentsError }] = await Promise.all([
+    supabase.from("sales_rep_agency").select("id").eq("id", agencyId).maybeSingle(),
+    supabase.from("territory").select("id").in("id", territoryIds).eq("status", "active"),
+    supabase.from("territory_assignment").select("territory_id").eq("sales_rep_agency_id", agencyId).eq("status", "active").is("end_date", null),
+  ]);
+  if (agencyError || !agency) redirect(`/?module=sales-rep-agency-territory-add&agency=${agencyId}&error=${encodeURIComponent(agencyError?.message ?? "Sales rep agency not found.")}`);
+  if (territoriesError || assignmentsError) redirect(`/?module=sales-rep-agency-territory-add&agency=${agencyId}&error=${encodeURIComponent(territoriesError?.message ?? assignmentsError?.message ?? "Unable to load territories.")}`);
+  if ((territories ?? []).length !== territoryIds.length) redirect(`/?module=sales-rep-agency-territory-add&agency=${agencyId}&error=Choose%20active%20territories%20only.`);
+  const existingIds = new Set((existingAssignments ?? []).map((assignment) => assignment.territory_id));
+  const newTerritoryIds = territoryIds.filter((territoryId) => !existingIds.has(territoryId));
+  if (newTerritoryIds.length) {
+    const { error } = await supabase.from("territory_assignment").insert(newTerritoryIds.map((territory_id) => ({ sales_rep_agency_id: agencyId, territory_id })));
+    if (error) redirect(`/?module=sales-rep-agency-territory-add&agency=${agencyId}&error=${encodeURIComponent(error.message)}`);
+  }
+  revalidatePath("/");
+  redirect(`/?module=sales-rep-agency&agency=${agencyId}&agency_tab=territories`);
 }
 
 async function deactivateWarehousesAction(formData: FormData) {
@@ -10237,6 +10262,7 @@ export async function ErpRouter({
     "rga-solution": "RGA Solution",
     "sales-rep-agency": "Sales Rep Agency",
     "sales-rep-agency-edit": "Sales Rep Agency",
+    "sales-rep-agency-territory-add": "Add Territory",
     "sales-rep-agencies": "Sales Rep Agencies",
     "sales-rep-edit": "Add Sales Rep",
     "sales-rep": "Sales Rep",
@@ -10678,6 +10704,8 @@ export async function ErpRouter({
           />
         ) : activeModule === "sales-rep-agency" ? (
           <SalesRepAgencyPage agencyId={params.agency} removeSalesRepAction={removeSalesRepFromAgencyAction} removeTerritoryAction={removeTerritoryFromAgencyAction} selectedTab={params.agency_tab} />
+        ) : activeModule === "sales-rep-agency-territory-add" ? (
+          <AgencyTerritoryEditor agencyId={params.agency} error={params.error} saveAction={addTerritoriesToAgencyAction} />
         ) : activeModule === "sales-rep-edit" ? (
           <SalesRepEditor agencyId={params.agency} createAction={createAgencySalesRepAction} error={params.error} salesRepId={params.rep} saveAction={updateAgencySalesRepAction} />
         ) : activeModule === "sales-rep" ? (

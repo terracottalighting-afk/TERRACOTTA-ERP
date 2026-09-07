@@ -19,7 +19,7 @@ export function ModuleNav({ activeModule, productBrands }: { activeModule: strin
         <button className={`nav-group-toggle${isCustomerModule ? " nav-group-toggle--active" : ""}`} onClick={() => toggleGroup("customers")} type="button">Customers</button>
         {openGroup === "customers" ? <div className="submenu-block"><Link href="/">All Customers</Link><Link href="/?module=add-customer">Add Customer</Link><Link href="/?module=obsolete-customers">Obsolete Accounts</Link></div> : null}
       </div>
-      <Link className={activeModule === "sales-rep-agencies" || activeModule === "sales-rep-agency" ? "nav-link--active" : undefined} href="/?module=sales-rep-agencies">Sales Agencies</Link>
+      <Link className={["sales-rep-agencies", "sales-rep-agency", "sales-rep-agency-edit"].includes(activeModule) ? "nav-link--active" : undefined} href="/?module=sales-rep-agencies">Sales Agencies</Link>
       <div className="nav-group">
         <button className={`nav-group-toggle${isProductModule ? " nav-group-toggle--active" : ""}`} onClick={() => toggleGroup("products")} type="button">Products</button>
         {openGroup === "products" ? <div className="submenu-block"><Link href="/?module=products">All Products</Link>{productBrands.map((brand) => <Link href={`/?module=products&product_brand=${brand.id}`} key={brand.id}>{brand.name}</Link>)}<Link href="/?module=product-parts">Parts</Link><Link href="/?module=discontinued-products">Discontinued</Link></div> : null}

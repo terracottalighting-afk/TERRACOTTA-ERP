@@ -19,6 +19,7 @@ import { EditFreightForm } from "@/components/customers/edit-freight-form";
 import { EditLocationForm } from "@/components/customers/edit-location-form";
 import { EditSalesRepForm } from "@/components/customers/edit-sales-rep-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
+import { SalesRepAgencyEditor } from "@/components/customers/sales-rep-agency-editor";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { SalesRepAgenciesDashboard } from "@/components/customers/sales-rep-agencies-dashboard";
 import { InvoiceConfirmationPage } from "@/components/financial/invoice-confirmation-page";
@@ -1177,31 +1178,71 @@ async function deactivateTerritoryAction(formData: FormData) {
   redirect("/?module=admin&admin_tab=territory");
 }
 
-async function saveAgencyTerritoryAssignmentsAction(formData: FormData) {
-  "use server";
-  const agencyId = textValue(formData, "agency_id");
-  const territoryIds = [...new Set(formData.getAll("territory_ids").map(String).filter(Boolean))];
-  if (!agencyId) redirect("/?module=customers");
+async function syncAgencyTerritoryAssignments(agencyId: string, territoryIds: string[]) {
   const supabase = createSupabaseUntypedAdminClient();
   const [{ data: agency, error: agencyError }, { data: territories, error: territoryError }, { data: existingAssignments, error: assignmentsError }] = await Promise.all([
     supabase.from("sales_rep_agency").select("id").eq("id", agencyId).maybeSingle(),
     territoryIds.length ? supabase.from("territory").select("id").in("id", territoryIds).eq("status", "active") : Promise.resolve({ data: [], error: null }),
     supabase.from("territory_assignment").select("id, territory_id").eq("sales_rep_agency_id", agencyId).eq("status", "active").is("end_date", null),
   ]);
-  if (agencyError || !agency) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(agencyError?.message ?? "Sales rep agency not found.")}`);
-  if (territoryError || assignmentsError) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(territoryError?.message ?? assignmentsError?.message ?? "Unable to load territory assignments.")}`);
-  if ((territories ?? []).length !== territoryIds.length) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent("Choose active territories only.")}`);
+  if (agencyError || !agency) throw new Error(agencyError?.message ?? "Sales rep agency not found.");
+  if (territoryError || assignmentsError) throw new Error(territoryError?.message ?? assignmentsError?.message ?? "Unable to load territory assignments.");
+  if ((territories ?? []).length !== territoryIds.length) throw new Error("Choose active territories only.");
   const selected = new Set(territoryIds);
   const existingByTerritory = new Map((existingAssignments ?? []).map((assignment) => [assignment.territory_id, assignment]));
   const toEnd = (existingAssignments ?? []).filter((assignment) => !selected.has(assignment.territory_id)).map((assignment) => assignment.id);
   if (toEnd.length) {
     const { error } = await supabase.from("territory_assignment").update({ end_date: new Date().toISOString().slice(0, 10), status: "inactive" }).in("id", toEnd);
-    if (error) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(error.message)}`);
+    if (error) throw new Error(error.message);
   }
   const toCreate = territoryIds.filter((territoryId) => !existingByTerritory.has(territoryId));
   if (toCreate.length) {
     const { error } = await supabase.from("territory_assignment").insert(toCreate.map((territory_id) => ({ sales_rep_agency_id: agencyId, territory_id })));
-    if (error) redirect(`/?module=sales-rep-agency&agency=${agencyId}&error=${encodeURIComponent(error.message)}`);
+    if (error) throw new Error(error.message);
+  }
+}
+
+function agencyProfileValues(formData: FormData) {
+  const commission = Number(textValue(formData, "commission_default_percent") || 0);
+  if (!Number.isFinite(commission) || commission < 0) throw new Error("Default commission must be zero or greater.");
+  return {
+    agency_code: textValue(formData, "agency_code").toUpperCase(),
+    commission_default_percent: commission,
+    email: textValue(formData, "email") || null,
+    main_contact_name: textValue(formData, "main_contact_name") || null,
+    name: textValue(formData, "name"),
+    notes: textValue(formData, "notes") || null,
+    phone: textValue(formData, "phone") || null,
+    status: textValue(formData, "status") === "inactive" ? "inactive" : "active",
+  };
+}
+
+async function createSalesRepAgencyAction(formData: FormData) {
+  "use server";
+  let profile: ReturnType<typeof agencyProfileValues>;
+  try { profile = agencyProfileValues(formData); } catch (error) { redirect(`/?module=sales-rep-agency-edit&error=${encodeURIComponent(error instanceof Error ? error.message : "Invalid agency information.")}`); }
+  if (!profile!.agency_code || !profile!.name) redirect("/?module=sales-rep-agency-edit&error=Agency%20code%20and%20name%20are%20required.");
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data, error } = await supabase.from("sales_rep_agency").insert(profile!).select("id").single();
+  if (error) redirect(`/?module=sales-rep-agency-edit&error=${encodeURIComponent(error.message)}`);
+  try { await syncAgencyTerritoryAssignments(data.id, [...new Set(formData.getAll("territory_ids").map(String).filter(Boolean))]); } catch (assignmentError) {
+    redirect(`/?module=sales-rep-agency-edit&agency=${data.id}&error=${encodeURIComponent(assignmentError instanceof Error ? assignmentError.message : "Unable to save territory assignments.")}`);
+  }
+  revalidatePath("/");
+  redirect(`/?module=sales-rep-agency&agency=${data.id}`);
+}
+
+async function updateSalesRepAgencyAction(formData: FormData) {
+  "use server";
+  const agencyId = textValue(formData, "agency_id");
+  if (!agencyId) redirect("/?module=sales-rep-agencies");
+  let profile: ReturnType<typeof agencyProfileValues>;
+  try { profile = agencyProfileValues(formData); } catch (error) { redirect(`/?module=sales-rep-agency-edit&agency=${agencyId}&error=${encodeURIComponent(error instanceof Error ? error.message : "Invalid agency information.")}`); }
+  if (!profile!.agency_code || !profile!.name) redirect(`/?module=sales-rep-agency-edit&agency=${agencyId}&error=Agency%20code%20and%20name%20are%20required.`);
+  const { error } = await createSupabaseUntypedAdminClient().from("sales_rep_agency").update(profile!).eq("id", agencyId);
+  if (error) redirect(`/?module=sales-rep-agency-edit&agency=${agencyId}&error=${encodeURIComponent(error.message)}`);
+  try { await syncAgencyTerritoryAssignments(agencyId, [...new Set(formData.getAll("territory_ids").map(String).filter(Boolean))]); } catch (assignmentError) {
+    redirect(`/?module=sales-rep-agency-edit&agency=${agencyId}&error=${encodeURIComponent(assignmentError instanceof Error ? assignmentError.message : "Unable to save territory assignments.")}`);
   }
   revalidatePath("/");
   redirect(`/?module=sales-rep-agency&agency=${agencyId}`);
@@ -10056,6 +10097,7 @@ export async function ErpRouter({
     "rga-detail": "RGA Review",
     "rga-solution": "RGA Solution",
     "sales-rep-agency": "Sales Rep Agency",
+    "sales-rep-agency-edit": "Sales Rep Agency",
     "sales-rep-agencies": "Sales Rep Agencies",
     shipping: "Shipments",
     "view-contact": "Contact",
@@ -10485,8 +10527,15 @@ export async function ErpRouter({
           />
         ) : activeModule === "sales-rep-agencies" ? (
           <SalesRepAgenciesDashboard agencies={await getSalesRepAgencies()} />
+        ) : activeModule === "sales-rep-agency-edit" ? (
+          <SalesRepAgencyEditor
+            agencyId={params.agency}
+            createAction={createSalesRepAgencyAction}
+            error={params.error}
+            saveAction={updateSalesRepAgencyAction}
+          />
         ) : activeModule === "sales-rep-agency" ? (
-          <SalesRepAgencyPage agencyId={params.agency} saveTerritoriesAction={saveAgencyTerritoryAssignmentsAction} />
+          <SalesRepAgencyPage agencyId={params.agency} />
         ) : activeModule === "new-order" ? (
           <NewOrderPage
             customerId={params.customer}

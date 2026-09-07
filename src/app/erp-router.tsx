@@ -1314,13 +1314,18 @@ async function addSalesRepSubTerritoriesAction(formData: FormData) {
   const supabase = createSupabaseUntypedAdminClient();
   const { data: salesRep, error: salesRepError } = await supabase.from("sales_rep").select("id, sales_rep_agency_id").eq("id", salesRepId).maybeSingle();
   if (salesRepError || !salesRep) redirect(`/?module=sales-rep-sub-territory-add&rep=${salesRepId}&error=${encodeURIComponent(salesRepError?.message ?? "Sales rep not found.")}`);
-  const { data: agencyAssignments, error: agencyAssignmentsError } = await supabase.from("territory_assignment").select("territory_id").eq("sales_rep_agency_id", salesRep!.sales_rep_agency_id).eq("status", "active").is("end_date", null);
-  if (agencyAssignmentsError) redirect(`/?module=sales-rep-sub-territory-add&rep=${salesRepId}&error=${encodeURIComponent(agencyAssignmentsError.message)}`);
+  const [{ data: agencyAssignments, error: agencyAssignmentsError }, { data: agencySalesReps, error: agencySalesRepsError }] = await Promise.all([
+    supabase.from("territory_assignment").select("territory_id").eq("sales_rep_agency_id", salesRep!.sales_rep_agency_id).eq("status", "active").is("end_date", null),
+    supabase.from("sales_rep").select("id").eq("sales_rep_agency_id", salesRep!.sales_rep_agency_id),
+  ]);
+  if (agencyAssignmentsError || agencySalesRepsError) redirect(`/?module=sales-rep-sub-territory-add&rep=${salesRepId}&error=${encodeURIComponent(agencyAssignmentsError?.message ?? agencySalesRepsError?.message ?? "Unable to load agency territory assignments.")}`);
   const agencyTerritoryIds = new Set((agencyAssignments ?? []).map((assignment) => assignment.territory_id));
   if (territoryIds.some((territoryId) => !agencyTerritoryIds.has(territoryId))) redirect(`/?module=sales-rep-sub-territory-add&rep=${salesRepId}&error=Choose%20territories%20assigned%20to%20the%20parent%20agency.`);
-  const { data: existingAssignments, error: existingAssignmentsError } = await supabase.from("sales_rep_territory_assignment").select("territory_id").eq("sales_rep_id", salesRepId).eq("status", "active").is("end_date", null);
+  const agencySalesRepIds = (agencySalesReps ?? []).map((rep) => rep.id);
+  const { data: existingAssignments, error: existingAssignmentsError } = agencySalesRepIds.length ? await supabase.from("sales_rep_territory_assignment").select("territory_id").in("sales_rep_id", agencySalesRepIds).eq("status", "active").is("end_date", null) : { data: [], error: null };
   if (existingAssignmentsError) redirect(`/?module=sales-rep-sub-territory-add&rep=${salesRepId}&error=${encodeURIComponent(existingAssignmentsError.message)}`);
   const existingIds = new Set((existingAssignments ?? []).map((assignment) => assignment.territory_id));
+  if (territoryIds.some((territoryId) => existingIds.has(territoryId))) redirect(`/?module=sales-rep-sub-territory-add&rep=${salesRepId}&error=One%20or%20more%20selected%20sub-territories%20are%20already%20assigned%20to%20another%20sales%20rep.`);
   const newTerritoryIds = territoryIds.filter((territoryId) => !existingIds.has(territoryId));
   if (newTerritoryIds.length) {
     const { error } = await supabase.from("sales_rep_territory_assignment").insert(newTerritoryIds.map((territory_id) => ({ sales_rep_id: salesRepId, territory_id })));

@@ -5,3 +5,5 @@ alter table sales_rep
   add column if not exists state_province text,
   add column if not exists postal_code text,
   add column if not exists country text not null default 'United States';
+
+notify pgrst, 'reload schema';

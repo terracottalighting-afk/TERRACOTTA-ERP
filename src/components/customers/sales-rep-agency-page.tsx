@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AgencyCustomersDashboard } from "@/components/customers/agency-customers-dashboard";
 import { ConfirmRemoveButton } from "@/components/ui/confirm-remove-button";
 import { ModulePlaceholder, StatusBadge } from "@/components/ui";
 import { createSupabaseUntypedAdminClient } from "@/lib/supabase/admin";
@@ -23,6 +24,9 @@ type SalesRepAgency = {
 
 type Territory = { id: string; territory_code: string; name: string; description: string | null };
 type SalesRep = { id: string; name: string; email: string | null; phone: string | null; role_title: string | null; is_principal: boolean; city: string | null; state_province: string | null };
+type CustomerAccountType = { id: string; name: string; type_code: string };
+type CustomerAccount = { account_number: string; account_type_id: string; id: string; name: string; status: string };
+type CustomerLocation = { customer_account_id: string; territory_id: string };
 type FormAction = (formData: FormData) => void | Promise<void>;
 
 type AgencyTab = "profile" | "sales-reps" | "territories" | "customers" | "commissions" | "orders";
@@ -51,11 +55,6 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
   if (assignmentsError) throw new Error(assignmentsError.message);
   const territoryIds = (assignments ?? []).map((assignment) => assignment.territory_id);
   const assignmentByTerritory = new Map((assignments ?? []).map((assignment) => [assignment.territory_id, assignment.id]));
-  const [{ data: territories, error: territoriesError }, { data: salesReps, error: salesRepsError }] = await Promise.all([
-    territoryIds.length ? supabase.from("territory").select("id, territory_code, name, description").in("id", territoryIds).order("name", { ascending: true }) : Promise.resolve({ data: [] as Territory[], error: null }),
-    supabase.from("sales_rep").select("id, name, email, phone, role_title, is_principal, city, state_province").eq("sales_rep_agency_id", agency.id).eq("status", "active").order("name", { ascending: true }),
-  ]);
-  if (territoriesError || salesRepsError) throw new Error(territoriesError?.message ?? salesRepsError?.message);
   const tabs: { key: AgencyTab; label: string }[] = [
     { key: "profile", label: "Profile" },
     { key: "sales-reps", label: "Sales Reps" },
@@ -65,6 +64,56 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
     { key: "orders", label: "Orders" },
   ];
   const activeTab: AgencyTab = tabs.some((tab) => tab.key === selectedTab) ? selectedTab as AgencyTab : "profile";
+  const [{ data: territories, error: territoriesError }, { data: salesReps, error: salesRepsError }] = await Promise.all([
+    territoryIds.length ? supabase.from("territory").select("id, territory_code, name, description").in("id", territoryIds).order("name", { ascending: true }) : Promise.resolve({ data: [] as Territory[], error: null }),
+    supabase.from("sales_rep").select("id, name, email, phone, role_title, is_principal, city, state_province").eq("sales_rep_agency_id", agency.id).eq("status", "active").order("name", { ascending: true }),
+  ]);
+  if (territoriesError || salesRepsError) throw new Error(territoriesError?.message ?? salesRepsError?.message);
+  const { data: accountTypes, error: accountTypesError } = activeTab === "customers"
+    ? await supabase
+        .from("customer_account_type")
+        .select("id, name, type_code")
+        .eq("is_active", true)
+        .neq("type_code", "rep")
+        .order("sort_order", { ascending: true })
+    : { data: [] as CustomerAccountType[], error: null };
+  if (accountTypesError) throw new Error(accountTypesError.message);
+
+  const { data: customerLocations, error: customerLocationsError } = activeTab === "customers" && territoryIds.length
+    ? await supabase
+        .from("customer_location")
+        .select("customer_account_id, territory_id")
+        .in("territory_id", territoryIds)
+        .eq("status", "active")
+    : { data: [] as CustomerLocation[], error: null };
+  if (customerLocationsError) throw new Error(customerLocationsError.message);
+  const customerAccountIds = [...new Set((customerLocations ?? []).map((location) => location.customer_account_id))];
+  const { data: customerAccounts, error: customerAccountsError } = activeTab === "customers" && customerAccountIds.length
+    ? await supabase
+        .from("customer_account")
+        .select("id, account_number, account_type_id, name, status")
+        .in("id", customerAccountIds)
+        .order("name", { ascending: true })
+    : { data: [] as CustomerAccount[], error: null };
+  if (customerAccountsError) throw new Error(customerAccountsError.message);
+  const eligibleAccountTypes = (accountTypes as CustomerAccountType[]).filter((accountType) => accountType.type_code !== "rep");
+  const territoryNameById = new Map((territories ?? []).map((territory: Territory) => [territory.id, territory.name]));
+  const eligibleAccountTypeIds = new Set(eligibleAccountTypes.map((accountType) => accountType.id));
+  const coveredCustomers = (customerAccounts as CustomerAccount[])
+    .filter((customer) => eligibleAccountTypeIds.has(customer.account_type_id))
+    .map((customer) => ({
+      accountNumber: customer.account_number,
+      accountTypeId: customer.account_type_id,
+      id: customer.id,
+      name: customer.name,
+      status: customer.status,
+      territoryNames: [...new Set(
+        (customerLocations ?? [])
+          .filter((location) => location.customer_account_id === customer.id)
+          .map((location) => territoryNameById.get(location.territory_id))
+          .filter((territoryName): territoryName is string => Boolean(territoryName)),
+      )],
+    }));
 
   return (
     <section className="dashboard-panel">
@@ -84,7 +133,8 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
       {activeTab === "sales-reps" ? <section className="data-section"><div className="section-title"><div><h3>Sales Reps</h3><p>Individual sales reps working under this agency.</p></div><Link className="small-action" href={`/?module=sales-rep-edit&agency=${agency.id}`}>Add Sales Rep</Link></div>{salesReps?.length ? <div className="compact-list">{(salesReps as SalesRep[]).map((rep) => <div className="compact-row" key={rep.id}><div><strong><Link className="record-link" href={`/?module=sales-rep&rep=${rep.id}`}>{rep.name}{rep.is_principal ? " - Principal" : ""}</Link></strong><span>{[rep.role_title, rep.email, rep.phone].filter(Boolean).join(" | ") || "No contact information"}{rep.city || rep.state_province ? ` - ${[rep.city, rep.state_province].filter(Boolean).join(", ")}` : ""}</span></div><div className="section-actions"><StatusBadge tone="good" value="Active" /><form action={removeSalesRepAction}><input name="agency_id" type="hidden" value={agency.id} /><input name="sales_rep_id" type="hidden" value={rep.id} /><ConfirmRemoveButton message="This removes the sales rep from this agency and clears their sub-territory coverage. The Sales Rep record will remain in the system." /></form></div></div>)}</div> : <p className="fieldset-note">No individual sales reps have been added.</p>}</section> : null}
 
       {activeTab === "territories" ? <section className="data-section"><div className="section-title"><div><h3>Assigned Territories</h3><p>Base territories this agency covers. Individual sales reps can later receive a subset of these territories.</p></div><Link className="small-action" href={`/?module=sales-rep-agency-territory-add&agency=${agency.id}`}>Add Territory</Link></div>{territories?.length ? <div className="compact-list">{territories.map((territory: Territory) => <div className="compact-row" key={territory.id}><div><strong>{territory.name}</strong><span>{territory.territory_code}{territory.description ? ` - ${territory.description}` : ""}</span></div><form action={removeTerritoryAction}><input name="agency_id" type="hidden" value={agency.id} /><input name="assignment_id" type="hidden" value={assignmentByTerritory.get(territory.id)} /><input name="territory_id" type="hidden" value={territory.id} /><ConfirmRemoveButton message="This removes the territory from the agency and clears it from every sales rep’s sub-territory coverage at this agency." /></form></div>)}</div> : <p className="fieldset-note">No territories are assigned to this agency.</p>}</section> : null}
-      {["customers", "commissions", "orders"].includes(activeTab) ? <section className="data-section"><div className="section-title"><div><h3>{tabs.find((tab) => tab.key === activeTab)?.label}</h3><p>This section will be available in a later phase.</p></div></div></section> : null}
+      {activeTab === "customers" ? <section className="data-section"><div className="section-title"><div><h3>Customers</h3><p>Customer accounts with an active location in this agency&apos;s assigned territories.</p></div></div><AgencyCustomersDashboard accountTypes={eligibleAccountTypes.map((accountType) => ({ id: accountType.id, name: accountType.name }))} customers={coveredCustomers} /></section> : null}
+      {["commissions", "orders"].includes(activeTab) ? <section className="data-section"><div className="section-title"><div><h3>{tabs.find((tab) => tab.key === activeTab)?.label}</h3><p>This section will be available in a later phase.</p></div></div></section> : null}
     </section>
   );
 }

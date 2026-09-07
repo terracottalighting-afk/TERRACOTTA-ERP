@@ -270,6 +270,21 @@ input {
   color: var(--foreground);
 }
 
+.agency-customer-type-tabs {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 220px));
+  margin-bottom: 16px;
+}
+
+.agency-customer-type-tab {
+  cursor: pointer;
+  text-align: left;
+}
+
+.agency-customer-type-tab--active {
+  border-color: var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
 .secondary-action {
   align-items: center;
   display: inline-flex;

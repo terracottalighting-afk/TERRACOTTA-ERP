@@ -26,7 +26,7 @@ type Territory = { id: string; territory_code: string; name: string; description
 type SalesRep = { id: string; name: string; email: string | null; phone: string | null; role_title: string | null; is_principal: boolean; city: string | null; state_province: string | null };
 type CustomerAccountType = { id: string; name: string; type_code: string };
 type CustomerAccount = { account_number: string; account_type_id: string; id: string; name: string; status: string };
-type CustomerLocation = { customer_account_id: string; territory_id: string };
+type CustomerLocation = { city: string | null; customer_account_id: string; id: string; location_name: string; postal_code: string | null; state_province: string | null; territory_id: string };
 type FormAction = (formData: FormData) => void | Promise<void>;
 
 type AgencyTab = "profile" | "sales-reps" | "territories" | "customers" | "commissions" | "orders";
@@ -82,7 +82,7 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
   const { data: customerLocations, error: customerLocationsError } = activeTab === "customers" && territoryIds.length
     ? await supabase
         .from("customer_location")
-        .select("customer_account_id, territory_id")
+        .select("id, customer_account_id, location_name, city, state_province, postal_code, territory_id")
         .in("territory_id", territoryIds)
         .eq("status", "active")
     : { data: [] as CustomerLocation[], error: null };
@@ -97,7 +97,7 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
     : { data: [] as CustomerAccount[], error: null };
   if (customerAccountsError) throw new Error(customerAccountsError.message);
   const eligibleAccountTypes = (accountTypes as CustomerAccountType[]).filter((accountType) => accountType.type_code !== "rep");
-  const territoryNameById = new Map((territories ?? []).map((territory: Territory) => [territory.id, territory.name]));
+  const territoryById = new Map((territories ?? []).map((territory: Territory) => [territory.id, territory]));
   const eligibleAccountTypeIds = new Set(eligibleAccountTypes.map((accountType) => accountType.id));
   const coveredCustomers = (customerAccounts as CustomerAccount[])
     .filter((customer) => eligibleAccountTypeIds.has(customer.account_type_id))
@@ -107,12 +107,22 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
       id: customer.id,
       name: customer.name,
       status: customer.status,
-      territoryNames: [...new Set(
-        (customerLocations ?? [])
-          .filter((location) => location.customer_account_id === customer.id)
-          .map((location) => territoryNameById.get(location.territory_id))
-          .filter((territoryName): territoryName is string => Boolean(territoryName)),
-      )],
+      locations: (customerLocations ?? [])
+        .filter((location) => location.customer_account_id === customer.id)
+        .map((location) => {
+          const territory = territoryById.get(location.territory_id);
+
+          return {
+            city: location.city,
+            id: location.id,
+            locationName: location.location_name,
+            postalCode: location.postal_code,
+            stateProvince: location.state_province,
+            territoryLabel: territory
+              ? `${territory.territory_code} - ${territory.name}`
+              : "Territory not set",
+          };
+        }),
     }));
 
   return (

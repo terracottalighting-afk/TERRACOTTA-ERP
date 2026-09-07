@@ -285,6 +285,61 @@ input {
   box-shadow: inset 0 -3px 0 var(--accent);
 }
 
+.agency-customer-row {
+  cursor: pointer;
+}
+
+.agency-customer-row:hover td {
+  background: var(--panel-soft);
+}
+
+.agency-customer-row-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--foreground);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-weight: 700;
+  gap: 8px;
+  padding: 0;
+  text-align: left;
+}
+
+.agency-customer-row-toggle span {
+  color: var(--accent-strong);
+  font-size: 16px;
+  width: 12px;
+}
+
+.agency-customer-locations td {
+  background: var(--panel-soft);
+  padding: 14px 18px;
+}
+
+.agency-customer-locations__header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.agency-customer-location {
+  color: inherit;
+  text-decoration: none;
+}
+
+.agency-customer-location:hover {
+  background: var(--panel);
+}
+
+.agency-customer-location > span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .secondary-action {
   align-items: center;
   display: inline-flex;

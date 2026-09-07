@@ -2064,6 +2064,7 @@ dd {
 }
 
 .warehouse-directory-toolbar {
+  align-items: center;
   border-bottom: 1px solid var(--line);
   display: flex;
   justify-content: flex-end;

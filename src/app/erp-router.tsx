@@ -1330,6 +1330,23 @@ async function addSalesRepSubTerritoriesAction(formData: FormData) {
   redirect(`/?module=sales-rep&rep=${salesRepId}`);
 }
 
+async function deactivateSalesRepSubTerritoryAction(formData: FormData) {
+  "use server";
+  const assignmentId = textValue(formData, "assignment_id");
+  const salesRepId = textValue(formData, "sales_rep_id");
+  if (!assignmentId || !salesRepId) redirect(`/?module=sales-rep&rep=${salesRepId}`);
+  const { error } = await createSupabaseUntypedAdminClient()
+    .from("sales_rep_territory_assignment")
+    .update({ end_date: new Date().toISOString().slice(0, 10), status: "inactive" })
+    .eq("id", assignmentId)
+    .eq("sales_rep_id", salesRepId)
+    .eq("status", "active")
+    .is("end_date", null);
+  if (error) redirect(`/?module=sales-rep&rep=${salesRepId}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=sales-rep&rep=${salesRepId}`);
+}
+
 async function deactivateWarehousesAction(formData: FormData) {
   "use server";
   const warehouseIds = formData.getAll("warehouse_ids").map(String).filter(Boolean);
@@ -10624,7 +10641,7 @@ export async function ErpRouter({
         ) : activeModule === "sales-rep-edit" ? (
           <SalesRepEditor agencyId={params.agency} createAction={createAgencySalesRepAction} error={params.error} salesRepId={params.rep} saveAction={updateAgencySalesRepAction} />
         ) : activeModule === "sales-rep" ? (
-          <SalesRepPage salesRepId={params.rep} />
+          <SalesRepPage deactivateSubTerritoryAction={deactivateSalesRepSubTerritoryAction} salesRepId={params.rep} />
         ) : activeModule === "sales-rep-sub-territory-add" ? (
           <SalesRepSubTerritoryEditor error={params.error} salesRepId={params.rep} saveAction={addSalesRepSubTerritoriesAction} />
         ) : activeModule === "new-order" ? (

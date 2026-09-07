@@ -260,6 +260,13 @@ type LocationEditRecord = CustomerLocation & {
   country: string;
   email: string | null;
   postal_code: string | null;
+  territory_id: string | null;
+};
+
+type LocationTerritory = {
+  id: string;
+  name: string;
+  territory_code: string;
 };
 
 type CustomerContact = {
@@ -7441,6 +7448,36 @@ async function updateBillingCreditAction(formData: FormData) {
   redirect(`/?customer=${customerId}`);
 }
 
+function normalizedPostalCode(postalCode: string | null) {
+  const match = postalCode?.match(/^(\d{5})(?:-\d{4})?$/);
+  return match?.[1] ?? null;
+}
+
+async function resolveLocationTerritory(postalCode: string | null) {
+  const normalizedPostalCodeValue = normalizedPostalCode(postalCode);
+  if (!normalizedPostalCodeValue) return null;
+
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: coverage, error: coverageError } = await supabase
+    .from("territory_zip_coverage")
+    .select("territory_id")
+    .eq("postal_code", normalizedPostalCodeValue);
+
+  if (coverageError) throw new Error(coverageError.message);
+
+  const territoryIds = [...new Set((coverage ?? []).map((row) => row.territory_id))];
+  if (!territoryIds.length) return null;
+
+  const { data: territories, error: territoriesError } = await supabase
+    .from("territory")
+    .select("id, territory_code, name")
+    .in("id", territoryIds)
+    .eq("status", "active");
+
+  if (territoriesError) throw new Error(territoriesError.message);
+  return territories?.length === 1 ? (territories[0] as LocationTerritory) : null;
+}
+
 async function addLocationAction(formData: FormData) {
   "use server";
 
@@ -7465,6 +7502,15 @@ async function addLocationAction(formData: FormData) {
   const isShowroom = formData.get("is_showroom") === "on";
   const isPrimaryShowroom =
     isShowroom && formData.get("is_primary_showroom") === "on";
+  let territory: LocationTerritory | null;
+
+  try {
+    territory = await resolveLocationTerritory(optionalText("postal_code"));
+  } catch (territoryError) {
+    redirect(
+      `/?module=add-location&customer=${customerId}&error=${encodeURIComponent(territoryError instanceof Error ? territoryError.message : "Unable to resolve the location territory.")}`,
+    );
+  }
 
   const { data, error } = await supabase
     .from("customer_location")
@@ -7487,6 +7533,7 @@ async function addLocationAction(formData: FormData) {
       postal_code: optionalText("postal_code"),
       state_province: optionalText("state_province"),
       status: "active",
+      territory_id: territory?.id ?? null,
     })
     .select("id")
     .single();
@@ -7544,6 +7591,15 @@ async function updateLocationAction(formData: FormData) {
   const isShowroom = formData.get("is_showroom") === "on";
   const isPrimaryShowroom =
     isShowroom && formData.get("is_primary_showroom") === "on";
+  let territory: LocationTerritory | null;
+
+  try {
+    territory = await resolveLocationTerritory(optionalText("postal_code"));
+  } catch (territoryError) {
+    redirect(
+      `/?module=edit-location&customer=${customerId}&location=${locationId}&error=${encodeURIComponent(territoryError instanceof Error ? territoryError.message : "Unable to resolve the location territory.")}`,
+    );
+  }
 
   const { error } = await supabase
     .from("customer_location")
@@ -7568,6 +7624,7 @@ async function updateLocationAction(formData: FormData) {
         String(formData.get("status") ?? "active") === "inactive"
           ? "inactive"
           : "active",
+      territory_id: territory?.id ?? null,
     })
     .eq("id", locationId)
     .eq("customer_account_id", customerId);
@@ -9962,13 +10019,25 @@ async function getLocationForEdit(locationId: string) {
   const { data: location, error: locationError } = await supabase
     .from("customer_location")
     .select(
-      "id, customer_account_id, location_code, location_name, location_type, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, email, is_shipping_address, is_default_ship_to, is_billing_address, is_showroom, status",
+      "id, customer_account_id, location_code, location_name, location_type, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, email, is_shipping_address, is_default_ship_to, is_billing_address, is_showroom, status, territory_id",
     )
     .eq("id", locationId)
     .single();
 
   if (locationError) {
     throw new Error(locationError.message);
+  }
+
+  const { data: territory, error: territoryError } = location.territory_id
+    ? await createSupabaseUntypedAdminClient()
+        .from("territory")
+        .select("id, territory_code, name")
+        .eq("id", location.territory_id)
+        .maybeSingle()
+    : { data: null, error: null };
+
+  if (territoryError) {
+    throw new Error(territoryError.message);
   }
 
   const { data: showroom, error: showroomError } = await supabase
@@ -9987,6 +10056,7 @@ async function getLocationForEdit(locationId: string) {
   return {
     location: location as LocationEditRecord,
     primaryShowroom: showroom as PrimaryShowroomEnrollment | null,
+    territory: territory as LocationTerritory | null,
   };
 }
 

@@ -31,6 +31,11 @@ type CustomerLocation = {
   status: string;
 };
 
+type LocationTerritory = {
+  name: string;
+  territory_code: string;
+};
+
 type PrimaryShowroomEnrollment = {
   current_display_count?: number;
   discount_percent?: number;
@@ -116,6 +121,7 @@ type LocationDashboard = {
   packingLists: PackingList[];
   primaryShowroom: PrimaryShowroomEnrollment | null;
   rgas: Rga[];
+  territory: LocationTerritory | null;
 };
 
 export async function LocationInfoPage({
@@ -151,6 +157,7 @@ export async function LocationInfoPage({
     packingLists,
     primaryShowroom,
     rgas,
+    territory,
   } = dashboard;
   const locationTabs = [
     "Profile",
@@ -251,6 +258,14 @@ export async function LocationInfoPage({
                 <div>
                   <dt>Location Code</dt>
                   <dd>{location.location_code ?? "System generated"}</dd>
+                </div>
+                <div>
+                  <dt>Territory</dt>
+                  <dd>
+                    {territory
+                      ? `${territory.territory_code} - ${territory.name}`
+                      : "Not assigned"}
+                  </dd>
                 </div>
                 <div>
                   <dt>Primary Showroom</dt>

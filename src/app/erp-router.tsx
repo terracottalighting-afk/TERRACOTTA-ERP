@@ -22,6 +22,7 @@ import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { SalesRepAgencyEditor } from "@/components/customers/sales-rep-agency-editor";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { SalesRepAgenciesDashboard } from "@/components/customers/sales-rep-agencies-dashboard";
+import { SalesRepEditor } from "@/components/customers/sales-rep-editor";
 import { InvoiceConfirmationPage } from "@/components/financial/invoice-confirmation-page";
 import { InvoiceCreatePage } from "@/components/financial/invoice-create-page";
 import { InvoiceCreatedPage } from "@/components/financial/invoice-created-page";
@@ -1249,6 +1250,25 @@ async function updateSalesRepAgencyAction(formData: FormData) {
   try { await syncAgencyTerritoryAssignments(agencyId, [...new Set(formData.getAll("territory_ids").map(String).filter(Boolean))]); } catch (assignmentError) {
     redirect(`/?module=sales-rep-agency-edit&agency=${agencyId}&error=${encodeURIComponent(assignmentError instanceof Error ? assignmentError.message : "Unable to save territory assignments.")}`);
   }
+  revalidatePath("/");
+  redirect(`/?module=sales-rep-agency&agency=${agencyId}`);
+}
+
+async function createAgencySalesRepAction(formData: FormData) {
+  "use server";
+  const agencyId = textValue(formData, "agency_id");
+  const name = textValue(formData, "name");
+  if (!agencyId || !name) redirect(`/?module=sales-rep-edit&agency=${agencyId}&error=Sales%20rep%20name%20is%20required.`);
+  const { error } = await createSupabaseUntypedAdminClient().from("sales_rep").insert({
+    email: textValue(formData, "email") || null,
+    is_principal: formData.get("is_principal") === "on",
+    name,
+    notes: textValue(formData, "notes") || null,
+    phone: textValue(formData, "phone") || null,
+    role_title: textValue(formData, "role_title") || null,
+    sales_rep_agency_id: agencyId,
+  });
+  if (error) redirect(`/?module=sales-rep-edit&agency=${agencyId}&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");
   redirect(`/?module=sales-rep-agency&agency=${agencyId}`);
 }
@@ -10104,6 +10124,7 @@ export async function ErpRouter({
     "sales-rep-agency": "Sales Rep Agency",
     "sales-rep-agency-edit": "Sales Rep Agency",
     "sales-rep-agencies": "Sales Rep Agencies",
+    "sales-rep-edit": "Add Sales Rep",
     shipping: "Shipments",
     "view-contact": "Contact",
     "view-location": "Location",
@@ -10541,6 +10562,8 @@ export async function ErpRouter({
           />
         ) : activeModule === "sales-rep-agency" ? (
           <SalesRepAgencyPage agencyId={params.agency} />
+        ) : activeModule === "sales-rep-edit" ? (
+          <SalesRepEditor agencyId={params.agency} createAction={createAgencySalesRepAction} error={params.error} />
         ) : activeModule === "new-order" ? (
           <NewOrderPage
             customerId={params.customer}

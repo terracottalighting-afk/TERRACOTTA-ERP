@@ -10438,19 +10438,30 @@ export async function ErpRouter({
     activeModule === "product-parts" ? params.part : undefined;
   const productListMode =
     activeModule === "discontinued-products" ? "discontinued" : "active";
+  const emptyProductSearchResult: ProductSearchResult = {
+    items: [],
+    page: 1,
+    pageSize: 10,
+    totalCount: 0,
+    totalPages: 1,
+  };
   const productSearchResult =
     (activeModule === "products" && !selectedProductId) ||
     activeModule === "discontinued-products"
-      ? await loadOptionalLookup("Products", () =>
-          searchProducts(
-            query,
-            productFilters,
-            requestedProductPage,
-            requestedProductPageSize,
-            productListMode,
-          ),
-        )
-      : { items: [], page: 1, pageSize: 10, totalCount: 0, totalPages: 1 };
+      ? await searchProducts(
+          query,
+          productFilters,
+          requestedProductPage,
+          requestedProductPageSize,
+          productListMode,
+        ).catch((error) => {
+          console.warn(
+            "Products could not be loaded:",
+            error instanceof Error ? error.message : error,
+          );
+          return emptyProductSearchResult;
+        })
+      : emptyProductSearchResult;
   const productDetail = selectedProductId
     ? await getProductDetail(selectedProductId)
     : null;

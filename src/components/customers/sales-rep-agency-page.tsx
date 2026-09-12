@@ -36,11 +36,12 @@ type CustomerLocation = { city: string | null; customer_account_id: string; id: 
 type FormAction = (formData: FormData) => void | Promise<void>;
 
 type AgencyTab = "profile" | "sales-reps" | "territories" | "customers" | "commissions" | "shipment-statements" | "orders";
+type CommissionTab = "statements" | "ready" | "awaiting-payment";
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const labelize = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 
-export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, removeTerritoryAction, selectedTab }: { agencyId?: string; removeSalesRepAction: FormAction; removeTerritoryAction: FormAction; selectedTab?: string }) {
+export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, removeTerritoryAction, selectedCommissionTab, selectedTab }: { agencyId?: string; removeSalesRepAction: FormAction; removeTerritoryAction: FormAction; selectedCommissionTab?: string; selectedTab?: string }) {
   if (!agencyId) return <ModulePlaceholder moduleName="Sales Rep Agency" />;
 
   const supabase = createSupabaseUntypedAdminClient();
@@ -74,6 +75,12 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
     { key: "orders", label: "Orders" },
   ];
   const activeTab: AgencyTab = tabs.some((tab) => tab.key === selectedTab) ? selectedTab as AgencyTab : "profile";
+  const commissionTabs: { key: CommissionTab; label: string }[] = [
+    { key: "statements", label: "Commission Statements" },
+    { key: "ready", label: "Ready for Commission" },
+    { key: "awaiting-payment", label: "Awaiting Customer Payment" },
+  ];
+  const activeCommissionTab: CommissionTab = commissionTabs.some((tab) => tab.key === selectedCommissionTab) ? selectedCommissionTab as CommissionTab : "statements";
   const [{ data: territories, error: territoriesError }, { data: salesReps, error: salesRepsError }] = await Promise.all([
     territoryIds.length ? supabase.from("territory").select("id, territory_code, name, description").in("id", territoryIds).order("name", { ascending: true }) : Promise.resolve({ data: [] as Territory[], error: null }),
     supabase.from("sales_rep").select("id, name, email, phone, role_title, is_principal, city, state_province").eq("sales_rep_agency_id", agency.id).eq("status", "active").order("name", { ascending: true }),
@@ -224,20 +231,21 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
       {activeTab === "customers" ? <section className="data-section"><div className="section-title"><div><h3>Customers</h3><p>Customer accounts with an active location in this agency&apos;s assigned territories.</p></div></div><AgencyCustomersDashboard accountTypes={eligibleAccountTypes.map((accountType) => ({ id: accountType.id, name: accountType.name }))} customers={coveredCustomers} /></section> : null}
       {activeTab === "orders" ? <section className="data-section"><div className="section-title"><div><h3>Orders</h3><p>Orders placed directly by this sales agency.</p></div><Link className="small-action" href={`/?module=sales-rep-agency-order&agency=${agency.id}`}>Place Order</Link></div>{orders?.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Order</th><th>PO / Reference</th><th>Type</th><th>Order Date</th><th>Amount</th><th>Invoice</th><th>Status</th></tr></thead><tbody>{(orders as AgencyOrder[]).map((order) => <tr key={order.id}><td><Link className="table-link" href={`/?module=orders&order=${order.id}`}>{order.sales_order_number}</Link></td><td>{order.customer_po_number}</td><td>{order.order_type === "catalog_marketing" ? "Catalog / Marketing" : order.order_type.replaceAll("_", " ")}</td><td>{order.order_date}</td><td>{new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(order.total_amount ?? 0))}</td><td>{order.invoice_required ? "Required" : "No charge"}</td><td>{order.status.replaceAll("_", " ")}</td></tr>)}</tbody></table></div> : <p className="fieldset-note">No orders have been placed by this agency.</p>}</section> : null}
       {activeTab === "commissions" ? <>
-        <section className="data-section">
+        <nav aria-label="Commission dashboard" className="agency-dashboard-tabs">
+          {commissionTabs.map((tab) => <Link className={activeCommissionTab === tab.key ? "agency-dashboard-tab agency-dashboard-tab--active" : "agency-dashboard-tab"} href={`/?module=sales-rep-agency&agency=${agency.id}&agency_tab=commissions&commission_tab=${tab.key}`} key={tab.key}>{tab.label}</Link>)}
+        </nav>
+        {activeCommissionTab === "statements" ? <section className="data-section">
           <div className="section-title"><div><h3>Commission Statements</h3><p>Statements issued to this sales agency. A posted statement is paid; a draft statement is not yet paid.</p></div></div>
           {commissionPaymentsResult.data?.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Statement</th><th>Statement Date</th><th>Included Items</th><th>Payment Method</th><th>Reference</th><th>Amount</th><th>Payment Status</th></tr></thead><tbody>{commissionPaymentsResult.data.map((payment) => <tr key={payment.id}><td>{payment.commission_payment_number}</td><td>{payment.payment_date}</td><td>{commissionPaymentLineCounts.get(payment.id) ?? 0}</td><td>{labelize(payment.payment_type)}</td><td>{payment.payment_reference ?? "Not set"}</td><td>{currency.format(Number(payment.total_amount ?? payment.payment_amount ?? 0))}</td><td>{payment.status === "posted" ? "Paid" : labelize(payment.status)}</td></tr>)}</tbody></table></div> : <p className="fieldset-note">No commission statements have been created for this agency.</p>}
-        </section>
-
-        <section className="data-section">
-          <div className="section-title"><div><h3>Ready for Next Commission Statement</h3><p>Customer invoices that are paid in full, commission-ready, and not yet included in a commission statement.</p></div><StatusBadge tone="good" value={`${commissionReadyRows.length} ready`} /></div>
+        </section> : null}
+        {activeCommissionTab === "ready" ? <section className="data-section">
+          <div className="section-title"><div><h3>Ready for Commission</h3><p>Customer invoices that are paid in full, commission-ready, and not yet included in a commission statement.</p></div><StatusBadge tone="good" value={`${commissionReadyRows.length} ready`} /></div>
           <CommissionInvoiceTable rows={commissionReadyRows} showCustomerPayment={false} />
-        </section>
-
-        <section className="data-section">
+        </section> : null}
+        {activeCommissionTab === "awaiting-payment" ? <section className="data-section">
           <div className="section-title"><div><h3>Awaiting Customer Payment</h3><p>Commission-qualified invoices that are still unpaid or partially paid by the customer.</p></div><StatusBadge tone="warn" value={`${awaitingCustomerPaymentRows.length} awaiting payment`} /></div>
           <CommissionInvoiceTable rows={awaitingCustomerPaymentRows} showCustomerPayment />
-        </section>
+        </section> : null}
 
       </> : null}
       {activeTab === "shipment-statements" ? <section className="data-section">

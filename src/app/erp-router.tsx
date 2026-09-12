@@ -100,6 +100,7 @@ import type { Database } from "@/types/supabase";
 export type SearchParams = Promise<{
   advanced?: string;
   agency_tab?: string;
+  commission_tab?: string;
   admin_tab?: string;
   agency?: string;
   contact?: string;
@@ -11496,7 +11497,7 @@ export async function ErpRouter({
             saveAction={updateSalesRepAgencyAction}
           />
         ) : activeModule === "sales-rep-agency" ? (
-          <SalesRepAgencyPage agencyId={params.agency} removeSalesRepAction={removeSalesRepFromAgencyAction} removeTerritoryAction={removeTerritoryFromAgencyAction} selectedTab={params.agency_tab} />
+          <SalesRepAgencyPage agencyId={params.agency} removeSalesRepAction={removeSalesRepFromAgencyAction} removeTerritoryAction={removeTerritoryFromAgencyAction} selectedCommissionTab={params.commission_tab} selectedTab={params.agency_tab} />
         ) : activeModule === "sales-rep-agency-territory-add" ? (
           <AgencyTerritoryEditor agencyId={params.agency} error={params.error} saveAction={addTerritoriesToAgencyAction} />
         ) : activeModule === "sales-rep-edit" ? (

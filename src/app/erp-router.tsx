@@ -10441,12 +10441,14 @@ export async function ErpRouter({
   const productSearchResult =
     (activeModule === "products" && !selectedProductId) ||
     activeModule === "discontinued-products"
-      ? await searchProducts(
-          query,
-          productFilters,
-          requestedProductPage,
-          requestedProductPageSize,
-          productListMode,
+      ? await loadOptionalLookup("Products", () =>
+          searchProducts(
+            query,
+            productFilters,
+            requestedProductPage,
+            requestedProductPageSize,
+            productListMode,
+          ),
         )
       : { items: [], page: 1, pageSize: 10, totalCount: 0, totalPages: 1 };
   const productDetail = selectedProductId

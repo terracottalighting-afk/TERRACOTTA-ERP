@@ -11956,7 +11956,7 @@ export async function ErpRouter({
                           <div>
                             <Link
                               className="location-link"
-                              href={`/?module=view-location&customer=${dashboard.customer.id}&location=${location.id}`}
+                              href={`/?module=view-location&customer=${dashboard.customer.id}&location=${location.id}&location_tab=profile`}
                             >
                               {location.location_name}
                             </Link>

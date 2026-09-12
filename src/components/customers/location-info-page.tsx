@@ -204,6 +204,12 @@ export async function LocationInfoPage({
         </div>
         <div className="header-actions">
           <Link
+            className="secondary-action secondary-action--light"
+            href={`/?module=edit-location&customer=${customerId}&location=${locationId}`}
+          >
+            Edit
+          </Link>
+          <Link
             className="primary-action"
             href={`/?module=new-order&customer=${customerId}&location=${locationId}`}
           >

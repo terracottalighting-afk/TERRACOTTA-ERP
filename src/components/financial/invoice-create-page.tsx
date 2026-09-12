@@ -19,6 +19,13 @@ type InvoiceQueuePackingList = {
   payment_terms: string;
   ship_date: string | null;
   shipping_fee: number;
+  commission: {
+    agencyName: string | null;
+    defaultPercent: number | null;
+    eligible: boolean;
+    territoryLabel: string | null;
+    unavailableReason: string | null;
+  };
 };
 
 export async function InvoiceCreatePage({
@@ -93,6 +100,21 @@ export async function InvoiceCreatePage({
           shipDate={packingList.ship_date}
         />
         <fieldset>
+          <legend>Commission</legend>
+          {packingList.commission.eligible ? (
+            <p className="fieldset-note">
+              {packingList.commission.territoryLabel} maps to {" "}
+              <strong>{packingList.commission.agencyName}</strong>. The agency
+              is the commission payee; an assigned sales rep is recorded as a
+              territory note only.
+            </p>
+          ) : (
+            <p className="fieldset-note">
+              No commission will be created. {packingList.commission.unavailableReason}
+            </p>
+          )}
+        </fieldset>
+        <fieldset>
           <legend>Brand Invoice Allocation</legend>
           {multipleBrands ? (
             <p className="fieldset-note">
@@ -115,6 +137,8 @@ export async function InvoiceCreatePage({
                   <th>Freight</th>
                   <th>Drop-ship Fee</th>
                   <th>Tax</th>
+                  <th>Commission</th>
+                  <th>Rate</th>
                 </tr>
               </thead>
               <tbody>
@@ -165,6 +189,28 @@ export async function InvoiceCreatePage({
                         defaultValue={0}
                         min={0}
                         name={`tax_${brand.brand_id}`}
+                        step="0.01"
+                        type="number"
+                      />
+                    </td>
+                    <td>
+                      <label className="inline-checkbox">
+                        <input
+                          defaultChecked={packingList.commission.eligible}
+                          disabled={!packingList.commission.eligible}
+                          name={`commission_payable_${brand.brand_id}`}
+                          type="checkbox"
+                        />
+                        Pay commission
+                      </label>
+                    </td>
+                    <td>
+                      <input
+                        defaultValue={packingList.commission.defaultPercent ?? 0}
+                        disabled={!packingList.commission.eligible}
+                        max={100}
+                        min={0}
+                        name={`commission_rate_${brand.brand_id}`}
                         step="0.01"
                         type="number"
                       />

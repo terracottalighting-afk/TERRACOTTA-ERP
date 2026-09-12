@@ -171,6 +171,7 @@ export type SearchParams = Promise<{
   invoice_freight_allocations?: string;
   invoice_dropship_allocations?: string;
   invoice_tax_allocations?: string;
+  invoice_commission_overrides?: string;
   financial_tab?: string;
   rga?: string;
   rga_tab?: string;
@@ -3674,6 +3675,34 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
     );
   }
 
+  let commissionOverrides: Record<
+    string,
+    { payable: boolean; percent: number | null }
+  >;
+  try {
+    const parsed = JSON.parse(textValue(formData, "commission_overrides") || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Commission overrides must be an object.");
+    }
+    commissionOverrides = Object.fromEntries(
+      Object.entries(parsed).map(([brandId, value]) => {
+        const override = value as { payable?: unknown; percent?: unknown };
+        const percent =
+          override.percent === null || override.percent === undefined
+            ? null
+            : Number(override.percent);
+        if (percent !== null && (!Number.isFinite(percent) || percent < 0 || percent > 100)) {
+          throw new Error("Commission rates must be between 0 and 100 percent.");
+        }
+        return [brandId, { payable: override.payable === true, percent }];
+      }),
+    );
+  } catch (commissionError) {
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent(commissionError instanceof Error ? commissionError.message : "Commission settings are invalid.")}`,
+    );
+  }
+
   const { data, error } = await createSupabaseAdminClient().rpc(
     "create_invoices_from_packing_list_with_terms",
     {
@@ -3685,6 +3714,7 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
       p_payment_terms: paymentTerms,
       p_payment_days: paymentDays,
       p_customer_freight_charge: customerFreightCharge,
+      p_commission_overrides: commissionOverrides!,
     },
   );
   if (error)
@@ -4159,6 +4189,29 @@ async function prepareInvoiceConfirmationAction(formData: FormData) {
       `${fallbackUrl}&error=${encodeURIComponent("Manual brand freight allocations must equal the customer freight charge.")}`,
     );
   }
+  const commissionOverrides = Object.fromEntries(
+    brandIds.map((brandId) => {
+      const percent = Number(textValue(formData, `commission_rate_${brandId}`));
+      return [
+        brandId,
+        {
+          payable: formData.get(`commission_payable_${brandId}`) === "on",
+          percent: Number.isFinite(percent) ? percent : null,
+        },
+      ];
+    }),
+  );
+  if (
+    Object.values(commissionOverrides).some(
+      (override) =>
+        override.percent !== null &&
+        (override.percent < 0 || override.percent > 100),
+    )
+  ) {
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent("Commission rates must be between 0 and 100 percent.")}`,
+    );
+  }
 
   const params = new URLSearchParams({
     module: "invoice-confirm",
@@ -4170,6 +4223,7 @@ async function prepareInvoiceConfirmationAction(formData: FormData) {
     invoice_freight_allocations: JSON.stringify(freightAllocations),
     invoice_dropship_allocations: JSON.stringify(dropshipAllocations),
     invoice_tax_allocations: JSON.stringify(taxAllocations),
+    invoice_commission_overrides: JSON.stringify(commissionOverrides),
   });
   redirect(`/?${params.toString()}`);
 }
@@ -9916,7 +9970,7 @@ async function getInvoiceQueuePackingLists() {
   const { data: packingLists, error: packingListsError } = await supabase
     .from("packing_list")
     .select(
-      "id, packing_list_number, customer_account_id, customer_po_number_snapshot, sales_order_number_snapshot, status, invoice_generation_status_snapshot, shipping_fee, allocated_freight_cost, dropship_fee_amount, ship_date, created_at",
+      "id, packing_list_number, customer_account_id, customer_po_number_snapshot, sales_order_id, sales_order_number_snapshot, status, invoice_generation_status_snapshot, shipping_fee, allocated_freight_cost, dropship_fee_amount, ship_date, created_at",
     )
     .eq("invoice_required", true)
     .eq("invoice_generation_status_snapshot", "not_invoiced")
@@ -9934,7 +9988,10 @@ async function getInvoiceQueuePackingLists() {
   const packingListIds = (packingLists ?? []).map(
     (packingList) => packingList.id,
   );
-  const [customersResult, linesResult, billingProfilesResult] =
+  const orderIds = [
+    ...new Set((packingLists ?? []).map((packingList) => packingList.sales_order_id)),
+  ];
+  const [customersResult, linesResult, billingProfilesResult, ordersResult] =
     await Promise.all([
       customerIds.length
         ? supabase
@@ -9957,12 +10014,24 @@ async function getInvoiceQueuePackingLists() {
             .in("customer_account_id", customerIds)
             .eq("is_active", true)
         : Promise.resolve({ data: [], error: null }),
+      orderIds.length
+        ? supabase
+            .from("sales_order")
+            .select("id, order_type, territory_id_snapshot")
+            .in("id", orderIds)
+        : Promise.resolve({ data: [], error: null }),
     ]);
-  if (customersResult.error || linesResult.error || billingProfilesResult.error)
+  if (
+    customersResult.error ||
+    linesResult.error ||
+    billingProfilesResult.error ||
+    ordersResult.error
+  )
     throw new Error(
       customersResult.error?.message ??
         linesResult.error?.message ??
         billingProfilesResult.error?.message ??
+        ordersResult.error?.message ??
         "Unable to load invoice work.",
     );
 
@@ -9978,6 +10047,80 @@ async function getInvoiceQueuePackingLists() {
       profile,
     ]),
   );
+  const orderById = new Map(
+    (ordersResult.data ?? []).map((order) => [order.id, order]),
+  );
+  const territoryIds = [
+    ...new Set(
+      (ordersResult.data ?? [])
+        .map((order) => order.territory_id_snapshot)
+        .filter((territoryId): territoryId is string => Boolean(territoryId)),
+    ),
+  ];
+  const [territoriesResult, territoryAssignmentsResult] = await Promise.all([
+    territoryIds.length
+      ? supabase
+          .from("territory")
+          .select("id, territory_code, name")
+          .in("id", territoryIds)
+      : Promise.resolve({ data: [], error: null }),
+    territoryIds.length
+      ? createSupabaseUntypedAdminClient()
+          .from("territory_assignment")
+          .select("territory_id, sales_rep_agency_id")
+          .in("territory_id", territoryIds)
+          .eq("status", "active")
+          .is("end_date", null)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (territoriesResult.error || territoryAssignmentsResult.error) {
+    throw new Error(
+      territoriesResult.error?.message ??
+        territoryAssignmentsResult.error?.message ??
+        "Unable to load territory commission assignments.",
+    );
+  }
+  const agencyIds = [
+    ...new Set(
+      (territoryAssignmentsResult.data ?? []).map(
+        (assignment) => assignment.sales_rep_agency_id,
+      ),
+    ),
+  ];
+  const { data: agencies, error: agenciesError } = agencyIds.length
+    ? await createSupabaseUntypedAdminClient()
+        .from("sales_rep_agency")
+        .select("id, name, commission_default_percent, status")
+        .in("id", agencyIds)
+        .eq("status", "active")
+    : { data: [], error: null };
+  if (agenciesError) throw new Error(agenciesError.message);
+  const territoryById = new Map(
+    (territoriesResult.data ?? []).map((territory) => [territory.id, territory]),
+  );
+  const assignmentsByTerritory = new Map<string, string[]>();
+  for (const assignment of territoryAssignmentsResult.data ?? []) {
+    const assigned = assignmentsByTerritory.get(assignment.territory_id) ?? [];
+    assigned.push(assignment.sales_rep_agency_id);
+    assignmentsByTerritory.set(assignment.territory_id, assigned);
+  }
+  const agencyById = new Map((agencies ?? []).map((agency) => [agency.id, agency]));
+  const commissionForOrder = (salesOrderId: string) => {
+    const order = orderById.get(salesOrderId);
+    if (order?.order_type === "rga_replacement") {
+      return { agencyName: null, defaultPercent: null, eligible: false, territoryLabel: null, unavailableReason: "RGA replacement invoices do not earn commission." };
+    }
+    if (!order?.territory_id_snapshot) {
+      return { agencyName: null, defaultPercent: null, eligible: false, territoryLabel: null, unavailableReason: "No territory is assigned to the original order." };
+    }
+    const territory = territoryById.get(order.territory_id_snapshot);
+    const assignedAgencyIds = [...new Set(assignmentsByTerritory.get(order.territory_id_snapshot) ?? [])].filter((agencyId) => agencyById.has(agencyId));
+    if (assignedAgencyIds.length !== 1) {
+      return { agencyName: null, defaultPercent: null, eligible: false, territoryLabel: territory ? `${territory.territory_code} - ${territory.name}` : "Territory assigned", unavailableReason: assignedAgencyIds.length ? "More than one active agency is assigned to this territory." : "No active sales agency is assigned to this territory." };
+    }
+    const agency = agencyById.get(assignedAgencyIds[0])!;
+    return { agencyName: agency.name, defaultPercent: Number(agency.commission_default_percent ?? 0), eligible: true, territoryLabel: territory ? `${territory.territory_code} - ${territory.name}` : "Territory assigned", unavailableReason: null };
+  };
   const brandSummariesByPackingList = new Map<string, InvoiceBrandSummary[]>();
   for (const line of linesResult.data ?? []) {
     const summaries =
@@ -10006,6 +10149,7 @@ async function getInvoiceQueuePackingLists() {
       billingProfilesByCustomerId.get(packingList.customer_account_id)
         ?.payment_terms ?? "Prepaid / No Credit",
     brandSummaries: brandSummariesByPackingList.get(packingList.id) ?? [],
+    commission: commissionForOrder(packingList.sales_order_id),
   }));
 }
 
@@ -11260,6 +11404,7 @@ export async function ErpRouter({
         ) : activeModule === "invoice-confirm" ? (
           <InvoiceConfirmationPage
             customerFreightCharge={params.invoice_customer_freight}
+            commissionOverrides={params.invoice_commission_overrides}
             dropshipAllocations={params.invoice_dropship_allocations}
             freightAllocations={params.invoice_freight_allocations}
             invoiceDate={params.invoice_date}

@@ -4,6 +4,7 @@ import { Fragment } from "react";
 import { dateLabel, money } from "@/lib/formatters";
 
 type InvoiceAllocationMap = Record<string, number>;
+type CommissionOverride = { payable: boolean; percent: number | null };
 
 type InvoiceQueuePackingList = {
   brandSummaries: {
@@ -16,10 +17,18 @@ type InvoiceQueuePackingList = {
   id: string;
   packing_list_number: string;
   ship_date: string | null;
+  commission: {
+    agencyName: string | null;
+    defaultPercent: number | null;
+    eligible: boolean;
+    territoryLabel: string | null;
+    unavailableReason: string | null;
+  };
 };
 
 export async function InvoiceConfirmationPage({
   customerFreightCharge,
+  commissionOverrides: rawCommissionOverrides,
   dropshipAllocations: rawDropshipAllocations,
   freightAllocations: rawFreightAllocations,
   invoiceDate,
@@ -33,6 +42,7 @@ export async function InvoiceConfirmationPage({
   taxAllocations: rawTaxAllocations,
 }: {
   customerFreightCharge?: string;
+  commissionOverrides?: string;
   dropshipAllocations?: string;
   freightAllocations?: string;
   invoiceDate?: string;
@@ -58,6 +68,24 @@ export async function InvoiceConfirmationPage({
   const freightAllocations = parseInvoiceAllocations(rawFreightAllocations);
   const dropshipAllocations = parseInvoiceAllocations(rawDropshipAllocations);
   const taxAllocations = parseInvoiceAllocations(rawTaxAllocations);
+  let commissionOverrides: Record<string, CommissionOverride> | null = null;
+  try {
+    const parsed = JSON.parse(rawCommissionOverrides || "{}");
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      commissionOverrides = Object.fromEntries(
+        Object.entries(parsed).map(([brandId, value]) => {
+          const override = value as { payable?: unknown; percent?: unknown };
+          const percent =
+            override.percent === null || override.percent === undefined
+              ? null
+              : Number(override.percent);
+          return [brandId, { payable: override.payable === true, percent }];
+        }),
+      );
+    }
+  } catch {
+    commissionOverrides = null;
+  }
   const setupUrl = `/?module=invoice-create&packing_list=${packingListId}`;
   if (
     !packingList ||
@@ -67,7 +95,8 @@ export async function InvoiceConfirmationPage({
     freightCharge < 0 ||
     !freightAllocations ||
     !dropshipAllocations ||
-    !taxAllocations
+    !taxAllocations ||
+    !commissionOverrides
   ) {
     return (
       <section className="dashboard-panel">
@@ -137,8 +166,9 @@ export async function InvoiceConfirmationPage({
                 <th>Shipped Product Total</th>
                 <th>Freight</th>
                 <th>Drop-ship Fee</th>
-                <th>Tax</th>
-                <th>Invoice Total</th>
+              <th>Tax</th>
+              <th>Commission</th>
+              <th>Invoice Total</th>
               </tr>
             </thead>
             <tbody>
@@ -148,6 +178,9 @@ export async function InvoiceConfirmationPage({
                   dropshipAllocations[brand.brand_id] ?? 0,
                 );
                 const tax = Number(taxAllocations[brand.brand_id] ?? 0);
+                const commission = commissionOverrides[brand.brand_id];
+                const paysCommission =
+                  packingList.commission.eligible && commission?.payable;
                 return (
                   <tr key={brand.brand_id}>
                     <td>{brand.brand_name}</td>
@@ -155,6 +188,11 @@ export async function InvoiceConfirmationPage({
                     <td>{money(freight)}</td>
                     <td>{money(dropship)}</td>
                     <td>{money(tax)}</td>
+                    <td>
+                      {paysCommission
+                        ? `${packingList.commission.agencyName} at ${commission.percent ?? packingList.commission.defaultPercent ?? 0}%`
+                        : "No commission"}
+                    </td>
                     <td>
                       {money(brand.subtotal_amount + freight + dropship + tax)}
                     </td>
@@ -182,6 +220,11 @@ export async function InvoiceConfirmationPage({
           name="customer_freight_charge"
           type="hidden"
           value={freightCharge}
+        />
+        <input
+          name="commission_overrides"
+          type="hidden"
+          value={JSON.stringify(commissionOverrides)}
         />
         {packingList.brandSummaries.map((brand) => (
           <Fragment key={brand.brand_id}>

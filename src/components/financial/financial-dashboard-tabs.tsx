@@ -85,15 +85,29 @@ type FinancialCommissionPaymentLine = {
   commission_payment_id: string;
 };
 
+type FinancialCreditMemo = {
+  amount_applied: number | null;
+  amount_remaining: number | null;
+  brand_name_snapshot: string;
+  credit_memo_number: string;
+  customer_name_snapshot: string;
+  id: string;
+  issue_date: string;
+  status: string;
+  total_credit_amount: number | null;
+};
+
 export async function FinancialDashboardTabs({
   financialFilters,
   financialCommissionTab,
+  financialCreditMemoTab,
   financialSection,
   financialTab,
   packingLists,
 }: {
   financialFilters: FinancialInvoiceFilters;
   financialCommissionTab?: string;
+  financialCreditMemoTab?: string;
   financialSection?: string;
   financialTab?: string;
   packingLists: FinancialDashboardPackingList[];
@@ -106,6 +120,7 @@ export async function FinancialDashboardTabs({
     { data: paymentApplications, error: paymentApplicationsError },
     { data: commissionPayments, error: commissionPaymentsError },
     { data: commissionPaymentLines, error: commissionPaymentLinesError },
+    { data: creditMemos, error: creditMemosError },
   ] = await Promise.all([
     supabase
       .from("customer_invoice")
@@ -135,6 +150,11 @@ export async function FinancialDashboardTabs({
     supabase
       .from("commission_payment_line")
       .select("commission_payment_id, amount_paid"),
+    supabase
+      .from("credit_memo")
+      .select("id, credit_memo_number, customer_name_snapshot, brand_name_snapshot, issue_date, status, total_credit_amount, amount_applied, amount_remaining")
+      .in("status", ["posted", "partially_applied", "fully_applied"])
+      .order("issue_date", { ascending: false }),
   ]);
   if (invoicesError) throw new Error(invoicesError.message);
   if (paymentsError) throw new Error(paymentsError.message);
@@ -143,6 +163,7 @@ export async function FinancialDashboardTabs({
   if (commissionPaymentsError) throw new Error(commissionPaymentsError.message);
   if (commissionPaymentLinesError)
     throw new Error(commissionPaymentLinesError.message);
+  if (creditMemosError) throw new Error(creditMemosError.message);
 
   const invoiceIds = (invoices ?? []).map((invoice) => invoice.id);
   const { data: invoiceLines, error: invoiceLinesError } = invoiceIds.length
@@ -190,6 +211,10 @@ export async function FinancialDashboardTabs({
   }
   const paidCommissionStatements = ((commissionPayments ?? []) as FinancialCommissionPayment[]).filter((statement) => statement.status === "posted");
   const draftCommissionStatements = ((commissionPayments ?? []) as FinancialCommissionPayment[]).filter((statement) => statement.status === "draft");
+  const availableCreditMemos = (creditMemos ?? []) as FinancialCreditMemo[];
+  const appliedCreditMemos = availableCreditMemos.filter((memo) => Number(memo.amount_remaining ?? 0) <= 0);
+  const partiallyAppliedCreditMemos = availableCreditMemos.filter((memo) => Number(memo.amount_applied ?? 0) > 0 && Number(memo.amount_remaining ?? 0) > 0);
+  const outstandingCreditMemos = availableCreditMemos.filter((memo) => Number(memo.amount_applied ?? 0) <= 0 && Number(memo.amount_remaining ?? 0) > 0);
   const allInvoices = (invoices ?? []) as FinancialInvoice[];
   const invoiceSkusById = new Map<string, string[]>();
   for (const line of invoiceLines ?? []) {
@@ -318,7 +343,7 @@ export async function FinancialDashboardTabs({
   const selectedTab = tabs.some((tab) => tab.key === financialTab)
     ? financialTab!
     : "uninvoiced";
-  const selectedSection = financialSection === "commission" ? "commission" : "invoices";
+  const selectedSection = financialSection === "commission" || financialSection === "credit-memo" ? financialSection : "invoices";
   const commissionTabs = [
     { key: "paid", label: "Paid Commission", statements: paidCommissionStatements },
     { key: "draft", label: "Draft Commission", statements: draftCommissionStatements },
@@ -326,6 +351,14 @@ export async function FinancialDashboardTabs({
   const selectedCommissionTab = commissionTabs.some((tab) => tab.key === financialCommissionTab)
     ? financialCommissionTab!
     : "paid";
+  const creditMemoTabs = [
+    { key: "applied", label: "Applied Credit Memo", memos: appliedCreditMemos },
+    { key: "partially-applied", label: "Partially Applied", memos: partiallyAppliedCreditMemos },
+    { key: "outstanding", label: "Ready to be Used", memos: outstandingCreditMemos },
+  ];
+  const selectedCreditMemoTab = creditMemoTabs.some((tab) => tab.key === financialCreditMemoTab)
+    ? financialCreditMemoTab!
+    : "outstanding";
 
   return (
     <>
@@ -337,6 +370,10 @@ export async function FinancialDashboardTabs({
         <Link className={`metric agency-customer-type-tab${selectedSection === "commission" ? " agency-customer-type-tab--active" : ""}`} href="/?module=invoices&financial_section=commission&financial_commission_tab=paid">
           <span>Commission</span>
           <strong>{numberFormatter.format(paidCommissionStatements.length + draftCommissionStatements.length)}</strong>
+        </Link>
+        <Link className={`metric agency-customer-type-tab${selectedSection === "credit-memo" ? " agency-customer-type-tab--active" : ""}`} href="/?module=invoices&financial_section=credit-memo&financial_credit_memo_tab=outstanding">
+          <span>Credit Memo</span>
+          <strong>{numberFormatter.format(availableCreditMemos.length)}</strong>
         </Link>
       </div>
       {selectedSection === "invoices" ? <>
@@ -538,6 +575,15 @@ export async function FinancialDashboardTabs({
         <section className="record-section">
           <h3>{selectedCommissionTab === "paid" ? "Paid Commission" : "Draft Commission"}</h3>
           {commissionTabs.find((tab) => tab.key === selectedCommissionTab)?.statements.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Commission Statement</th><th>Sales Agency</th><th>Statement Date</th><th>Included Invoices</th>{selectedCommissionTab === "paid" ? <><th>Payment Method</th><th>Reference</th></> : null}<th>Commission Total</th><th>Status</th>{selectedCommissionTab === "draft" ? <th>Action</th> : null}</tr></thead><tbody>{commissionTabs.find((tab) => tab.key === selectedCommissionTab)!.statements.map((statement) => <tr key={statement.id}><td><Link className="table-link" href={`/?module=commission-statement&commission_payment=${statement.id}`}>{statement.commission_payment_number}</Link></td><td><Link className="table-link" href={`/?module=sales-rep-agency&agency=${statement.sales_rep_agency_id}`}>{commissionAgencyNames.get(statement.sales_rep_agency_id) ?? "Unknown agency"}</Link></td><td>{dateLabel(statement.payment_date)}</td><td>{numberFormatter.format(commissionItemCountsByPaymentId.get(statement.id) ?? 0)}</td>{selectedCommissionTab === "paid" ? <><td>{label(statement.payment_type)}</td><td>{statement.payment_reference ?? "Not set"}</td></> : null}<td>{money(commissionAmountsByPaymentId.get(statement.id) ?? 0)}</td><td><StatusBadge tone={statement.status === "posted" ? "good" : "primary"} value={statement.status === "posted" ? "Paid" : "Draft"} /></td>{selectedCommissionTab === "draft" ? <td><Link className="text-action" href={`/?module=commission-payment&commission_payment=${statement.id}`}>Make Payment</Link></td> : null}</tr>)}</tbody></table></div> : <div className="empty-state">{selectedCommissionTab === "paid" ? "No paid commission statements have been recorded." : "No draft commission statements are awaiting payment."}</div>}
+        </section>
+      </> : null}
+      {selectedSection === "credit-memo" ? <>
+        <nav className="tab-nav financial-tab-nav" aria-label="Credit memo lists">
+          {creditMemoTabs.map((tab) => <Link aria-current={tab.key === selectedCreditMemoTab ? "page" : undefined} href={`/?module=invoices&financial_section=credit-memo&financial_credit_memo_tab=${tab.key}`} key={tab.key}>{tab.label} ({numberFormatter.format(tab.memos.length)})</Link>)}
+        </nav>
+        <section className="record-section">
+          <h3>{creditMemoTabs.find((tab) => tab.key === selectedCreditMemoTab)?.label}</h3>
+          {creditMemoTabs.find((tab) => tab.key === selectedCreditMemoTab)?.memos.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Credit Memo</th><th>Customer</th><th>Brand</th><th>Issue Date</th><th>Credit Total</th><th>Applied</th><th>Remaining</th><th>Status</th></tr></thead><tbody>{creditMemoTabs.find((tab) => tab.key === selectedCreditMemoTab)!.memos.map((memo) => <tr key={memo.id}><td>{memo.credit_memo_number}</td><td>{memo.customer_name_snapshot}</td><td>{memo.brand_name_snapshot}</td><td>{dateLabel(memo.issue_date)}</td><td>{money(memo.total_credit_amount)}</td><td>{money(memo.amount_applied)}</td><td>{money(memo.amount_remaining)}</td><td><StatusBadge tone={Number(memo.amount_remaining ?? 0) > 0 ? "primary" : "good"} value={Number(memo.amount_remaining ?? 0) > 0 ? Number(memo.amount_applied ?? 0) > 0 ? "Partially Applied" : "Ready to be Used" : "Applied"} /></td></tr>)}</tbody></table></div> : <div className="empty-state">{selectedCreditMemoTab === "applied" ? "No fully applied credit memos have been recorded." : selectedCreditMemoTab === "partially-applied" ? "No partially applied credit memos have been recorded." : "No credit memos are ready to be used."}</div>}
         </section>
       </> : null}
     </>

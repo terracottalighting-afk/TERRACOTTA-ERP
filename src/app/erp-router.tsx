@@ -182,6 +182,7 @@ export type SearchParams = Promise<{
   financial_tab?: string;
   financial_section?: string;
   financial_commission_tab?: string;
+  financial_credit_memo_tab?: string;
   rga?: string;
   rga_tab?: string;
   rga_order?: string;
@@ -11858,6 +11859,7 @@ export async function ErpRouter({
             financialTab={params.financial_tab}
             financialSection={params.financial_section}
             financialCommissionTab={params.financial_commission_tab}
+            financialCreditMemoTab={params.financial_credit_memo_tab}
             financialFilters={{
               page: params.financial_page,
               pageSize: params.financial_page_size,

@@ -20,6 +20,7 @@ export async function InvoiceQueuePage({
   error,
   financialFilters,
   financialCommissionTab,
+  financialCreditMemoTab,
   financialSection,
   financialTab,
   loadPackingLists,
@@ -28,6 +29,7 @@ export async function InvoiceQueuePage({
   error?: string;
   financialFilters: FinancialInvoiceFilters;
   financialCommissionTab?: string;
+  financialCreditMemoTab?: string;
   financialSection?: string;
   financialTab?: string;
   loadPackingLists: () => Promise<FinancialDashboardPackingList[]>;
@@ -56,6 +58,7 @@ export async function InvoiceQueuePage({
       <FinancialDashboardTabs
         financialFilters={financialFilters}
         financialCommissionTab={financialCommissionTab}
+        financialCreditMemoTab={financialCreditMemoTab}
         financialSection={financialSection}
         financialTab={financialTab}
         packingLists={packingLists}

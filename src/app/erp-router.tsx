@@ -539,6 +539,15 @@ type RepOption = SelectOption & {
   agency_name: string;
 };
 
+async function loadOptionalLookup<T>(label: string, load: () => Promise<T>) {
+  try {
+    return await load();
+  } catch (error) {
+    console.warn(`${label} could not be loaded:`, error instanceof Error ? error.message : error);
+    return [] as unknown as T;
+  }
+}
+
 type ProductSearchFilters = {
   brandId?: string;
   categoryId?: string;
@@ -10468,18 +10477,18 @@ export async function ErpRouter({
     warehouseOptions,
     warehouseLocationOptions,
   ] = await Promise.all([
-    getCustomerOptions("customer_account_type"),
-    getCustomerOptions("customer_business_type"),
-    getCustomerStatusOptions(),
-    getTerritoryOptions(),
-    getSalesRepOptions(),
-    getProductBrandOptions(),
-    getProductStyleOptions(),
-    getProductCategoryOptions(),
-    getFinishOptions(),
-    getMaterialOptions(),
-    getWarehouseOptions(),
-    getWarehouseLocationOptions(),
+    loadOptionalLookup("Customer account types", () => getCustomerOptions("customer_account_type")),
+    loadOptionalLookup("Customer business types", () => getCustomerOptions("customer_business_type")),
+    loadOptionalLookup("Customer statuses", getCustomerStatusOptions),
+    loadOptionalLookup("Territories", getTerritoryOptions),
+    loadOptionalLookup("Sales reps", getSalesRepOptions),
+    loadOptionalLookup("Product brands", getProductBrandOptions),
+    loadOptionalLookup("Product styles", getProductStyleOptions),
+    loadOptionalLookup("Product categories", getProductCategoryOptions),
+    loadOptionalLookup("Finishes", getFinishOptions),
+    loadOptionalLookup("Materials", getMaterialOptions),
+    loadOptionalLookup("Warehouses", getWarehouseOptions),
+    loadOptionalLookup("Warehouse locations", getWarehouseLocationOptions),
   ]);
   const accountTypes = toLookup(accountTypeOptions);
   const businessTypes = toLookup(businessTypeOptions);

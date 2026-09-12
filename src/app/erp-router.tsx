@@ -35,6 +35,7 @@ import { InvoiceQueuePage } from "@/components/financial/invoice-queue-page";
 import { PaymentEntryPage } from "@/components/financial/payment-entry-page";
 import { PaymentDetailPage } from "@/components/financial/payment-detail-page";
 import { CommissionPaymentPage } from "@/components/financial/commission-payment-page";
+import { CommissionStatementPage } from "@/components/financial/commission-statement-page";
 import { ProductEditPlaceholder } from "@/components/products/product-edit-placeholder";
 import { ProductListOverview } from "@/components/products/product-list-overview";
 import { ProductPartsListOverview } from "@/components/products/product-parts-list-overview";
@@ -11115,6 +11116,7 @@ export async function ErpRouter({
     "sales-rep-agency": "Sales Rep Agency",
     "commission-statement-confirm": "Commission Statement",
     "commission-payment": "Commission Payment",
+    "commission-statement": "Commission Statement",
     "sales-rep-agency-edit": "Sales Rep Agency",
     "sales-rep-agency-territory-add": "Add Territory",
     "sales-rep-agencies": "Sales Rep Agencies",
@@ -11563,6 +11565,8 @@ export async function ErpRouter({
           <CommissionStatementConfirmationPage agencyId={params.agency} confirmAction={createCommissionStatementAction} error={params.error} invoiceIds={params.commission_invoices} />
         ) : activeModule === "commission-payment" ? (
           <CommissionPaymentPage error={params.error} paymentId={params.commission_payment} saveAction={postCommissionStatementPaymentAction} />
+        ) : activeModule === "commission-statement" ? (
+          <CommissionStatementPage paymentId={params.commission_payment} />
         ) : activeModule === "sales-rep-agency-territory-add" ? (
           <AgencyTerritoryEditor agencyId={params.agency} error={params.error} saveAction={addTerritoriesToAgencyAction} />
         ) : activeModule === "sales-rep-edit" ? (

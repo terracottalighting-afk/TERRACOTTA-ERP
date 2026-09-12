@@ -93,7 +93,7 @@ export async function OrderAcknowledgementPage({
             <span>Bill To</span>
             {addressSnapshotLines(order.bill_to_snapshot_json, order.customer_name_snapshot).map(
               (line, index) => (
-                <strong key={`${line}-${index}`}>{line}</strong>
+                <span key={`${line}-${index}`}>{line}</span>
               ),
             )}
           </div>
@@ -103,7 +103,7 @@ export async function OrderAcknowledgementPage({
               order.ship_to_snapshot_json,
               order.ship_to_display_name_snapshot,
             ).map((line, index) => (
-              <strong key={`${line}-${index}`}>{line}</strong>
+              <span key={`${line}-${index}`}>{line}</span>
             ))}
           </div>
         </section>

@@ -7641,7 +7641,11 @@ async function selectedLocationTerritory(territoryId: string | null) {
 
 async function getLocationCoverageOptions(territoryId: string | null) {
   if (!territoryId) {
-    return { agencies: [] as LocationCoverageOption[], reps: [] as (LocationCoverageOption & { agencyId: string })[] };
+    return {
+      agencies: [] as LocationCoverageOption[],
+      reps: [] as (LocationCoverageOption & { agencyId: string })[],
+      territoryRepIds: [] as string[],
+    };
   }
 
   const supabase = createSupabaseUntypedAdminClient();
@@ -7656,10 +7660,14 @@ async function getLocationCoverageOptions(territoryId: string | null) {
 
   const agencyIds = [...new Set((territoryAssignments ?? []).map((assignment) => assignment.sales_rep_agency_id))];
   if (!agencyIds.length) {
-    return { agencies: [] as LocationCoverageOption[], reps: [] as (LocationCoverageOption & { agencyId: string })[] };
+    return {
+      agencies: [] as LocationCoverageOption[],
+      reps: [] as (LocationCoverageOption & { agencyId: string })[],
+      territoryRepIds: [] as string[],
+    };
   }
 
-  const [agenciesResult, repTerritoryAssignmentsResult] = await Promise.all([
+  const [agenciesResult, repTerritoryAssignmentsResult, repsResult] = await Promise.all([
     supabase
       .from("sales_rep_agency")
       .select("id, name")
@@ -7672,31 +7680,26 @@ async function getLocationCoverageOptions(territoryId: string | null) {
       .eq("territory_id", territoryId)
       .eq("status", "active")
       .is("end_date", null),
+    supabase
+      .from("sales_rep")
+      .select("id, name, sales_rep_agency_id")
+      .in("sales_rep_agency_id", agencyIds)
+      .eq("status", "active")
+      .order("name", { ascending: true }),
   ]);
 
   if (agenciesResult.error) throw new Error(agenciesResult.error.message);
   if (repTerritoryAssignmentsResult.error) throw new Error(repTerritoryAssignmentsResult.error.message);
-
-  const repIds = [...new Set((repTerritoryAssignmentsResult.data ?? []).map((assignment) => assignment.sales_rep_id))];
-  const { data: reps, error: repsError } = repIds.length
-    ? await supabase
-        .from("sales_rep")
-        .select("id, name, sales_rep_agency_id")
-        .in("id", repIds)
-        .in("sales_rep_agency_id", agencyIds)
-        .eq("status", "active")
-        .order("name", { ascending: true })
-    : { data: [], error: null };
-
-  if (repsError) throw new Error(repsError.message);
+  if (repsResult.error) throw new Error(repsResult.error.message);
 
   return {
     agencies: (agenciesResult.data ?? []) as LocationCoverageOption[],
-    reps: (reps ?? []).map((rep) => ({
+    reps: (repsResult.data ?? []).map((rep) => ({
       agencyId: rep.sales_rep_agency_id,
       id: rep.id,
       name: rep.name,
     })) as (LocationCoverageOption & { agencyId: string })[],
+    territoryRepIds: [...new Set((repTerritoryAssignmentsResult.data ?? []).map((assignment) => assignment.sales_rep_id))],
   };
 }
 
@@ -7730,14 +7733,17 @@ async function resolveLocationCoverageAssignment(
   }
 
   const agencyReps = options.reps.filter((rep) => rep.agencyId === agency.id);
+  const territoryAgencyReps = agencyReps.filter((rep) =>
+    options.territoryRepIds.includes(rep.id),
+  );
   const rep = requestedRepId
     ? agencyReps.find((candidate) => candidate.id === requestedRepId)
-    : agencyReps.length === 1
-      ? agencyReps[0]
+    : territoryAgencyReps.length === 1
+      ? territoryAgencyReps[0]
       : null;
 
   if (requestedRepId && !rep) {
-    throw new Error("The selected sales rep is not assigned to this sales agency and territory.");
+    throw new Error("The selected sales rep does not belong to this sales agency.");
   }
 
   return {

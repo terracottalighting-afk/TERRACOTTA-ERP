@@ -34,6 +34,7 @@ import { InvoiceDocumentPage } from "@/components/financial/invoice-document-pag
 import { InvoiceQueuePage } from "@/components/financial/invoice-queue-page";
 import { PaymentEntryPage } from "@/components/financial/payment-entry-page";
 import { PaymentDetailPage } from "@/components/financial/payment-detail-page";
+import { CommissionPaymentPage } from "@/components/financial/commission-payment-page";
 import { ProductEditPlaceholder } from "@/components/products/product-edit-placeholder";
 import { ProductListOverview } from "@/components/products/product-list-overview";
 import { ProductPartsListOverview } from "@/components/products/product-parts-list-overview";
@@ -103,6 +104,7 @@ export type SearchParams = Promise<{
   agency_tab?: string;
   commission_tab?: string;
   commission_invoices?: string;
+  commission_payment?: string;
   admin_tab?: string;
   agency?: string;
   contact?: string;
@@ -3882,6 +3884,26 @@ async function createCommissionStatementAction(formData: FormData) {
   const statement = Array.isArray(data) ? data[0] : data;
   const statementNumber = statement?.commission_payment_number ?? "Commission statement";
   redirect(`/?module=sales-rep-agency&agency=${agencyId}&agency_tab=commissions&commission_tab=statements&notice=${encodeURIComponent(`${statementNumber} created as a draft.`)}`);
+}
+
+async function postCommissionStatementPaymentAction(formData: FormData) {
+  "use server";
+
+  const paymentId = textValue(formData, "commission_payment_id");
+  const paymentDate = textValue(formData, "payment_date") || new Date().toISOString().slice(0, 10);
+  const paymentType = textValue(formData, "payment_type") || "ach";
+  const paymentReference = textValue(formData, "payment_reference") || null;
+  const fallbackUrl = `/?module=commission-payment&commission_payment=${paymentId}`;
+  if (!paymentId) redirect("/?module=invoices&financial_section=commission&financial_commission_tab=draft&error=The%20commission%20statement%20could%20not%20be%20identified.");
+
+  const { error } = await createSupabaseUntypedAdminClient().rpc("post_commission_statement_payment", {
+    p_commission_payment_id: paymentId,
+    p_payment_date: paymentDate,
+    p_payment_reference: paymentReference,
+    p_payment_type: paymentType,
+  });
+  if (error) redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
+  redirect("/?module=invoices&financial_section=commission&financial_commission_tab=paid&notice=Commission%20payment%20posted.");
 }
 
 async function recordInvoicePaymentAction(formData: FormData) {
@@ -11092,6 +11114,7 @@ export async function ErpRouter({
     "rga-solution": "RGA Solution",
     "sales-rep-agency": "Sales Rep Agency",
     "commission-statement-confirm": "Commission Statement",
+    "commission-payment": "Commission Payment",
     "sales-rep-agency-edit": "Sales Rep Agency",
     "sales-rep-agency-territory-add": "Add Territory",
     "sales-rep-agencies": "Sales Rep Agencies",
@@ -11538,6 +11561,8 @@ export async function ErpRouter({
           <SalesRepAgencyPage agencyId={params.agency} prepareCommissionStatementAction={prepareCommissionStatementAction} removeSalesRepAction={removeSalesRepFromAgencyAction} removeTerritoryAction={removeTerritoryFromAgencyAction} selectedCommissionTab={params.commission_tab} selectedTab={params.agency_tab} />
         ) : activeModule === "commission-statement-confirm" ? (
           <CommissionStatementConfirmationPage agencyId={params.agency} confirmAction={createCommissionStatementAction} error={params.error} invoiceIds={params.commission_invoices} />
+        ) : activeModule === "commission-payment" ? (
+          <CommissionPaymentPage error={params.error} paymentId={params.commission_payment} saveAction={postCommissionStatementPaymentAction} />
         ) : activeModule === "sales-rep-agency-territory-add" ? (
           <AgencyTerritoryEditor agencyId={params.agency} error={params.error} saveAction={addTerritoriesToAgencyAction} />
         ) : activeModule === "sales-rep-edit" ? (

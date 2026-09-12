@@ -42,7 +42,7 @@ type CommissionTab = "statements" | "ready" | "awaiting-payment";
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const labelize = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 
-export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, removeTerritoryAction, selectedCommissionTab, selectedTab }: { agencyId?: string; removeSalesRepAction: FormAction; removeTerritoryAction: FormAction; selectedCommissionTab?: string; selectedTab?: string }) {
+export async function SalesRepAgencyPage({ agencyId, prepareCommissionStatementAction, removeSalesRepAction, removeTerritoryAction, selectedCommissionTab, selectedTab }: { agencyId?: string; prepareCommissionStatementAction: FormAction; removeSalesRepAction: FormAction; removeTerritoryAction: FormAction; selectedCommissionTab?: string; selectedTab?: string }) {
   if (!agencyId) return <ModulePlaceholder moduleName="Sales Rep Agency" />;
 
   const supabase = createSupabaseUntypedAdminClient();
@@ -211,8 +211,10 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
   const awaitingCustomerPaymentRows = commissionRows.filter((row) => row.invoice && row.invoice.invoice_status !== "void" && row.invoice.payment_status !== "paid");
   const shipmentStatementRows = commissionRows.filter((row) => row.invoice?.invoice_status !== "void" && row.status !== "void");
   const commissionPaymentLineCounts = new Map<string, number>();
+  const commissionPaymentStatementAmounts = new Map<string, number>();
   for (const paymentLine of commissionPaymentLinesResult.data ?? []) {
     commissionPaymentLineCounts.set(paymentLine.commission_payment_id, (commissionPaymentLineCounts.get(paymentLine.commission_payment_id) ?? 0) + 1);
+    commissionPaymentStatementAmounts.set(paymentLine.commission_payment_id, (commissionPaymentStatementAmounts.get(paymentLine.commission_payment_id) ?? 0) + Number(paymentLine.amount_paid ?? 0));
   }
 
   return (
@@ -241,11 +243,14 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
         </nav>
         {activeCommissionTab === "statements" ? <section className="data-section">
           <div className="section-title"><div><h3>Commission Statements</h3><p>Statements issued to this sales agency. A posted statement is paid; a draft statement is not yet paid.</p></div></div>
-          {commissionPaymentsResult.data?.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Statement</th><th>Statement Date</th><th>Included Items</th><th>Payment Method</th><th>Reference</th><th>Amount</th><th>Payment Status</th></tr></thead><tbody>{commissionPaymentsResult.data.map((payment) => <tr key={payment.id}><td>{payment.commission_payment_number}</td><td>{payment.payment_date}</td><td>{commissionPaymentLineCounts.get(payment.id) ?? 0}</td><td>{labelize(payment.payment_type)}</td><td>{payment.payment_reference ?? "Not set"}</td><td>{currency.format(Number(payment.total_amount ?? payment.payment_amount ?? 0))}</td><td>{payment.status === "posted" ? "Paid" : labelize(payment.status)}</td></tr>)}</tbody></table></div> : <p className="fieldset-note">No commission statements have been created for this agency.</p>}
+          {commissionPaymentsResult.data?.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Statement</th><th>Statement Date</th><th>Included Items</th><th>Payment Method</th><th>Reference</th><th>Amount</th><th>Payment Status</th></tr></thead><tbody>{commissionPaymentsResult.data.map((payment) => <tr key={payment.id}><td>{payment.commission_payment_number}</td><td>{payment.payment_date}</td><td>{commissionPaymentLineCounts.get(payment.id) ?? 0}</td><td>{labelize(payment.payment_type)}</td><td>{payment.payment_reference ?? "Not set"}</td><td>{currency.format(commissionPaymentStatementAmounts.get(payment.id) ?? Number(payment.total_amount ?? payment.payment_amount ?? 0))}</td><td>{payment.status === "posted" ? "Paid" : labelize(payment.status)}</td></tr>)}</tbody></table></div> : <p className="fieldset-note">No commission statements have been created for this agency.</p>}
         </section> : null}
         {activeCommissionTab === "ready" ? <section className="data-section">
-          <div className="section-title"><div><h3>Ready for Commission</h3><p>Customer invoices that are paid in full, commission-ready, and not yet included in a commission statement.</p></div><Link className="small-action" href={`/?module=sales-rep-agency&agency=${agency.id}&agency_tab=commissions&commission_tab=statements`}>Create Commission Statement</Link></div>
-          <CommissionInvoiceTable presentation="ready" rows={commissionReadyRows} showCustomerPayment={false} />
+          <form action={prepareCommissionStatementAction}>
+            <input name="agency_id" type="hidden" value={agency.id} />
+            <div className="section-title"><div><h3>Ready for Commission</h3><p>Customer invoices that are paid in full, commission-ready, and not yet included in a commission statement.</p></div><button className="small-action" type="submit">Create Commission Statement</button></div>
+            <CommissionInvoiceTable presentation="ready" rows={commissionReadyRows} selectable showCustomerPayment={false} />
+          </form>
         </section> : null}
         {activeCommissionTab === "awaiting-payment" ? <section className="data-section">
           <div className="section-title"><div><h3>Awaiting Customer Payment</h3><p>Commission-qualified invoices that are still unpaid or partially paid by the customer.</p></div><StatusBadge tone="warn" value={`${awaitingCustomerPaymentRows.length} awaiting payment`} /></div>
@@ -274,9 +279,9 @@ type CommissionInvoiceRow = {
   territoryLabel: string;
 };
 
-function CommissionInvoiceTable({ presentation = "full", rows, showCustomerPayment }: { presentation?: "full" | "ready"; rows: CommissionInvoiceRow[]; showCustomerPayment: boolean }) {
+function CommissionInvoiceTable({ presentation = "full", rows, selectable = false, showCustomerPayment }: { presentation?: "full" | "ready"; rows: CommissionInvoiceRow[]; selectable?: boolean; showCustomerPayment: boolean }) {
   if (!rows.length) return <p className="fieldset-note">No invoices match this list.</p>;
 
   const isReadyTable = presentation === "ready";
-  return <div className="table-wrap"><table className="data-table"><thead><tr><th>Invoice</th>{isReadyTable ? <th>PO #</th> : null}<th>Customer</th><th>Invoice Date</th><th>Brand</th>{!isReadyTable ? <><th>Territory</th><th>Sales Rep Note</th></> : null}{showCustomerPayment ? <><th>Customer Payment</th><th>Balance Due</th></> : null}<th>Rate</th><th>Commission Base</th><th>Commission</th>{!isReadyTable ? <><th>Commission Status</th><th>Statement</th></> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.invoice?.id ?? `${row.territoryLabel}-${row.amount}`}><td>{row.invoice ? <Link className="table-link" href={`/?module=invoice-document&invoice=${row.invoice.id}`}>{row.invoice.invoice_number}</Link> : "Invoice not found"}</td>{isReadyTable ? <td>{row.purchaseOrder}</td> : null}<td>{row.invoice?.customer_name_snapshot ?? "Not set"}</td><td>{row.invoice?.invoice_date ?? "Not set"}</td><td>{row.invoice?.brand_name_snapshot ?? "Not set"}</td>{!isReadyTable ? <><td>{row.territoryLabel}</td><td>{row.repName ?? "No rep assigned"}</td></> : null}{showCustomerPayment ? <><td>{row.invoice ? labelize(row.invoice.payment_status) : "Not set"}</td><td>{currency.format(Number(row.invoice?.balance_due ?? 0))}</td></> : null}<td>{row.percent}%</td><td>{currency.format(row.base)}</td><td>{currency.format(row.amount)}</td>{!isReadyTable ? <><td>{labelize(row.status)}</td><td>{row.statements.length ? row.statements.map((statement) => `${statement.commission_payment_number} (${statement.status === "posted" ? "Paid" : labelize(statement.status)})`).join(", ") : "Not included"}</td></> : null}</tr>)}</tbody></table></div>;
+  return <div className="table-wrap"><table className="data-table"><thead><tr>{selectable ? <th aria-label="Select invoice" /> : null}<th>Invoice</th>{isReadyTable ? <th>PO #</th> : null}<th>Customer</th><th>Invoice Date</th><th>Brand</th>{!isReadyTable ? <><th>Territory</th><th>Sales Rep Note</th></> : null}{showCustomerPayment ? <><th>Customer Payment</th><th>Balance Due</th></> : null}<th>Rate</th><th>Commission Base</th><th>Commission</th>{!isReadyTable ? <><th>Commission Status</th><th>Statement</th></> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.invoice?.id ?? `${row.territoryLabel}-${row.amount}`}>{selectable ? <td><input aria-label={`Select ${row.invoice?.invoice_number ?? "invoice"}`} defaultChecked name="customer_invoice_ids" type="checkbox" value={row.invoice?.id ?? ""} /></td> : null}<td>{row.invoice ? <Link className="table-link" href={`/?module=invoice-document&invoice=${row.invoice.id}`}>{row.invoice.invoice_number}</Link> : "Invoice not found"}</td>{isReadyTable ? <td>{row.purchaseOrder}</td> : null}<td>{row.invoice?.customer_name_snapshot ?? "Not set"}</td><td>{row.invoice?.invoice_date ?? "Not set"}</td><td>{row.invoice?.brand_name_snapshot ?? "Not set"}</td>{!isReadyTable ? <><td>{row.territoryLabel}</td><td>{row.repName ?? "No rep assigned"}</td></> : null}{showCustomerPayment ? <><td>{row.invoice ? labelize(row.invoice.payment_status) : "Not set"}</td><td>{currency.format(Number(row.invoice?.balance_due ?? 0))}</td></> : null}<td>{row.percent}%</td><td>{currency.format(row.base)}</td><td>{currency.format(row.amount)}</td>{!isReadyTable ? <><td>{labelize(row.status)}</td><td>{row.statements.length ? row.statements.map((statement) => `${statement.commission_payment_number} (${statement.status === "posted" ? "Paid" : labelize(statement.status)})`).join(", ") : "Not included"}</td></> : null}</tr>)}</tbody></table></div>;
 }

@@ -21,6 +21,7 @@ import { EditSalesRepForm } from "@/components/customers/edit-sales-rep-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { SalesRepAgencyEditor } from "@/components/customers/sales-rep-agency-editor";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
+import { CommissionStatementConfirmationPage } from "@/components/customers/commission-statement-confirmation-page";
 import { SalesRepAgenciesDashboard } from "@/components/customers/sales-rep-agencies-dashboard";
 import { SalesRepEditor } from "@/components/customers/sales-rep-editor";
 import { SalesRepPage } from "@/components/customers/sales-rep-page";
@@ -101,6 +102,7 @@ export type SearchParams = Promise<{
   advanced?: string;
   agency_tab?: string;
   commission_tab?: string;
+  commission_invoices?: string;
   admin_tab?: string;
   agency?: string;
   contact?: string;
@@ -3845,6 +3847,39 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
   redirect(
     `/?module=invoice-created&invoice_ids=${encodeURIComponent(invoiceIds.join(","))}`,
   );
+}
+
+async function prepareCommissionStatementAction(formData: FormData) {
+  "use server";
+
+  const agencyId = textValue(formData, "agency_id");
+  const invoiceIds = [...new Set(formData.getAll("customer_invoice_ids").map(String).filter(Boolean))];
+  const readyUrl = `/?module=sales-rep-agency&agency=${agencyId}&agency_tab=commissions&commission_tab=ready`;
+  if (!agencyId || !invoiceIds.length) {
+    redirect(`${readyUrl}&error=${encodeURIComponent("Select at least one ready invoice.")}`);
+  }
+  redirect(`/?module=commission-statement-confirm&agency=${agencyId}&commission_invoices=${encodeURIComponent(invoiceIds.join(","))}`);
+}
+
+async function createCommissionStatementAction(formData: FormData) {
+  "use server";
+
+  const agencyId = textValue(formData, "agency_id");
+  const invoiceIds = [...new Set(textValue(formData, "invoice_ids").split(",").filter(Boolean))];
+  const confirmationUrl = `/?module=commission-statement-confirm&agency=${agencyId}&commission_invoices=${encodeURIComponent(invoiceIds.join(","))}`;
+  if (!agencyId || !invoiceIds.length) {
+    redirect(`${confirmationUrl}&error=${encodeURIComponent("Select at least one ready invoice.")}`);
+  }
+
+  const { data, error } = await createSupabaseUntypedAdminClient().rpc("create_draft_commission_statement", {
+    p_customer_invoice_ids: invoiceIds,
+    p_sales_rep_agency_id: agencyId,
+  });
+  if (error) redirect(`${confirmationUrl}&error=${encodeURIComponent(error.message)}`);
+
+  const statement = Array.isArray(data) ? data[0] : data;
+  const statementNumber = statement?.commission_payment_number ?? "Commission statement";
+  redirect(`/?module=sales-rep-agency&agency=${agencyId}&agency_tab=commissions&commission_tab=statements&notice=${encodeURIComponent(`${statementNumber} created as a draft.`)}`);
 }
 
 async function recordInvoicePaymentAction(formData: FormData) {
@@ -11054,6 +11089,7 @@ export async function ErpRouter({
     "rga-detail": "RGA Review",
     "rga-solution": "RGA Solution",
     "sales-rep-agency": "Sales Rep Agency",
+    "commission-statement-confirm": "Commission Statement",
     "sales-rep-agency-edit": "Sales Rep Agency",
     "sales-rep-agency-territory-add": "Add Territory",
     "sales-rep-agencies": "Sales Rep Agencies",
@@ -11497,7 +11533,9 @@ export async function ErpRouter({
             saveAction={updateSalesRepAgencyAction}
           />
         ) : activeModule === "sales-rep-agency" ? (
-          <SalesRepAgencyPage agencyId={params.agency} removeSalesRepAction={removeSalesRepFromAgencyAction} removeTerritoryAction={removeTerritoryFromAgencyAction} selectedCommissionTab={params.commission_tab} selectedTab={params.agency_tab} />
+          <SalesRepAgencyPage agencyId={params.agency} prepareCommissionStatementAction={prepareCommissionStatementAction} removeSalesRepAction={removeSalesRepFromAgencyAction} removeTerritoryAction={removeTerritoryFromAgencyAction} selectedCommissionTab={params.commission_tab} selectedTab={params.agency_tab} />
+        ) : activeModule === "commission-statement-confirm" ? (
+          <CommissionStatementConfirmationPage agencyId={params.agency} confirmAction={createCommissionStatementAction} error={params.error} invoiceIds={params.commission_invoices} />
         ) : activeModule === "sales-rep-agency-territory-add" ? (
           <AgencyTerritoryEditor agencyId={params.agency} error={params.error} saveAction={addTerritoriesToAgencyAction} />
         ) : activeModule === "sales-rep-edit" ? (

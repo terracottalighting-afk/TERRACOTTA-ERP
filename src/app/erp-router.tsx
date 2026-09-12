@@ -939,7 +939,8 @@ async function getProductStyleOptions() {
     .order("name", { ascending: true });
 
   if (error) {
-    throw new Error(error.message);
+    console.warn("Product style options could not be loaded:", error.message);
+    return [];
   }
 
   return (data ?? []) as SelectOption[];

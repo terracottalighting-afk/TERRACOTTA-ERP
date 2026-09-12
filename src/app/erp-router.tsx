@@ -177,6 +177,8 @@ export type SearchParams = Promise<{
   invoice_tax_allocations?: string;
   invoice_commission_overrides?: string;
   financial_tab?: string;
+  financial_section?: string;
+  financial_commission_tab?: string;
   rga?: string;
   rga_tab?: string;
   rga_order?: string;
@@ -11825,6 +11827,8 @@ export async function ErpRouter({
           <InvoiceQueuePage
             error={params.error}
             financialTab={params.financial_tab}
+            financialSection={params.financial_section}
+            financialCommissionTab={params.financial_commission_tab}
             financialFilters={{
               page: params.financial_page,
               pageSize: params.financial_page_size,

@@ -275,6 +275,11 @@ input {
   margin-bottom: 16px;
 }
 
+.financial-dashboard-section-tabs {
+  grid-template-columns: repeat(2, minmax(180px, 280px));
+  margin-bottom: 18px;
+}
+
 .agency-directory-tabs {
   grid-template-columns: repeat(3, minmax(180px, 288px));
 }
@@ -675,6 +680,51 @@ input {
 
 .form-grid textarea {
   padding: 10px;
+}
+
+.rga-request-grid textarea {
+  min-height: 104px;
+  resize: vertical;
+}
+
+.rga-request-options {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.rga-request-options label {
+  align-items: center;
+  color: var(--foreground);
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 400;
+  gap: 8px;
+}
+
+.rga-request-options input {
+  min-height: auto;
+  padding: 0;
+}
+
+.rga-supporting-documents-field {
+  color: var(--muted);
+  display: grid;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 7px;
+  max-width: 760px;
+}
+
+.rga-supporting-documents-field input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 400;
+  min-height: 40px;
+  padding: 7px 10px;
 }
 
 .full-width-field {
@@ -1511,6 +1561,30 @@ input {
   margin-top: 14px;
 }
 
+.rga-document-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.rga-document-list li {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 12px 0;
+}
+
+.rga-document-list li:first-child {
+  border-top: 0;
+}
+
+.rga-document-list li span:nth-child(2) {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .long-text {
   color: var(--muted);
   line-height: 1.6;
@@ -1829,6 +1903,28 @@ dd {
 
 .tab-strip a[aria-current="page"],
 .tab-strip a:hover {
+  border-bottom-color: var(--accent);
+  color: var(--foreground);
+}
+
+.dashboard-tabs {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.dashboard-tab {
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 12px;
+  white-space: nowrap;
+}
+
+.dashboard-tab--active,
+.dashboard-tab:hover {
   border-bottom-color: var(--accent);
   color: var(--foreground);
 }

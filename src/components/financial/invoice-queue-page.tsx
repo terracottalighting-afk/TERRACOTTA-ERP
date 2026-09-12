@@ -19,12 +19,16 @@ type FinancialInvoiceFilters = {
 export async function InvoiceQueuePage({
   error,
   financialFilters,
+  financialCommissionTab,
+  financialSection,
   financialTab,
   loadPackingLists,
   notice,
 }: {
   error?: string;
   financialFilters: FinancialInvoiceFilters;
+  financialCommissionTab?: string;
+  financialSection?: string;
   financialTab?: string;
   loadPackingLists: () => Promise<FinancialDashboardPackingList[]>;
   notice?: string;
@@ -51,6 +55,8 @@ export async function InvoiceQueuePage({
       ) : null}
       <FinancialDashboardTabs
         financialFilters={financialFilters}
+        financialCommissionTab={financialCommissionTab}
+        financialSection={financialSection}
         financialTab={financialTab}
         packingLists={packingLists}
       />

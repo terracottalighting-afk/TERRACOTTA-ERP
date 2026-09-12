@@ -70,12 +70,31 @@ type FinancialPaymentApplication = {
   customer_payment_id: string;
 };
 
+type FinancialCommissionPayment = {
+  commission_payment_number: string;
+  id: string;
+  payment_date: string;
+  payment_reference: string | null;
+  payment_type: string;
+  sales_rep_agency_id: string;
+  status: string;
+};
+
+type FinancialCommissionPaymentLine = {
+  amount_paid: number;
+  commission_payment_id: string;
+};
+
 export async function FinancialDashboardTabs({
   financialFilters,
+  financialCommissionTab,
+  financialSection,
   financialTab,
   packingLists,
 }: {
   financialFilters: FinancialInvoiceFilters;
+  financialCommissionTab?: string;
+  financialSection?: string;
   financialTab?: string;
   packingLists: FinancialDashboardPackingList[];
 }) {
@@ -85,6 +104,8 @@ export async function FinancialDashboardTabs({
     { data: invoices, error: invoicesError },
     { data: payments, error: paymentsError },
     { data: paymentApplications, error: paymentApplicationsError },
+    { data: commissionPayments, error: commissionPaymentsError },
+    { data: commissionPaymentLines, error: commissionPaymentLinesError },
   ] = await Promise.all([
     supabase
       .from("customer_invoice")
@@ -107,11 +128,21 @@ export async function FinancialDashboardTabs({
         "customer_payment_id, customer_invoice_id, amount_applied, applied_date, application_status",
       )
       .eq("application_status", "posted"),
+    supabase
+      .from("commission_payment")
+      .select("id, commission_payment_number, sales_rep_agency_id, payment_date, payment_type, payment_reference, status")
+      .order("payment_date", { ascending: false }),
+    supabase
+      .from("commission_payment_line")
+      .select("commission_payment_id, amount_paid"),
   ]);
   if (invoicesError) throw new Error(invoicesError.message);
   if (paymentsError) throw new Error(paymentsError.message);
   if (paymentApplicationsError)
     throw new Error(paymentApplicationsError.message);
+  if (commissionPaymentsError) throw new Error(commissionPaymentsError.message);
+  if (commissionPaymentLinesError)
+    throw new Error(commissionPaymentLinesError.message);
 
   const invoiceIds = (invoices ?? []).map((invoice) => invoice.id);
   const { data: invoiceLines, error: invoiceLinesError } = invoiceIds.length
@@ -136,6 +167,11 @@ export async function FinancialDashboardTabs({
           .in("id", customerIds)
       : { data: [], error: null };
   if (financialCustomersError) throw new Error(financialCustomersError.message);
+  const commissionAgencyIds = [...new Set((commissionPayments ?? []).map((payment) => payment.sales_rep_agency_id))];
+  const { data: commissionAgencies, error: commissionAgenciesError } = commissionAgencyIds.length
+    ? await supabase.from("sales_rep_agency").select("id, name").in("id", commissionAgencyIds)
+    : { data: [], error: null };
+  if (commissionAgenciesError) throw new Error(commissionAgenciesError.message);
   const paymentCustomerNames = new Map(
     (financialCustomers ?? []).map((customer) => [customer.id, customer.name]),
   );
@@ -145,6 +181,15 @@ export async function FinancialDashboardTabs({
       customer.account_number,
     ]),
   );
+  const commissionAgencyNames = new Map((commissionAgencies ?? []).map((agency) => [agency.id, agency.name]));
+  const commissionAmountsByPaymentId = new Map<string, number>();
+  const commissionItemCountsByPaymentId = new Map<string, number>();
+  for (const line of commissionPaymentLines ?? []) {
+    commissionAmountsByPaymentId.set(line.commission_payment_id, (commissionAmountsByPaymentId.get(line.commission_payment_id) ?? 0) + Number(line.amount_paid ?? 0));
+    commissionItemCountsByPaymentId.set(line.commission_payment_id, (commissionItemCountsByPaymentId.get(line.commission_payment_id) ?? 0) + 1);
+  }
+  const paidCommissionStatements = ((commissionPayments ?? []) as FinancialCommissionPayment[]).filter((statement) => statement.status === "posted");
+  const draftCommissionStatements = ((commissionPayments ?? []) as FinancialCommissionPayment[]).filter((statement) => statement.status === "draft");
   const allInvoices = (invoices ?? []) as FinancialInvoice[];
   const invoiceSkusById = new Map<string, string[]>();
   for (const line of invoiceLines ?? []) {
@@ -273,9 +318,28 @@ export async function FinancialDashboardTabs({
   const selectedTab = tabs.some((tab) => tab.key === financialTab)
     ? financialTab!
     : "uninvoiced";
+  const selectedSection = financialSection === "commission" ? "commission" : "invoices";
+  const commissionTabs = [
+    { key: "paid", label: "Paid Commission", statements: paidCommissionStatements },
+    { key: "draft", label: "Draft Commission", statements: draftCommissionStatements },
+  ];
+  const selectedCommissionTab = commissionTabs.some((tab) => tab.key === financialCommissionTab)
+    ? financialCommissionTab!
+    : "paid";
 
   return (
     <>
+      <div aria-label="Financial dashboard sections" className="metric-grid financial-dashboard-section-tabs">
+        <Link className={`metric agency-customer-type-tab${selectedSection === "invoices" ? " agency-customer-type-tab--active" : ""}`} href={`/?module=invoices&financial_section=invoices&financial_tab=${selectedTab}`}>
+          <span>Invoices</span>
+          <strong>{numberFormatter.format(allInvoices.length)}</strong>
+        </Link>
+        <Link className={`metric agency-customer-type-tab${selectedSection === "commission" ? " agency-customer-type-tab--active" : ""}`} href="/?module=invoices&financial_section=commission&financial_commission_tab=paid">
+          <span>Commission</span>
+          <strong>{numberFormatter.format(paidCommissionStatements.length + draftCommissionStatements.length)}</strong>
+        </Link>
+      </div>
+      {selectedSection === "invoices" ? <>
       <nav
         className="tab-nav financial-tab-nav"
         aria-label="Financial dashboard lists"
@@ -283,7 +347,7 @@ export async function FinancialDashboardTabs({
         {tabs.map((tab) => (
           <Link
             aria-current={tab.key === selectedTab ? "page" : undefined}
-            href={`/?module=invoices&financial_tab=${tab.key}`}
+            href={`/?module=invoices&financial_section=invoices&financial_tab=${tab.key}`}
             key={tab.key}
           >
             {tab.label} ({numberFormatter.format(tab.count)})
@@ -466,6 +530,16 @@ export async function FinancialDashboardTabs({
           )}
         </section>
       ) : null}
+      </> : null}
+      {selectedSection === "commission" ? <>
+        <nav className="tab-nav financial-tab-nav" aria-label="Commission statement lists">
+          {commissionTabs.map((tab) => <Link aria-current={tab.key === selectedCommissionTab ? "page" : undefined} href={`/?module=invoices&financial_section=commission&financial_commission_tab=${tab.key}`} key={tab.key}>{tab.label} ({numberFormatter.format(tab.statements.length)})</Link>)}
+        </nav>
+        <section className="record-section">
+          <h3>{selectedCommissionTab === "paid" ? "Paid Commission" : "Draft Commission"}</h3>
+          {commissionTabs.find((tab) => tab.key === selectedCommissionTab)?.statements.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Commission Statement</th><th>Sales Agency</th><th>Statement Date</th><th>Included Invoices</th><th>Payment Method</th><th>Reference</th><th>Commission Total</th><th>Status</th></tr></thead><tbody>{commissionTabs.find((tab) => tab.key === selectedCommissionTab)!.statements.map((statement) => <tr key={statement.id}><td>{statement.commission_payment_number}</td><td>{commissionAgencyNames.get(statement.sales_rep_agency_id) ?? "Unknown agency"}</td><td>{dateLabel(statement.payment_date)}</td><td>{numberFormatter.format(commissionItemCountsByPaymentId.get(statement.id) ?? 0)}</td><td>{label(statement.payment_type)}</td><td>{statement.payment_reference ?? "Not set"}</td><td>{money(commissionAmountsByPaymentId.get(statement.id) ?? 0)}</td><td><StatusBadge tone={statement.status === "posted" ? "good" : "primary"} value={statement.status === "posted" ? "Paid" : "Draft"} /></td></tr>)}</tbody></table></div> : <div className="empty-state">{selectedCommissionTab === "paid" ? "No paid commission statements have been recorded." : "No draft commission statements are awaiting payment."}</div>}
+        </section>
+      </> : null}
     </>
   );
 }

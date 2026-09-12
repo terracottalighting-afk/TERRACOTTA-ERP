@@ -230,4 +230,6 @@ $$;
 grant execute on function public.apply_invoice_commission(uuid, boolean, numeric) to service_role;
 grant execute on function public.create_invoices_from_packing_list_with_terms(uuid, date, jsonb, jsonb, jsonb, text, integer, numeric, jsonb) to service_role;
 grant select, insert, update, delete on table public.commission_snapshot to service_role;
+grant select on table public.commission_payment to service_role;
+grant select on table public.commission_payment_line to service_role;
 notify pgrst, 'reload schema';

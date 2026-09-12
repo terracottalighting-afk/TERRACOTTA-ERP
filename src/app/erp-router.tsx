@@ -110,6 +110,11 @@ export type SearchParams = Promise<{
   agency?: string;
   contact?: string;
   customer?: string;
+  customer_advanced?: string;
+  customer_agency?: string;
+  customer_account_type?: string;
+  customer_status?: string;
+  customer_territory?: string;
   error?: string;
   location?: string;
   location_tab?: string;
@@ -223,6 +228,13 @@ type CustomerAccount = {
   purchase_email: string | null;
   account_type_id: string;
   business_type_id: string;
+};
+
+type CustomerSearchFilters = {
+  accountTypeId?: string;
+  agencyId?: string;
+  status?: string;
+  territoryId?: string;
 };
 
 type CustomerLocation = {
@@ -870,6 +882,16 @@ async function getSalesRepAgencies() {
   const { data, error } = await createSupabaseAdminClient().from("sales_rep_agency").select("id, agency_code, name, main_contact_name, email, commission_default_percent, status").order("name", { ascending: true });
   if (error) throw new Error(error.message);
   return (data ?? []) as { id: string; agency_code: string; name: string; main_contact_name: string | null; email: string | null; commission_default_percent: number; status: "active" | "inactive" }[];
+}
+
+async function getSalesRepAgencyOptions() {
+  const { data, error } = await createSupabaseAdminClient()
+    .from("sales_rep_agency")
+    .select("id, name")
+    .eq("status", "active")
+    .order("name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as SelectOption[];
 }
 
 async function getSalesRepsForDashboard() {
@@ -8473,9 +8495,42 @@ async function saveCustomerRepAssignmentAction(formData: FormData) {
 async function searchCustomers(
   query: string,
   mode: "active" | "obsolete" = "active",
+  filters: CustomerSearchFilters = {},
 ) {
   const supabase = createSupabaseAdminClient();
   const cleanQuery = query.trim();
+  let matchingCustomerIds: Set<string> | null = null;
+
+  if (filters.territoryId) {
+    const { data: territoryLocations, error: territoryLocationsError } = await supabase
+      .from("customer_location")
+      .select("customer_account_id")
+      .eq("territory_id", filters.territoryId);
+    if (territoryLocationsError) throw new Error(territoryLocationsError.message);
+    matchingCustomerIds = new Set((territoryLocations ?? []).map((location) => location.customer_account_id));
+  }
+
+  if (filters.agencyId) {
+    const { data: agencyAssignments, error: agencyAssignmentsError } = await supabase
+      .from("customer_location_rep_assignment")
+      .select("customer_location_id")
+      .eq("sales_rep_agency_id", filters.agencyId)
+      .eq("status", "active")
+      .is("end_date", null);
+    if (agencyAssignmentsError) throw new Error(agencyAssignmentsError.message);
+    const locationIds = (agencyAssignments ?? []).map((assignment) => assignment.customer_location_id);
+    const { data: agencyLocations, error: agencyLocationsError } = locationIds.length
+      ? await supabase.from("customer_location").select("customer_account_id").in("id", locationIds)
+      : { data: [], error: null };
+    if (agencyLocationsError) throw new Error(agencyLocationsError.message);
+    const agencyCustomerIds = new Set((agencyLocations ?? []).map((location) => location.customer_account_id));
+    matchingCustomerIds = matchingCustomerIds
+      ? new Set([...matchingCustomerIds].filter((customerId) => agencyCustomerIds.has(customerId)))
+      : agencyCustomerIds;
+  }
+
+  if (matchingCustomerIds && matchingCustomerIds.size === 0) return [] as CustomerAccount[];
+
   let request = supabase
     .from("customer_account")
     .select(
@@ -8484,11 +8539,16 @@ async function searchCustomers(
     .order("name", { ascending: true })
     .limit(20);
 
-  if (mode === "obsolete") {
+  if (filters.status) {
+    request = request.eq("status", filters.status as "active");
+  } else if (mode === "obsolete") {
     request = request.eq("status", "obsolete" as "inactive");
   } else {
     request = request.not("status", "in", "(inactive,obsolete)");
   }
+
+  if (filters.accountTypeId) request = request.eq("account_type_id", filters.accountTypeId);
+  if (matchingCustomerIds) request = request.in("id", [...matchingCustomerIds]);
 
   if (cleanQuery) {
     const escaped = cleanQuery.replaceAll("%", "\\%").replaceAll("_", "\\_");
@@ -10980,8 +11040,14 @@ export async function ErpRouter({
     : 10;
   const customerListMode =
     activeModule === "obsolete-customers" ? "obsolete" : "active";
+  const customerSearchFilters: CustomerSearchFilters = {
+    accountTypeId: params.customer_account_type,
+    agencyId: params.customer_agency,
+    status: params.customer_status,
+    territoryId: params.customer_territory,
+  };
   const customers = await loadOptionalLookup("Customers", () =>
-    searchCustomers(query, customerListMode),
+    searchCustomers(query, customerListMode, customerSearchFilters),
   );
   const selectedProductId =
     activeModule === "products" ? params.product : undefined;
@@ -11034,6 +11100,7 @@ export async function ErpRouter({
     businessTypeOptions,
     customerStatusOptions,
     territoryOptions,
+    salesRepAgencyOptions,
     salesRepOptions,
     productBrandOptions,
     productStyleOptions,
@@ -11047,6 +11114,7 @@ export async function ErpRouter({
     loadOptionalLookup("Customer business types", () => getCustomerOptions("customer_business_type")),
     loadOptionalLookup("Customer statuses", getCustomerStatusOptions),
     loadOptionalLookup("Territories", getTerritoryOptions),
+    loadOptionalLookup("Sales rep agencies", getSalesRepAgencyOptions),
     loadOptionalLookup("Sales reps", getSalesRepOptions),
     loadOptionalLookup("Product brands", getProductBrandOptions),
     loadOptionalLookup("Product styles", getProductStyleOptions),
@@ -11942,13 +12010,18 @@ export async function ErpRouter({
             {!dashboard ? (
               <CustomerListOverview
                 accountTypes={accountTypes}
+                accountTypeOptions={accountTypeOptions}
+                accountStatusOptions={customerStatusOptions}
                 businessTypes={businessTypes}
                 customers={customers}
                 deleteAction={deleteCustomersAction}
                 error={params.error}
+                filters={{ ...customerSearchFilters, advanced: params.customer_advanced === "1" }}
                 listMode={customerListMode}
                 notice={params.notice}
                 query={query}
+                salesAgencyOptions={salesRepAgencyOptions}
+                territoryOptions={territoryOptions}
               />
             ) : (
               <section className="dashboard-panel">

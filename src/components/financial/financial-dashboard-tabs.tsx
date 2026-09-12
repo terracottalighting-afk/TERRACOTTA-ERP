@@ -354,7 +354,7 @@ export async function FinancialDashboardTabs({
   const creditMemoTabs = [
     { key: "applied", label: "Applied Credit Memo", memos: appliedCreditMemos },
     { key: "partially-applied", label: "Partially Applied", memos: partiallyAppliedCreditMemos },
-    { key: "outstanding", label: "Ready to be Used", memos: outstandingCreditMemos },
+    { key: "outstanding", label: "Ready to be Applied", memos: outstandingCreditMemos },
   ];
   const selectedCreditMemoTab = creditMemoTabs.some((tab) => tab.key === financialCreditMemoTab)
     ? financialCreditMemoTab!
@@ -583,7 +583,7 @@ export async function FinancialDashboardTabs({
         </nav>
         <section className="record-section">
           <h3>{creditMemoTabs.find((tab) => tab.key === selectedCreditMemoTab)?.label}</h3>
-          {creditMemoTabs.find((tab) => tab.key === selectedCreditMemoTab)?.memos.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Credit Memo</th><th>Customer</th><th>Brand</th><th>Issue Date</th><th>Credit Total</th><th>Applied</th><th>Remaining</th><th>Status</th></tr></thead><tbody>{creditMemoTabs.find((tab) => tab.key === selectedCreditMemoTab)!.memos.map((memo) => <tr key={memo.id}><td>{memo.credit_memo_number}</td><td>{memo.customer_name_snapshot}</td><td>{memo.brand_name_snapshot}</td><td>{dateLabel(memo.issue_date)}</td><td>{money(memo.total_credit_amount)}</td><td>{money(memo.amount_applied)}</td><td>{money(memo.amount_remaining)}</td><td><StatusBadge tone={Number(memo.amount_remaining ?? 0) > 0 ? "primary" : "good"} value={Number(memo.amount_remaining ?? 0) > 0 ? Number(memo.amount_applied ?? 0) > 0 ? "Partially Applied" : "Ready to be Used" : "Applied"} /></td></tr>)}</tbody></table></div> : <div className="empty-state">{selectedCreditMemoTab === "applied" ? "No fully applied credit memos have been recorded." : selectedCreditMemoTab === "partially-applied" ? "No partially applied credit memos have been recorded." : "No credit memos are ready to be used."}</div>}
+          {creditMemoTabs.find((tab) => tab.key === selectedCreditMemoTab)?.memos.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Credit Memo</th><th>Customer</th><th>Brand</th><th>Issue Date</th><th>Credit Total</th><th>Applied</th><th>Remaining</th><th>Status</th></tr></thead><tbody>{creditMemoTabs.find((tab) => tab.key === selectedCreditMemoTab)!.memos.map((memo) => <tr key={memo.id}><td>{memo.credit_memo_number}</td><td>{memo.customer_name_snapshot}</td><td>{memo.brand_name_snapshot}</td><td>{dateLabel(memo.issue_date)}</td><td>{money(memo.total_credit_amount)}</td><td>{money(memo.amount_applied)}</td><td>{money(memo.amount_remaining)}</td><td><StatusBadge tone={Number(memo.amount_remaining ?? 0) > 0 ? "primary" : "good"} value={Number(memo.amount_remaining ?? 0) > 0 ? Number(memo.amount_applied ?? 0) > 0 ? "Partially Applied" : "Ready to be Applied" : "Applied"} /></td></tr>)}</tbody></table></div> : <div className="empty-state">{selectedCreditMemoTab === "applied" ? "No fully applied credit memos have been recorded." : selectedCreditMemoTab === "partially-applied" ? "No partially applied credit memos have been recorded." : "No credit memos are ready to be applied."}</div>}
         </section>
       </> : null}
     </>

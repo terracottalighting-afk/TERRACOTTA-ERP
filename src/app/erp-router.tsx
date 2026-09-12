@@ -12426,12 +12426,6 @@ export async function ErpRouter({
                     id="orders"
                   >
                     <div className="section-title order-section-title">
-                      <Link
-                        className="primary-action"
-                        href={`/?module=new-order&customer=${dashboard.customer.id}`}
-                      >
-                        Enter New Order / Quote
-                      </Link>
                       <div className="order-actions-row">
                         <Link
                           className={
@@ -12472,6 +12466,12 @@ export async function ErpRouter({
                           direction={customerOrderSortDirection}
                         />
                       </div>
+                      <Link
+                        className="small-action"
+                        href={`/?module=new-order&customer=${dashboard.customer.id}`}
+                      >
+                        Create New Order / Quote
+                      </Link>
                     </div>
                     <div className="table-wrap">
                       <table>

@@ -2112,10 +2112,10 @@ dd {
 }
 
 .order-section-title {
-  align-items: flex-start;
-  display: grid;
+  align-items: center;
+  display: flex;
   gap: 14px;
-  justify-content: stretch;
+  justify-content: space-between;
 }
 
 .order-actions-row {
@@ -2124,7 +2124,7 @@ dd {
   flex-wrap: wrap;
   gap: 24px;
   justify-content: flex-start;
-  width: 100%;
+  min-width: 0;
 }
 
 .order-page-size-form,
@@ -3166,6 +3166,16 @@ tr:last-child td {
   .advanced-filter-grid {
     align-items: stretch;
     grid-template-columns: 1fr;
+  }
+
+  .order-section-title {
+    align-items: flex-end;
+    flex-direction: column;
+  }
+
+  .order-actions-row {
+    gap: 16px;
+    width: 100%;
   }
 
   .product-list-controls {

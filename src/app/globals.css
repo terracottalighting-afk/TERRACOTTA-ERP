@@ -1842,9 +1842,14 @@ input {
 .quote-document-notes p { margin-bottom: 0; white-space: pre-wrap; }
 
 @media print {
-  .erp-sidebar, .workspace-header, .quote-document-controls { display: none !important; }
+  .erp-sidebar, .workspace-header, .quote-document-controls, .print-hidden { display: none !important; }
   .erp-shell, .erp-workspace { display: block; padding: 0; }
   .quote-document { border: 0; padding: 0; }
+  .commission-statement-page { border: 0; box-shadow: none; gap: 18px; overflow: visible; padding: 0; }
+  .commission-statement-page .account-header { margin: 0; padding-bottom: 18px; }
+  .commission-statement-page .info-panel, .commission-statement-page .data-section { box-shadow: none; }
+  .commission-statement-page .table-wrap { max-width: none; overflow: visible; }
+  .commission-statement-page .data-table { min-width: 0; width: 100%; }
 }
 
 .text-action--danger {

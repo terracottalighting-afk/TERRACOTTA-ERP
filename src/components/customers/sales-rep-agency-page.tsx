@@ -23,8 +23,10 @@ type SalesRepAgency = {
   status: string;
 };
 type AgencyOrder = { customer_po_number: string; id: string; invoice_required: boolean; order_date: string; order_type: string; sales_order_number: string; status: string; total_amount: number };
-type CommissionSnapshot = { commission_amount: number; commission_base_amount: number; commission_percent: number; commission_status: string; customer_invoice_id: string; sales_rep_id: string | null; territory_id: string | null };
-type CommissionInvoice = { customer_name_snapshot: string; id: string; invoice_date: string; invoice_number: string };
+type CommissionSnapshot = { commission_amount: number; commission_base_amount: number; commission_percent: number; commission_status: string; customer_invoice_id: string; id: string; paid_amount: number; sales_rep_id: string | null; territory_id: string | null };
+type CommissionInvoice = { balance_due: number | null; brand_name_snapshot: string; customer_name_snapshot: string; id: string; invoice_date: string; invoice_number: string; invoice_status: string; payment_status: string };
+type CommissionPayment = { commission_payment_number: string; id: string; payment_amount: number; payment_date: string; payment_reference: string | null; payment_type: string; status: string; total_amount: number | null };
+type CommissionPaymentLine = { amount_paid: number; commission_payment_id: string; commission_snapshot_id: string };
 
 type Territory = { id: string; territory_code: string; name: string; description: string | null };
 type SalesRep = { id: string; name: string; email: string | null; phone: string | null; role_title: string | null; is_principal: boolean; city: string | null; state_province: string | null };
@@ -34,6 +36,9 @@ type CustomerLocation = { city: string | null; customer_account_id: string; id: 
 type FormAction = (formData: FormData) => void | Promise<void>;
 
 type AgencyTab = "profile" | "sales-reps" | "territories" | "customers" | "commissions" | "orders";
+
+const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+const labelize = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, removeTerritoryAction, selectedTab }: { agencyId?: string; removeSalesRepAction: FormAction; removeTerritoryAction: FormAction; selectedTab?: string }) {
   if (!agencyId) return <ModulePlaceholder moduleName="Sales Rep Agency" />;
@@ -85,22 +90,25 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
   const { data: commissionSnapshots, error: commissionSnapshotsError } = activeTab === "commissions"
     ? await supabase
         .from("commission_snapshot")
-        .select("customer_invoice_id, sales_rep_id, territory_id, commission_percent, commission_base_amount, commission_amount, commission_status")
+        .select("id, customer_invoice_id, sales_rep_id, territory_id, commission_percent, commission_base_amount, commission_amount, paid_amount, commission_status")
         .eq("sales_rep_agency_id", agency.id)
         .order("created_at", { ascending: false })
         .limit(500)
     : { data: [] as CommissionSnapshot[], error: null };
   if (commissionSnapshotsError) throw new Error(commissionSnapshotsError.message);
   const commissionInvoiceIds = [...new Set((commissionSnapshots ?? []).map((snapshot) => snapshot.customer_invoice_id))];
+  const commissionSnapshotIds = (commissionSnapshots ?? []).map((snapshot) => snapshot.id);
   const commissionTerritoryIds = [...new Set((commissionSnapshots ?? []).map((snapshot) => snapshot.territory_id).filter((territoryId): territoryId is string => Boolean(territoryId)))];
   const commissionRepIds = [...new Set((commissionSnapshots ?? []).map((snapshot) => snapshot.sales_rep_id).filter((repId): repId is string => Boolean(repId)))];
-  const [commissionInvoicesResult, commissionTerritoriesResult, commissionRepsResult] = await Promise.all([
-    commissionInvoiceIds.length ? supabase.from("customer_invoice").select("id, invoice_number, invoice_date, customer_name_snapshot").in("id", commissionInvoiceIds) : Promise.resolve({ data: [] as CommissionInvoice[], error: null }),
+  const [commissionInvoicesResult, commissionTerritoriesResult, commissionRepsResult, commissionPaymentsResult, commissionPaymentLinesResult] = await Promise.all([
+    commissionInvoiceIds.length ? supabase.from("customer_invoice").select("id, invoice_number, invoice_date, customer_name_snapshot, brand_name_snapshot, payment_status, invoice_status, balance_due").in("id", commissionInvoiceIds) : Promise.resolve({ data: [] as CommissionInvoice[], error: null }),
     commissionTerritoryIds.length ? supabase.from("territory").select("id, territory_code, name").in("id", commissionTerritoryIds) : Promise.resolve({ data: [] as { id: string; territory_code: string; name: string }[], error: null }),
     commissionRepIds.length ? supabase.from("sales_rep").select("id, name").in("id", commissionRepIds) : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
+    activeTab === "commissions" ? supabase.from("commission_payment").select("id, commission_payment_number, payment_date, payment_amount, total_amount, payment_type, payment_reference, status").eq("sales_rep_agency_id", agency.id).order("payment_date", { ascending: false }).limit(100) : Promise.resolve({ data: [] as CommissionPayment[], error: null }),
+    commissionSnapshotIds.length ? supabase.from("commission_payment_line").select("commission_payment_id, commission_snapshot_id, amount_paid").in("commission_snapshot_id", commissionSnapshotIds) : Promise.resolve({ data: [] as CommissionPaymentLine[], error: null }),
   ]);
-  if (commissionInvoicesResult.error || commissionTerritoriesResult.error || commissionRepsResult.error) {
-    throw new Error(commissionInvoicesResult.error?.message ?? commissionTerritoriesResult.error?.message ?? commissionRepsResult.error?.message ?? "Unable to load commissions.");
+  if (commissionInvoicesResult.error || commissionTerritoriesResult.error || commissionRepsResult.error || commissionPaymentsResult.error || commissionPaymentLinesResult.error) {
+    throw new Error(commissionInvoicesResult.error?.message ?? commissionTerritoriesResult.error?.message ?? commissionRepsResult.error?.message ?? commissionPaymentsResult.error?.message ?? commissionPaymentLinesResult.error?.message ?? "Unable to load commissions.");
   }
   const { data: accountTypes, error: accountTypesError } = activeTab === "customers"
     ? await supabase
@@ -160,22 +168,38 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
   const commissionInvoiceById = new Map((commissionInvoicesResult.data ?? []).map((invoice) => [invoice.id, invoice]));
   const commissionTerritoryById = new Map((commissionTerritoriesResult.data ?? []).map((territory) => [territory.id, territory]));
   const commissionRepById = new Map((commissionRepsResult.data ?? []).map((rep) => [rep.id, rep]));
+  const commissionPaymentById = new Map((commissionPaymentsResult.data ?? []).map((payment) => [payment.id, payment]));
+  const paymentLinesBySnapshotId = new Map<string, CommissionPaymentLine[]>();
+  for (const paymentLine of commissionPaymentLinesResult.data ?? []) {
+    paymentLinesBySnapshotId.set(paymentLine.commission_snapshot_id, [...(paymentLinesBySnapshotId.get(paymentLine.commission_snapshot_id) ?? []), paymentLine]);
+  }
   const commissionRows = [...new Map((commissionSnapshots ?? []).map((snapshot) => [snapshot.customer_invoice_id, snapshot])).keys()].map((invoiceId) => {
     const snapshots = (commissionSnapshots ?? []).filter((snapshot) => snapshot.customer_invoice_id === invoiceId);
     const first = snapshots[0];
     const invoice = commissionInvoiceById.get(invoiceId);
     const territory = first.territory_id ? commissionTerritoryById.get(first.territory_id) : null;
     const rep = first.sales_rep_id ? commissionRepById.get(first.sales_rep_id) : null;
+    const statementIds = [...new Set(snapshots.flatMap((snapshot) => (paymentLinesBySnapshotId.get(snapshot.id) ?? []).map((line) => line.commission_payment_id)))];
+    const statements = statementIds.map((statementId) => commissionPaymentById.get(statementId)).filter((statement): statement is CommissionPayment => Boolean(statement));
     return {
       amount: snapshots.reduce((sum, snapshot) => sum + Number(snapshot.commission_amount ?? 0), 0),
       base: snapshots.reduce((sum, snapshot) => sum + Number(snapshot.commission_base_amount ?? 0), 0),
       invoice,
+      paidAmount: snapshots.reduce((sum, snapshot) => sum + Number(snapshot.paid_amount ?? 0), 0),
       percent: Number(first.commission_percent ?? 0),
       repName: rep?.name ?? null,
       status: first.commission_status,
+      statements,
       territoryLabel: territory ? `${territory.territory_code} - ${territory.name}` : "Not set",
     };
   });
+  const commissionReadyRows = commissionRows.filter((row) => row.invoice?.payment_status === "paid" && row.status === "commission_ready" && row.statements.length === 0);
+  const awaitingCustomerPaymentRows = commissionRows.filter((row) => row.invoice && row.invoice.invoice_status !== "void" && row.invoice.payment_status !== "paid");
+  const shipmentStatementRows = commissionRows.filter((row) => row.invoice?.invoice_status !== "void" && row.status !== "void");
+  const commissionPaymentLineCounts = new Map<string, number>();
+  for (const paymentLine of commissionPaymentLinesResult.data ?? []) {
+    commissionPaymentLineCounts.set(paymentLine.commission_payment_id, (commissionPaymentLineCounts.get(paymentLine.commission_payment_id) ?? 0) + 1);
+  }
 
   return (
     <section className="dashboard-panel">
@@ -197,7 +221,45 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
       {activeTab === "territories" ? <section className="data-section"><div className="section-title"><div><h3>Assigned Territories</h3><p>Base territories this agency covers. Individual sales reps can later receive a subset of these territories.</p></div><Link className="small-action" href={`/?module=sales-rep-agency-territory-add&agency=${agency.id}`}>Add Territory</Link></div>{territories?.length ? <div className="compact-list">{territories.map((territory: Territory) => <div className="compact-row" key={territory.id}><div><strong>{territory.name}</strong><span>{territory.territory_code}{territory.description ? ` - ${territory.description}` : ""}</span></div><form action={removeTerritoryAction}><input name="agency_id" type="hidden" value={agency.id} /><input name="assignment_id" type="hidden" value={assignmentByTerritory.get(territory.id)} /><input name="territory_id" type="hidden" value={territory.id} /><ConfirmRemoveButton message="This removes the territory from the agency and clears it from every sales rep’s sub-territory coverage at this agency." /></form></div>)}</div> : <p className="fieldset-note">No territories are assigned to this agency.</p>}</section> : null}
       {activeTab === "customers" ? <section className="data-section"><div className="section-title"><div><h3>Customers</h3><p>Customer accounts with an active location in this agency&apos;s assigned territories.</p></div></div><AgencyCustomersDashboard accountTypes={eligibleAccountTypes.map((accountType) => ({ id: accountType.id, name: accountType.name }))} customers={coveredCustomers} /></section> : null}
       {activeTab === "orders" ? <section className="data-section"><div className="section-title"><div><h3>Orders</h3><p>Orders placed directly by this sales agency.</p></div><Link className="small-action" href={`/?module=sales-rep-agency-order&agency=${agency.id}`}>Place Order</Link></div>{orders?.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Order</th><th>PO / Reference</th><th>Type</th><th>Order Date</th><th>Amount</th><th>Invoice</th><th>Status</th></tr></thead><tbody>{(orders as AgencyOrder[]).map((order) => <tr key={order.id}><td><Link className="table-link" href={`/?module=orders&order=${order.id}`}>{order.sales_order_number}</Link></td><td>{order.customer_po_number}</td><td>{order.order_type === "catalog_marketing" ? "Catalog / Marketing" : order.order_type.replaceAll("_", " ")}</td><td>{order.order_date}</td><td>{new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(order.total_amount ?? 0))}</td><td>{order.invoice_required ? "Required" : "No charge"}</td><td>{order.status.replaceAll("_", " ")}</td></tr>)}</tbody></table></div> : <p className="fieldset-note">No orders have been placed by this agency.</p>}</section> : null}
-      {activeTab === "commissions" ? <section className="data-section"><div className="section-title"><div><h3>Commissions</h3><p>Invoice commissions payable to this agency. Sales reps are shown only as territory coverage notes.</p></div></div>{commissionRows.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Invoice</th><th>Customer</th><th>Territory</th><th>Sales Rep Note</th><th>Rate</th><th>Commission Base</th><th>Commission</th><th>Status</th></tr></thead><tbody>{commissionRows.map((row) => <tr key={row.invoice?.id ?? row.territoryLabel}><td>{row.invoice ? <Link className="table-link" href={`/?module=invoice-document&invoice=${row.invoice.id}`}>{row.invoice.invoice_number}</Link> : "Invoice not found"}</td><td>{row.invoice?.customer_name_snapshot ?? "Not set"}</td><td>{row.territoryLabel}</td><td>{row.repName ?? "No rep assigned"}</td><td>{row.percent}%</td><td>{new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(row.base)}</td><td>{new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(row.amount)}</td><td>{row.status.replaceAll("_", " ")}</td></tr>)}</tbody></table></div> : <p className="fieldset-note">No commissionable invoices have been created for this agency.</p>}</section> : null}
+      {activeTab === "commissions" ? <>
+        <section className="data-section">
+          <div className="section-title"><div><h3>Commission Statements</h3><p>Statements issued to this sales agency. A posted statement is paid; a draft statement is not yet paid.</p></div></div>
+          {commissionPaymentsResult.data?.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Statement</th><th>Statement Date</th><th>Included Items</th><th>Payment Method</th><th>Reference</th><th>Amount</th><th>Payment Status</th></tr></thead><tbody>{commissionPaymentsResult.data.map((payment) => <tr key={payment.id}><td>{payment.commission_payment_number}</td><td>{payment.payment_date}</td><td>{commissionPaymentLineCounts.get(payment.id) ?? 0}</td><td>{labelize(payment.payment_type)}</td><td>{payment.payment_reference ?? "Not set"}</td><td>{currency.format(Number(payment.total_amount ?? payment.payment_amount ?? 0))}</td><td>{payment.status === "posted" ? "Paid" : labelize(payment.status)}</td></tr>)}</tbody></table></div> : <p className="fieldset-note">No commission statements have been created for this agency.</p>}
+        </section>
+
+        <section className="data-section">
+          <div className="section-title"><div><h3>Ready for Next Commission Statement</h3><p>Customer invoices that are paid in full, commission-ready, and not yet included in a commission statement.</p></div><StatusBadge tone="good" value={`${commissionReadyRows.length} ready`} /></div>
+          <CommissionInvoiceTable rows={commissionReadyRows} showCustomerPayment={false} />
+        </section>
+
+        <section className="data-section">
+          <div className="section-title"><div><h3>Awaiting Customer Payment</h3><p>Commission-qualified invoices that are still unpaid or partially paid by the customer.</p></div><StatusBadge tone="warn" value={`${awaitingCustomerPaymentRows.length} awaiting payment`} /></div>
+          <CommissionInvoiceTable rows={awaitingCustomerPaymentRows} showCustomerPayment />
+        </section>
+
+        <section className="data-section">
+          <div className="section-title"><div><h3>Shipment Statement</h3><p>All commission-qualified invoices for this agency, including paid, unpaid, and statement-included invoices. Use this complete list when preparing an agency shipment report for a selected period.</p></div><StatusBadge tone="neutral" value={`${shipmentStatementRows.length} invoices`} /></div>
+          <CommissionInvoiceTable rows={shipmentStatementRows} showCustomerPayment />
+        </section>
+      </> : null}
     </section>
   );
+}
+
+type CommissionInvoiceRow = {
+  amount: number;
+  base: number;
+  invoice: CommissionInvoice | undefined;
+  paidAmount: number;
+  percent: number;
+  repName: string | null;
+  status: string;
+  statements: CommissionPayment[];
+  territoryLabel: string;
+};
+
+function CommissionInvoiceTable({ rows, showCustomerPayment }: { rows: CommissionInvoiceRow[]; showCustomerPayment: boolean }) {
+  if (!rows.length) return <p className="fieldset-note">No invoices match this list.</p>;
+
+  return <div className="table-wrap"><table className="data-table"><thead><tr><th>Invoice</th><th>Customer</th><th>Invoice Date</th><th>Brand</th><th>Territory</th><th>Sales Rep Note</th>{showCustomerPayment ? <><th>Customer Payment</th><th>Balance Due</th></> : null}<th>Rate</th><th>Commission Base</th><th>Commission</th><th>Commission Status</th><th>Statement</th></tr></thead><tbody>{rows.map((row) => <tr key={row.invoice?.id ?? `${row.territoryLabel}-${row.amount}`}><td>{row.invoice ? <Link className="table-link" href={`/?module=invoice-document&invoice=${row.invoice.id}`}>{row.invoice.invoice_number}</Link> : "Invoice not found"}</td><td>{row.invoice?.customer_name_snapshot ?? "Not set"}</td><td>{row.invoice?.invoice_date ?? "Not set"}</td><td>{row.invoice?.brand_name_snapshot ?? "Not set"}</td><td>{row.territoryLabel}</td><td>{row.repName ?? "No rep assigned"}</td>{showCustomerPayment ? <><td>{row.invoice ? labelize(row.invoice.payment_status) : "Not set"}</td><td>{currency.format(Number(row.invoice?.balance_due ?? 0))}</td></> : null}<td>{row.percent}%</td><td>{currency.format(row.base)}</td><td>{currency.format(row.amount)}</td><td>{labelize(row.status)}</td><td>{row.statements.length ? row.statements.map((statement) => `${statement.commission_payment_number} (${statement.status === "posted" ? "Paid" : labelize(statement.status)})`).join(", ") : "Not included"}</td></tr>)}</tbody></table></div>;
 }

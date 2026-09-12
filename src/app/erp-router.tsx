@@ -10590,7 +10590,7 @@ async function getLocationForEdit(locationId: string) {
     getLocationCoverageOptions(coverageTerritoryId),
     createSupabaseUntypedAdminClient()
       .from("customer_location_rep_assignment")
-      .select("sales_rep_agency_id, sales_rep_id")
+      .select("sales_rep_agency_id, sales_rep_id, sales_rep_agency(name), sales_rep(name)")
       .eq("customer_location_id", locationId)
       .eq("coverage_role", "primary")
       .eq("status", "active")
@@ -10625,7 +10625,9 @@ async function getLocationForEdit(locationId: string) {
       agencies: coverageOptions.agencies,
       reps: coverageOptions.reps,
       salesRepAgencyId: coverageAssignmentResult.data?.sales_rep_agency_id ?? null,
+      salesRepAgencyName: coverageAssignmentResult.data?.sales_rep_agency?.[0]?.name ?? null,
       salesRepId: coverageAssignmentResult.data?.sales_rep_id ?? null,
+      salesRepName: coverageAssignmentResult.data?.sales_rep?.[0]?.name ?? null,
     },
   };
 }

@@ -114,6 +114,10 @@ type ShowroomDisplay = {
 
 type LocationDashboard = {
   contacts: CustomerContact[];
+  coverage: {
+    salesRepAgencyName: string | null;
+    salesRepName: string | null;
+  };
   displays: ShowroomDisplay[];
   invoices: CustomerInvoice[];
   location: CustomerLocation;
@@ -161,6 +165,7 @@ export async function LocationInfoPage({
   ]);
   const {
     contacts,
+    coverage,
     displays,
     invoices,
     location,
@@ -289,6 +294,14 @@ export async function LocationInfoPage({
                       ? `${territory.territory_code} - ${territory.name}`
                       : "Not assigned"}
                   </dd>
+                </div>
+                <div>
+                  <dt>Sales Agency</dt>
+                  <dd>{coverage.salesRepAgencyName ?? "Not assigned"}</dd>
+                </div>
+                <div>
+                  <dt>Sales Rep</dt>
+                  <dd>{coverage.salesRepName ?? "Not assigned"}</dd>
                 </div>
                 <div>
                   <dt>Primary Showroom</dt>

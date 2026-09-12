@@ -57,6 +57,7 @@ import {
 } from "@/components/orders/order-entry-form";
 import { NewOrderPage } from "@/components/orders/new-order-page";
 import { OrdersOverview } from "@/components/orders/orders-overview";
+import { OrderAcknowledgementPage } from "@/components/orders/order-acknowledgement-page";
 import { QuoteDocumentPage } from "@/components/orders/quote-document-page";
 import { PackingListDocumentPage } from "@/components/shipping/packing-list-document-page";
 import { ShipmentCreatePage } from "@/components/shipping/shipment-create-page";
@@ -11412,6 +11413,11 @@ export async function ErpRouter({
             getOrderEntryData={getOrderEntryData}
             locationId={params.location}
             saveAction={createSalesOrderAction}
+          />
+        ) : activeModule === "order-acknowledgement" ? (
+          <OrderAcknowledgementPage
+            loadOrder={getSalesOrderDetail}
+            orderId={params.order}
           />
         ) : activeModule === "create-rga" ? (
           <CreateRgaPage

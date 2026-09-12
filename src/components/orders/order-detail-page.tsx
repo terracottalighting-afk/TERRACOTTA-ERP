@@ -43,6 +43,11 @@ type SalesOrderDetail = {
 
 type ConvertQuoteAction = (formData: FormData) => Promise<void>;
 
+function snapshotEmail(snapshot: Record<string, unknown> | null) {
+  const email = snapshot?.shipping_contact_email ?? snapshot?.email;
+  return typeof email === "string" && email.trim() ? email : null;
+}
+
 export async function OrderDetailPage({
   convertQuoteToOrderAction,
   order,
@@ -114,7 +119,17 @@ export async function OrderDetailPage({
         .select("id, rga_number, sales_order_id, original_customer_po_number_snapshot")
         .eq("rga_number", replacementRgaNumber)
         .maybeSingle()
-    : { data: null, error: null };
+      : { data: null, error: null };
+  const acknowledgementRecipientEmail =
+    snapshotEmail(order.ship_to_snapshot_json) ??
+    snapshotEmail(order.bill_to_snapshot_json);
+  const acknowledgementSubject = encodeURIComponent(
+    `Order Acknowledgement ${order.sales_order_number}`,
+  );
+  const acknowledgementBody = encodeURIComponent(
+    `Please find the order acknowledgement for ${order.sales_order_number} attached.`,
+  );
+  const acknowledgementEmailHref = `mailto:${acknowledgementRecipientEmail ?? ""}?subject=${acknowledgementSubject}&body=${acknowledgementBody}`;
 
   return (
     <section className="dashboard-panel">
@@ -168,6 +183,20 @@ export async function OrderDetailPage({
           ) : null}
         </div>
         <div className="record-hero-actions">
+          {!isQuote ? (
+            <>
+              <Link
+                className="secondary-action"
+                href={`/?module=order-acknowledgement&order=${order.id}`}
+                target="_blank"
+              >
+                Download Order Acknowledgement
+              </Link>
+              <a className="secondary-action" href={acknowledgementEmailHref}>
+                Email Order Acknowledgement
+              </a>
+            </>
+          ) : null}
           {!isQuote && hasPendingShipment && latestShipment ? (
             <Link className="primary-action" href={`/?module=shipment-create&order=${order.id}&shipment=${latestShipment.id}`}>
               Continue Shipment

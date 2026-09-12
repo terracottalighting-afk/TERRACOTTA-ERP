@@ -161,7 +161,7 @@ as $$
 declare
   packing_row packing_list%rowtype;
   invoice_id uuid;
-  brand_id uuid;
+  invoice_brand_id uuid;
   commission_override jsonb;
   commission_payable boolean;
   commission_percent numeric;
@@ -210,9 +210,9 @@ begin
         due_date = calculated_due_date,
         updated_at = now()
     where id = invoice_id
-    returning brand_id into brand_id;
+    returning customer_invoice.brand_id into invoice_brand_id;
 
-    commission_override := coalesce(p_commission_overrides -> brand_id::text, '{}'::jsonb);
+    commission_override := coalesce(p_commission_overrides -> invoice_brand_id::text, '{}'::jsonb);
     commission_payable := coalesce((commission_override ->> 'payable')::boolean, true);
     commission_percent := nullif(commission_override ->> 'percent', '')::numeric;
 

@@ -33,11 +33,14 @@ type SalesOrderDetail = {
   notes: string | null;
   order_date: string;
   order_type: string;
+  sales_rep_agency_id_snapshot: string | null;
+  sales_rep_id_snapshot: string | null;
   sales_order_number: string;
   ship_to_display_name_snapshot: string;
   ship_to_snapshot_json: Record<string, unknown>;
   shipping_priority: string;
   status: string;
+  territory_id_snapshot: string | null;
   total_amount: number;
 };
 
@@ -97,6 +100,34 @@ export async function OrderDetailPage({
           .maybeSingle()
       : { data: null, error: null };
   if (latestShipmentError) throw new Error(latestShipmentError.message);
+
+  const [territoryResult, agencyResult, salesRepResult] = await Promise.all([
+    order.territory_id_snapshot
+      ? supabase
+          .from("territory")
+          .select("territory_code, name")
+          .eq("id", order.territory_id_snapshot)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    order.sales_rep_agency_id_snapshot
+      ? supabase
+          .from("sales_rep_agency")
+          .select("name")
+          .eq("id", order.sales_rep_agency_id_snapshot)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    order.sales_rep_id_snapshot
+      ? supabase
+          .from("sales_rep")
+          .select("name")
+          .eq("id", order.sales_rep_id_snapshot)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+  const coverageLookupError = [territoryResult, agencyResult, salesRepResult].find(
+    (result) => result.error,
+  );
+  if (coverageLookupError?.error) throw new Error(coverageLookupError.error.message);
 
   const isQuote = order.order_type === "quote";
   const canEdit = ["open", "partially_shipped", "pending", "hold"].includes(order.status);
@@ -236,6 +267,30 @@ export async function OrderDetailPage({
         {!isQuote ? (
           <MetricLink href={`/?module=rga&rga_order=${order.id}`} labelText="RGAs" value={numberFormatter.format(rgaCount ?? 0)} />
         ) : null}
+      </section>
+
+      <section className="detail-section">
+        <article className="info-panel">
+          <h3>Sales Coverage</h3>
+          <dl>
+            <div>
+              <dt>Territory</dt>
+              <dd>
+                {territoryResult.data
+                  ? `${territoryResult.data.territory_code} - ${territoryResult.data.name}`
+                  : "Not assigned"}
+              </dd>
+            </div>
+            <div>
+              <dt>Sales Agency</dt>
+              <dd>{agencyResult.data?.name ?? "Not assigned"}</dd>
+            </div>
+            <div>
+              <dt>Sales Rep</dt>
+              <dd>{salesRepResult.data?.name ?? "Not assigned"}</dd>
+            </div>
+          </dl>
+        </article>
       </section>
 
       {replacementRgaNumber ? (

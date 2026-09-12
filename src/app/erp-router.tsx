@@ -2173,6 +2173,7 @@ async function createSalesOrderAction(formData: FormData) {
     freightResult,
     billToLocationResult,
     locationResult,
+    locationCoverageResult,
     productsResult,
   ] = await Promise.all([
     supabase
@@ -2225,11 +2226,21 @@ async function createSalesOrderAction(formData: FormData) {
       ? supabase
           .from("customer_location")
           .select(
-            "id, location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, receiver_name, phone, email",
+            "id, location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, receiver_name, phone, email, territory_id",
           )
           .eq("id", locationId)
           .eq("customer_account_id", customerId)
           .eq("is_shipping_address", true)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    !isDropship && locationId
+      ? createSupabaseUntypedAdminClient()
+          .from("customer_location_rep_assignment")
+          .select("territory_id, sales_rep_agency_id, sales_rep_id")
+          .eq("customer_location_id", locationId)
+          .eq("coverage_role", "primary")
+          .eq("status", "active")
+          .is("end_date", null)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     validLines.length > 0
@@ -2255,6 +2266,7 @@ async function createSalesOrderAction(formData: FormData) {
     freightResult,
     billToLocationResult,
     locationResult,
+    locationCoverageResult,
     productsResult,
   ].find((result) => result.error);
   if (failure?.error) {
@@ -2312,6 +2324,14 @@ async function createSalesOrderAction(formData: FormData) {
 
   const account = accountResult.data;
   const savedLocation = locationResult.data;
+  const locationCoverage = locationCoverageResult.data;
+  const resolvedTerritoryId =
+    locationCoverage?.territory_id ?? savedLocation?.territory_id ?? null;
+  const resolvedSalesRepAgencyId =
+    salesRepAgencyId ?? locationCoverage?.sales_rep_agency_id ?? null;
+  const resolvedSalesRepId = salesRepAgencyId
+    ? null
+    : locationCoverage?.sales_rep_id ?? null;
   const billToLocation = billToLocationResult.data;
   const dropshipName = textValue(formData, "dropship_name");
   const dropshipAddressLine1 = textValue(formData, "dropship_address_line_1");
@@ -2451,9 +2471,11 @@ async function createSalesOrderAction(formData: FormData) {
         : savedLocation!.location_name,
       ship_to_snapshot_json: shipToSnapshot,
       ship_to_type: isDropship ? "dropship" : "saved_location",
-      sales_rep_agency_id_snapshot: salesRepAgencyId,
+      sales_rep_agency_id_snapshot: resolvedSalesRepAgencyId,
+      sales_rep_id_snapshot: resolvedSalesRepId,
       status: "open",
       shipping_readiness_status: "not_ready",
+      territory_id_snapshot: resolvedTerritoryId,
     })
     .select("id")
     .single();
@@ -3615,6 +3637,76 @@ async function confirmPendingShipmentAction(formData: FormData) {
   );
 }
 
+async function backfillOrderCoverageFromPackingList(packingListId: string) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: packingList, error: packingListError } = await supabase
+    .from("packing_list")
+    .select("sales_order_id")
+    .eq("id", packingListId)
+    .maybeSingle();
+
+  if (packingListError) throw new Error(packingListError.message);
+  if (!packingList?.sales_order_id) return;
+
+  const { data: order, error: orderError } = await supabase
+    .from("sales_order")
+    .select(
+      "id, customer_location_id, is_dropship, territory_id_snapshot, sales_rep_agency_id_snapshot, sales_rep_id_snapshot",
+    )
+    .eq("id", packingList.sales_order_id)
+    .maybeSingle();
+
+  if (orderError) throw new Error(orderError.message);
+  if (!order?.customer_location_id || order.is_dropship) return;
+
+  const [locationResult, coverageResult] = await Promise.all([
+    supabase
+      .from("customer_location")
+      .select("territory_id")
+      .eq("id", order.customer_location_id)
+      .maybeSingle(),
+    supabase
+      .from("customer_location_rep_assignment")
+      .select("territory_id, sales_rep_agency_id, sales_rep_id")
+      .eq("customer_location_id", order.customer_location_id)
+      .eq("coverage_role", "primary")
+      .eq("status", "active")
+      .is("end_date", null)
+      .maybeSingle(),
+  ]);
+
+  if (locationResult.error) throw new Error(locationResult.error.message);
+  if (coverageResult.error) throw new Error(coverageResult.error.message);
+
+  const coverage = coverageResult.data;
+  const update = {
+    sales_rep_agency_id_snapshot:
+      order.sales_rep_agency_id_snapshot ?? coverage?.sales_rep_agency_id ?? null,
+    sales_rep_id_snapshot:
+      order.sales_rep_id_snapshot ?? coverage?.sales_rep_id ?? null,
+    territory_id_snapshot:
+      order.territory_id_snapshot ??
+      coverage?.territory_id ??
+      locationResult.data?.territory_id ??
+      null,
+  };
+
+  if (
+    update.sales_rep_agency_id_snapshot === order.sales_rep_agency_id_snapshot &&
+    update.sales_rep_id_snapshot === order.sales_rep_id_snapshot &&
+    update.territory_id_snapshot === order.territory_id_snapshot
+  ) {
+    return;
+  }
+
+  const { error: updateError } = await supabase
+    .from("sales_order")
+    .update(update)
+    .eq("id", order.id);
+
+  if (updateError) throw new Error(updateError.message);
+}
+
 async function createInvoicesFromPackingListAction(formData: FormData) {
   "use server";
 
@@ -3640,6 +3732,14 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
   if (!Number.isFinite(customerFreightCharge) || customerFreightCharge < 0) {
     redirect(
       `${fallbackUrl}&error=${encodeURIComponent("Customer freight charge must be zero or greater.")}`,
+    );
+  }
+
+  try {
+    await backfillOrderCoverageFromPackingList(packingListId);
+  } catch (coverageError) {
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent(coverageError instanceof Error ? coverageError.message : "Unable to resolve order sales coverage.")}`,
     );
   }
 
@@ -4157,6 +4257,14 @@ async function prepareInvoiceConfirmationAction(formData: FormData) {
   ) {
     redirect(
       `${fallbackUrl}&error=${encodeURIComponent("Enter valid payment terms and a non-negative customer freight charge.")}`,
+    );
+  }
+
+  try {
+    await backfillOrderCoverageFromPackingList(packingListId);
+  } catch (coverageError) {
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent(coverageError instanceof Error ? coverageError.message : "Unable to resolve order sales coverage.")}`,
     );
   }
 

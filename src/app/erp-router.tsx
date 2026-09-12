@@ -10429,7 +10429,9 @@ export async function ErpRouter({
     : 10;
   const customerListMode =
     activeModule === "obsolete-customers" ? "obsolete" : "active";
-  const customers = await searchCustomers(query, customerListMode);
+  const customers = await loadOptionalLookup("Customers", () =>
+    searchCustomers(query, customerListMode),
+  );
   const selectedProductId =
     activeModule === "products" ? params.product : undefined;
   const selectedPartId =

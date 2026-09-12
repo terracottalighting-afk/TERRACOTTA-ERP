@@ -272,6 +272,18 @@ type LocationTerritory = {
   territory_code: string;
 };
 
+type LocationCoverageOption = {
+  id: string;
+  name: string;
+};
+
+type LocationCoverageAssignment = {
+  salesRepAgencyId: string;
+  salesRepId: string | null;
+  source: "manual" | "territory";
+  territoryId: string;
+};
+
 type CustomerContact = {
   id: string;
   customer_location_id?: string | null;
@@ -7627,6 +7639,146 @@ async function selectedLocationTerritory(territoryId: string | null) {
   return data as LocationTerritory;
 }
 
+async function getLocationCoverageOptions(territoryId: string | null) {
+  if (!territoryId) {
+    return { agencies: [] as LocationCoverageOption[], reps: [] as (LocationCoverageOption & { agencyId: string })[] };
+  }
+
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: territoryAssignments, error: territoryAssignmentsError } = await supabase
+    .from("territory_assignment")
+    .select("sales_rep_agency_id")
+    .eq("territory_id", territoryId)
+    .eq("status", "active")
+    .is("end_date", null);
+
+  if (territoryAssignmentsError) throw new Error(territoryAssignmentsError.message);
+
+  const agencyIds = [...new Set((territoryAssignments ?? []).map((assignment) => assignment.sales_rep_agency_id))];
+  if (!agencyIds.length) {
+    return { agencies: [] as LocationCoverageOption[], reps: [] as (LocationCoverageOption & { agencyId: string })[] };
+  }
+
+  const [agenciesResult, repTerritoryAssignmentsResult] = await Promise.all([
+    supabase
+      .from("sales_rep_agency")
+      .select("id, name")
+      .in("id", agencyIds)
+      .eq("status", "active")
+      .order("name", { ascending: true }),
+    supabase
+      .from("sales_rep_territory_assignment")
+      .select("sales_rep_id")
+      .eq("territory_id", territoryId)
+      .eq("status", "active")
+      .is("end_date", null),
+  ]);
+
+  if (agenciesResult.error) throw new Error(agenciesResult.error.message);
+  if (repTerritoryAssignmentsResult.error) throw new Error(repTerritoryAssignmentsResult.error.message);
+
+  const repIds = [...new Set((repTerritoryAssignmentsResult.data ?? []).map((assignment) => assignment.sales_rep_id))];
+  const { data: reps, error: repsError } = repIds.length
+    ? await supabase
+        .from("sales_rep")
+        .select("id, name, sales_rep_agency_id")
+        .in("id", repIds)
+        .in("sales_rep_agency_id", agencyIds)
+        .eq("status", "active")
+        .order("name", { ascending: true })
+    : { data: [], error: null };
+
+  if (repsError) throw new Error(repsError.message);
+
+  return {
+    agencies: (agenciesResult.data ?? []) as LocationCoverageOption[],
+    reps: (reps ?? []).map((rep) => ({
+      agencyId: rep.sales_rep_agency_id,
+      id: rep.id,
+      name: rep.name,
+    })) as (LocationCoverageOption & { agencyId: string })[],
+  };
+}
+
+async function resolveLocationCoverageAssignment(
+  territoryId: string | null,
+  requestedAgencyId: string | null,
+  requestedRepId: string | null,
+) {
+  if (!territoryId) {
+    if (requestedAgencyId || requestedRepId) {
+      throw new Error("Choose an assigned territory before selecting a sales agency or sales rep.");
+    }
+    return null;
+  }
+
+  const options = await getLocationCoverageOptions(territoryId);
+  const agency = requestedAgencyId
+    ? options.agencies.find((candidate) => candidate.id === requestedAgencyId)
+    : options.agencies.length === 1
+      ? options.agencies[0]
+      : null;
+
+  if (!agency) {
+    if (requestedAgencyId) {
+      throw new Error("The selected sales agency does not cover this territory.");
+    }
+    if (requestedRepId) {
+      throw new Error("Choose a sales agency before selecting a sales rep.");
+    }
+    return null;
+  }
+
+  const agencyReps = options.reps.filter((rep) => rep.agencyId === agency.id);
+  const rep = requestedRepId
+    ? agencyReps.find((candidate) => candidate.id === requestedRepId)
+    : agencyReps.length === 1
+      ? agencyReps[0]
+      : null;
+
+  if (requestedRepId && !rep) {
+    throw new Error("The selected sales rep is not assigned to this sales agency and territory.");
+  }
+
+  return {
+    salesRepAgencyId: agency.id,
+    salesRepId: rep?.id ?? null,
+    source: requestedAgencyId || requestedRepId ? "manual" : "territory",
+    territoryId,
+  } satisfies LocationCoverageAssignment;
+}
+
+async function replaceLocationCoverageAssignment(
+  locationId: string,
+  assignment: LocationCoverageAssignment | null,
+) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { error: clearError } = await supabase
+    .from("customer_location_rep_assignment")
+    .update({ end_date: new Date().toISOString().slice(0, 10), status: "inactive" })
+    .eq("customer_location_id", locationId)
+    .eq("coverage_role", "primary")
+    .eq("status", "active")
+    .is("end_date", null);
+
+  if (clearError) throw new Error(clearError.message);
+  if (!assignment) return;
+
+  const { error: insertError } = await supabase
+    .from("customer_location_rep_assignment")
+    .insert({
+      assignment_source: assignment.source,
+      coverage_role: "primary",
+      customer_location_id: locationId,
+      sales_rep_agency_id: assignment.salesRepAgencyId,
+      sales_rep_id: assignment.salesRepId,
+      status: "active",
+      territory_id: assignment.territoryId,
+    });
+
+  if (insertError) throw new Error(insertError.message);
+}
+
 async function addLocationAction(formData: FormData) {
   "use server";
 
@@ -7652,9 +7804,15 @@ async function addLocationAction(formData: FormData) {
   const isPrimaryShowroom =
     isShowroom && formData.get("is_primary_showroom") === "on";
   let territory: LocationTerritory | null;
+  let coverageAssignment: LocationCoverageAssignment | null;
 
   try {
     territory = await resolveLocationTerritory(optionalText("postal_code"));
+    coverageAssignment = await resolveLocationCoverageAssignment(
+      territory?.id ?? null,
+      optionalText("sales_rep_agency_id"),
+      optionalText("sales_rep_id"),
+    );
   } catch (territoryError) {
     redirect(
       `/?module=add-location&customer=${customerId}&error=${encodeURIComponent(territoryError instanceof Error ? territoryError.message : "Unable to resolve the location territory.")}`,
@@ -7691,6 +7849,14 @@ async function addLocationAction(formData: FormData) {
   if (error) {
     redirect(
       `/?module=add-location&customer=${customerId}&error=${encodeURIComponent(error.message)}`,
+    );
+  }
+
+  try {
+    await replaceLocationCoverageAssignment(data.id, coverageAssignment);
+  } catch (assignmentError) {
+    redirect(
+      `/?module=add-location&customer=${customerId}&error=${encodeURIComponent(assignmentError instanceof Error ? assignmentError.message : "Unable to save the location sales coverage.")}`,
     );
   }
 
@@ -7743,9 +7909,15 @@ async function updateLocationAction(formData: FormData) {
     isShowroom && formData.get("is_primary_showroom") === "on";
   const selectedTerritoryId = optionalText("territory_id");
   let territory: LocationTerritory | null;
+  let coverageAssignment: LocationCoverageAssignment | null;
 
   try {
     territory = await selectedLocationTerritory(selectedTerritoryId);
+    coverageAssignment = await resolveLocationCoverageAssignment(
+      territory?.id ?? null,
+      optionalText("sales_rep_agency_id"),
+      optionalText("sales_rep_id"),
+    );
   } catch (territoryError) {
     redirect(
       `/?module=edit-location&customer=${customerId}&location=${locationId}&error=${encodeURIComponent(territoryError instanceof Error ? territoryError.message : "Unable to resolve the location territory.")}`,
@@ -7784,6 +7956,14 @@ async function updateLocationAction(formData: FormData) {
   if (error) {
     redirect(
       `/?module=edit-location&customer=${customerId}&location=${locationId}&error=${encodeURIComponent(error.message)}`,
+    );
+  }
+
+  try {
+    await replaceLocationCoverageAssignment(locationId, coverageAssignment);
+  } catch (assignmentError) {
+    redirect(
+      `/?module=edit-location&customer=${customerId}&location=${locationId}&error=${encodeURIComponent(assignmentError instanceof Error ? assignmentError.message : "Unable to save the location sales coverage.")}`,
     );
   }
 
@@ -10399,6 +10579,22 @@ async function getLocationForEdit(locationId: string) {
   }
 
   const suggestedTerritory = territory ?? await resolveLocationTerritory(location.postal_code);
+  const coverageTerritoryId = territory?.id ?? suggestedTerritory?.id ?? null;
+  const [coverageOptions, coverageAssignmentResult] = await Promise.all([
+    getLocationCoverageOptions(coverageTerritoryId),
+    createSupabaseUntypedAdminClient()
+      .from("customer_location_rep_assignment")
+      .select("sales_rep_agency_id, sales_rep_id")
+      .eq("customer_location_id", locationId)
+      .eq("coverage_role", "primary")
+      .eq("status", "active")
+      .is("end_date", null)
+      .maybeSingle(),
+  ]);
+
+  if (coverageAssignmentResult.error) {
+    throw new Error(coverageAssignmentResult.error.message);
+  }
 
   const { data: showroom, error: showroomError } = await supabase
     .from("primary_showroom_enrollment")
@@ -10419,6 +10615,12 @@ async function getLocationForEdit(locationId: string) {
     territory: territory as LocationTerritory | null,
     territoryAssignmentSource: location.territory_assignment_source as "auto" | "manual_unassigned",
     suggestedTerritory: suggestedTerritory as LocationTerritory | null,
+    coverage: {
+      agencies: coverageOptions.agencies,
+      reps: coverageOptions.reps,
+      salesRepAgencyId: coverageAssignmentResult.data?.sales_rep_agency_id ?? null,
+      salesRepId: coverageAssignmentResult.data?.sales_rep_id ?? null,
+    },
   };
 }
 

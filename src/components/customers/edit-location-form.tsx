@@ -25,6 +25,12 @@ type LocationForEdit = {
 };
 
 type LocationEditData = {
+  coverage: {
+    agencies: { id: string; name: string }[];
+    reps: { agencyId: string; id: string; name: string }[];
+    salesRepAgencyId: string | null;
+    salesRepId: string | null;
+  };
   location: LocationForEdit;
   primaryShowroom: unknown | null;
   territory: { id: string; name: string; territory_code: string } | null;
@@ -59,6 +65,7 @@ export async function EditLocationForm({
   ]);
   const {
     location,
+    coverage,
     primaryShowroom,
     suggestedTerritory,
     territory,
@@ -160,6 +167,40 @@ export async function EditLocationForm({
                   </option>
                 ) : null}
                 <option value="">Not assigned</option>
+              </select>
+            </label>
+            <label>
+              Assigned Sales Agency
+              <select
+                defaultValue={coverage.salesRepAgencyId ?? ""}
+                name="sales_rep_agency_id"
+              >
+                <option value="">Not assigned</option>
+                {coverage.agencies.map((agency) => (
+                  <option key={agency.id} value={agency.id}>
+                    {agency.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Assigned Sales Rep
+              <select
+                defaultValue={coverage.salesRepId ?? ""}
+                name="sales_rep_id"
+              >
+                <option value="">Not assigned</option>
+                {coverage.reps
+                  .filter(
+                    (rep) =>
+                      !coverage.salesRepAgencyId ||
+                      rep.agencyId === coverage.salesRepAgencyId,
+                  )
+                  .map((rep) => (
+                    <option key={rep.id} value={rep.id}>
+                      {rep.name}
+                    </option>
+                  ))}
               </select>
             </label>
             <LocationRoleFields

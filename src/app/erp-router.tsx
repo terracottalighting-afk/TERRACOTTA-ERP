@@ -10590,7 +10590,7 @@ async function getLocationForEdit(locationId: string) {
     getLocationCoverageOptions(coverageTerritoryId),
     createSupabaseUntypedAdminClient()
       .from("customer_location_rep_assignment")
-      .select("sales_rep_agency_id, sales_rep_id, sales_rep_agency(name), sales_rep(name)")
+      .select("sales_rep_agency_id, sales_rep_id")
       .eq("customer_location_id", locationId)
       .eq("coverage_role", "primary")
       .eq("status", "active")
@@ -10600,6 +10600,32 @@ async function getLocationForEdit(locationId: string) {
 
   if (coverageAssignmentResult.error) {
     throw new Error(coverageAssignmentResult.error.message);
+  }
+
+  const salesRepAgencyId = coverageAssignmentResult.data?.sales_rep_agency_id ?? null;
+  const salesRepId = coverageAssignmentResult.data?.sales_rep_id ?? null;
+  const [salesRepAgencyResult, salesRepResult] = await Promise.all([
+    salesRepAgencyId
+      ? createSupabaseUntypedAdminClient()
+          .from("sales_rep_agency")
+          .select("name")
+          .eq("id", salesRepAgencyId)
+          .maybeSingle()
+      : { data: null, error: null },
+    salesRepId
+      ? createSupabaseUntypedAdminClient()
+          .from("sales_rep")
+          .select("name")
+          .eq("id", salesRepId)
+          .maybeSingle()
+      : { data: null, error: null },
+  ]);
+
+  if (salesRepAgencyResult.error) {
+    throw new Error(salesRepAgencyResult.error.message);
+  }
+  if (salesRepResult.error) {
+    throw new Error(salesRepResult.error.message);
   }
 
   const { data: showroom, error: showroomError } = await supabase
@@ -10624,10 +10650,10 @@ async function getLocationForEdit(locationId: string) {
     coverage: {
       agencies: coverageOptions.agencies,
       reps: coverageOptions.reps,
-      salesRepAgencyId: coverageAssignmentResult.data?.sales_rep_agency_id ?? null,
-      salesRepAgencyName: coverageAssignmentResult.data?.sales_rep_agency?.[0]?.name ?? null,
-      salesRepId: coverageAssignmentResult.data?.sales_rep_id ?? null,
-      salesRepName: coverageAssignmentResult.data?.sales_rep?.[0]?.name ?? null,
+      salesRepAgencyId,
+      salesRepAgencyName: salesRepAgencyResult.data?.name ?? null,
+      salesRepId,
+      salesRepName: salesRepResult.data?.name ?? null,
     },
   };
 }

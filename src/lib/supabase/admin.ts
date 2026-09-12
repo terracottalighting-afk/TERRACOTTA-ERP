@@ -1,15 +1,22 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/supabase";
 
+const REQUEST_TIMEOUT_MS = 10_000;
+
 async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit) {
   let lastError: unknown;
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return await fetch(input, init);
+      const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+      const signal = init?.signal
+        ? AbortSignal.any([init.signal, timeoutSignal])
+        : timeoutSignal;
+
+      return await fetch(input, { ...init, signal });
     } catch (error) {
       lastError = error;
-      if (attempt < 2) {
+      if (attempt < 1) {
         await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
       }
     }

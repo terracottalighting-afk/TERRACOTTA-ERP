@@ -31,7 +31,12 @@ export async function ShippingDashboardPage({
       "id, sales_order_number, customer_name_snapshot, customer_po_number, created_at, order_date, order_type, ship_to_display_name_snapshot, shipping_priority, status",
     )
     .in("status", ["open", "partially_shipped"])
-    .in("order_type", ["regular", "display", "rga_replacement"]);
+    .in("order_type", [
+      "regular",
+      "display",
+      "rga_replacement",
+      "catalog_marketing",
+    ]);
   if (ordersError) throw new Error(ordersError.message);
 
   const orderIds = (orders ?? []).map((order) => order.id);
@@ -70,7 +75,12 @@ export async function ShippingDashboardPage({
       "id, sales_order_number, customer_name_snapshot, customer_po_number, created_at, order_date, order_type, ship_to_display_name_snapshot, status",
     )
     .in("status", ["partially_shipped", "shipped", "closed"])
-    .in("order_type", ["regular", "display", "rga_replacement"])
+    .in("order_type", [
+      "regular",
+      "display",
+      "rga_replacement",
+      "catalog_marketing",
+    ])
     .order("updated_at", { ascending: false })
     .limit(100);
   if (shippedOrdersError) throw new Error(shippedOrdersError.message);

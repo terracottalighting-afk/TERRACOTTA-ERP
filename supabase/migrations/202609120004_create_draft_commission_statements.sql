@@ -101,7 +101,7 @@ begin
     attempts := attempts + 1;
     new_payment_number := 'CMS' || to_char(current_date, 'YYMM') || (floor(random() * 900 + 100)::integer)::text;
     exit when not exists (
-      select 1 from commission_payment where commission_payment_number = new_payment_number
+      select 1 from commission_payment cp where cp.commission_payment_number = new_payment_number
     );
     if attempts >= 20 then
       raise exception 'Unable to generate a unique commission statement number.';

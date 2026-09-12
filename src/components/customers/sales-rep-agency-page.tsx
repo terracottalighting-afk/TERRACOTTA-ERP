@@ -35,7 +35,7 @@ type CustomerAccount = { account_number: string; account_type_id: string; id: st
 type CustomerLocation = { city: string | null; customer_account_id: string; id: string; location_name: string; postal_code: string | null; state_province: string | null; territory_id: string };
 type FormAction = (formData: FormData) => void | Promise<void>;
 
-type AgencyTab = "profile" | "sales-reps" | "territories" | "customers" | "commissions" | "orders";
+type AgencyTab = "profile" | "sales-reps" | "territories" | "customers" | "commissions" | "shipment-statements" | "orders";
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const labelize = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -70,6 +70,7 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
     { key: "territories", label: "Territories" },
     { key: "customers", label: "Customers" },
     { key: "commissions", label: "Commissions" },
+    { key: "shipment-statements", label: "Shipment Statement" },
     { key: "orders", label: "Orders" },
   ];
   const activeTab: AgencyTab = tabs.some((tab) => tab.key === selectedTab) ? selectedTab as AgencyTab : "profile";
@@ -87,7 +88,8 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
         .limit(100)
     : { data: [] as AgencyOrder[], error: null };
   if (ordersError) throw new Error(ordersError.message);
-  const { data: commissionSnapshots, error: commissionSnapshotsError } = activeTab === "commissions"
+  const needsCommissionData = activeTab === "commissions" || activeTab === "shipment-statements";
+  const { data: commissionSnapshots, error: commissionSnapshotsError } = needsCommissionData
     ? await supabase
         .from("commission_snapshot")
         .select("id, customer_invoice_id, sales_rep_id, territory_id, commission_percent, commission_base_amount, commission_amount, paid_amount, commission_status")
@@ -104,7 +106,7 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
     commissionInvoiceIds.length ? supabase.from("customer_invoice").select("id, invoice_number, invoice_date, customer_name_snapshot, brand_name_snapshot, payment_status, invoice_status, balance_due").in("id", commissionInvoiceIds) : Promise.resolve({ data: [] as CommissionInvoice[], error: null }),
     commissionTerritoryIds.length ? supabase.from("territory").select("id, territory_code, name").in("id", commissionTerritoryIds) : Promise.resolve({ data: [] as { id: string; territory_code: string; name: string }[], error: null }),
     commissionRepIds.length ? supabase.from("sales_rep").select("id, name").in("id", commissionRepIds) : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
-    activeTab === "commissions" ? supabase.from("commission_payment").select("id, commission_payment_number, payment_date, payment_amount, total_amount, payment_type, payment_reference, status").eq("sales_rep_agency_id", agency.id).order("payment_date", { ascending: false }).limit(100) : Promise.resolve({ data: [] as CommissionPayment[], error: null }),
+    needsCommissionData ? supabase.from("commission_payment").select("id, commission_payment_number, payment_date, payment_amount, total_amount, payment_type, payment_reference, status").eq("sales_rep_agency_id", agency.id).order("payment_date", { ascending: false }).limit(100) : Promise.resolve({ data: [] as CommissionPayment[], error: null }),
     commissionSnapshotIds.length ? supabase.from("commission_payment_line").select("commission_payment_id, commission_snapshot_id, amount_paid").in("commission_snapshot_id", commissionSnapshotIds) : Promise.resolve({ data: [] as CommissionPaymentLine[], error: null }),
   ]);
   if (commissionInvoicesResult.error || commissionTerritoriesResult.error || commissionRepsResult.error || commissionPaymentsResult.error || commissionPaymentLinesResult.error) {
@@ -237,11 +239,11 @@ export async function SalesRepAgencyPage({ agencyId, removeSalesRepAction, remov
           <CommissionInvoiceTable rows={awaitingCustomerPaymentRows} showCustomerPayment />
         </section>
 
-        <section className="data-section">
-          <div className="section-title"><div><h3>Shipment Statement</h3><p>All commission-qualified invoices for this agency, including paid, unpaid, and statement-included invoices. Use this complete list when preparing an agency shipment report for a selected period.</p></div><StatusBadge tone="neutral" value={`${shipmentStatementRows.length} invoices`} /></div>
-          <CommissionInvoiceTable rows={shipmentStatementRows} showCustomerPayment />
-        </section>
       </> : null}
+      {activeTab === "shipment-statements" ? <section className="data-section">
+        <div className="section-title"><div><h3>Shipment Statement</h3><p>All commission-qualified invoices for this agency, including paid, unpaid, and statement-included invoices. Use this complete list when preparing an agency shipment report for a selected period.</p></div><StatusBadge tone="neutral" value={`${shipmentStatementRows.length} invoices`} /></div>
+        <CommissionInvoiceTable rows={shipmentStatementRows} showCustomerPayment />
+      </section> : null}
     </section>
   );
 }

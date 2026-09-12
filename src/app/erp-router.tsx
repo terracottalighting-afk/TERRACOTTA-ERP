@@ -12467,7 +12467,7 @@ export async function ErpRouter({
                         />
                       </div>
                       <Link
-                        className="small-action"
+                        className="small-action order-create-action"
                         href={`/?module=new-order&customer=${dashboard.customer.id}`}
                       >
                         Create New Order / Quote

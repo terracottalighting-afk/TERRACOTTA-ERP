@@ -12112,7 +12112,7 @@ export async function ErpRouter({
                   aria-label="Customer dashboard sections"
                 >
                   {customerDashboardTabs.map((tab) => (
-                    <Link
+                    <a
                       aria-current={
                         selectedCustomerTab === tab.key ? "page" : undefined
                       }
@@ -12120,7 +12120,7 @@ export async function ErpRouter({
                       key={tab.key}
                     >
                       {tab.label}
-                    </Link>
+                    </a>
                   ))}
                 </section>
 

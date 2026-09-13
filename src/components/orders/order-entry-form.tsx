@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 
 export type OrderProductOption = {
   brandName: string;
@@ -55,6 +55,9 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
   const [selectedParentId, setSelectedParentId] = useState("");
   const [lines, setLines] = useState<OrderLine[]>([]);
   const [orderType, setOrderType] = useState("regular");
+  const [isDropship, setIsDropship] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, startSaving] = useTransition();
   const [locationId, setLocationId] = useState(defaultLocationId ?? shipToOptions.find((location) => location.isDefault)?.id ?? shipToOptions[0]?.id ?? "");
   const [shippingContactName, setShippingContactName] = useState(() => {
     const initialLocationId = defaultLocationId ?? shipToOptions.find((location) => location.isDefault)?.id ?? shipToOptions[0]?.id;
@@ -133,8 +136,26 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
     setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)));
   }
 
+  function submitOrder(formData: FormData) {
+    setSaveError(null);
+
+    if (lines.length === 0) {
+      setSaveError("Add at least one product or part to the order before saving.");
+      return;
+    }
+
+    if (!isDropship && !locationId) {
+      setSaveError("Select a saved shipping address or choose Manual Ship-to / Drop Ship.");
+      return;
+    }
+
+    startSaving(async () => {
+      await saveAction(formData);
+    });
+  }
+
   return (
-    <form action={saveAction} className="customer-form order-entry-form" data-default-discount={defaultDiscountPercent}>
+    <form action={submitOrder} className="customer-form order-entry-form" data-default-discount={defaultDiscountPercent}>
       <input name="customer_id" type="hidden" value={customerId} />
       {agencyId ? <input name="sales_rep_agency_id" type="hidden" value={agencyId} /> : null}
       <input data-order-lines name="order_lines" type="hidden" value={JSON.stringify(lines.map((line) => ({ discountPercent: line.discountPercent, productId: line.id, quantity: line.quantity, unitPrice: line.unitPrice })))} />
@@ -195,7 +216,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
       <fieldset>
         <legend>Ship-to</legend>
         <label className="checkbox-label ship-to-mode-toggle">
-          <input name="is_dropship" type="checkbox" />
+          <input checked={isDropship} name="is_dropship" onChange={(event) => setIsDropship(event.target.checked)} type="checkbox" />
           Manual Ship-to / Drop Ship
         </label>
         <div className="ship-to-mode ship-to-mode--saved form-grid">
@@ -362,8 +383,11 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
       </fieldset>
 
       <div className="form-actions">
-        <button className="primary-action" type="submit">Save Order</button>
+        <button className="primary-action" disabled={isSaving} type="submit">
+          {isSaving ? "Saving Order..." : "Save Order"}
+        </button>
       </div>
+      {saveError ? <p aria-live="polite" className="form-alert">{saveError}</p> : null}
     </form>
   );
 }

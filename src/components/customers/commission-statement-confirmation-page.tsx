@@ -6,7 +6,8 @@ import { createSupabaseUntypedAdminClient } from "@/lib/supabase/admin";
 type FormAction = (formData: FormData) => void | Promise<void>;
 type Invoice = { brand_name_snapshot: string; customer_name_snapshot: string; id: string; invoice_date: string; invoice_number: string; total_amount: number | null };
 type Snapshot = { commission_amount: number; commission_base_amount: number; commission_percent: number; customer_invoice_id: string; sales_order_id: string };
-type CreditApplication = { amount_applied: number; credit_memo: { credit_memo_number: string }[]; customer_invoice_id: string };
+type CreditApplication = { amount_applied: number; credit_memo_id: string; customer_invoice_id: string };
+type CreditMemo = { credit_memo_number: string; id: string };
 type SalesOrder = { customer_po_number: string; id: string };
 
 const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
@@ -22,18 +23,26 @@ export async function CommissionStatementConfirmationPage({ agencyId, confirmAct
     supabase.from("sales_rep_agency").select("name").eq("id", agencyId).maybeSingle(),
     supabase.from("commission_snapshot").select("customer_invoice_id, sales_order_id, commission_base_amount, commission_percent, commission_amount").eq("sales_rep_agency_id", agencyId).eq("commission_status", "commission_ready").in("customer_invoice_id", selectedInvoiceIds),
     supabase.from("customer_invoice").select("id, invoice_number, invoice_date, customer_name_snapshot, brand_name_snapshot, total_amount").in("id", selectedInvoiceIds),
-    supabase.from("credit_memo_application").select("customer_invoice_id, amount_applied, credit_memo:credit_memo_id(credit_memo_number)").in("customer_invoice_id", selectedInvoiceIds).eq("application_status", "posted"),
+    supabase.from("credit_memo_application").select("customer_invoice_id, credit_memo_id, amount_applied").in("customer_invoice_id", selectedInvoiceIds).eq("application_status", "posted"),
   ]);
   if (agencyError || snapshotsError || invoicesError || creditApplicationsError) throw new Error(agencyError?.message ?? snapshotsError?.message ?? invoicesError?.message ?? creditApplicationsError?.message ?? "Unable to load commission statement details.");
 
   const snapshotInvoiceIds = new Set((snapshots ?? []).map((snapshot: Snapshot) => snapshot.customer_invoice_id));
   const readyInvoices = (invoices ?? []).filter((invoice: Invoice) => snapshotInvoiceIds.has(invoice.id)) as Invoice[];
+  const appliedCreditApplications = (creditApplications ?? []) as CreditApplication[];
+  const creditMemoIds = [...new Set(appliedCreditApplications.map((application) => application.credit_memo_id))];
   const salesOrderIds = [...new Set((snapshots ?? []).map((snapshot: Snapshot) => snapshot.sales_order_id))];
-  const { data: salesOrders, error: salesOrdersError } = salesOrderIds.length
-    ? await supabase.from("sales_order").select("id, customer_po_number").in("id", salesOrderIds)
-    : { data: [] as SalesOrder[], error: null };
-  if (salesOrdersError) throw new Error(salesOrdersError.message);
+  const [{ data: salesOrders, error: salesOrdersError }, { data: creditMemos, error: creditMemosError }] = await Promise.all([
+    salesOrderIds.length
+      ? supabase.from("sales_order").select("id, customer_po_number").in("id", salesOrderIds)
+      : Promise.resolve({ data: [] as SalesOrder[], error: null }),
+    creditMemoIds.length
+      ? supabase.from("credit_memo").select("id, credit_memo_number").in("id", creditMemoIds)
+      : Promise.resolve({ data: [] as CreditMemo[], error: null }),
+  ]);
+  if (salesOrdersError || creditMemosError) throw new Error(salesOrdersError?.message ?? creditMemosError?.message ?? "Unable to load commission statement references.");
   const salesOrderById = new Map((salesOrders ?? []).map((salesOrder: SalesOrder) => [salesOrder.id, salesOrder]));
+  const creditMemoNumberById = new Map((creditMemos ?? []).map((creditMemo: CreditMemo) => [creditMemo.id, creditMemo.credit_memo_number]));
   const commissionByInvoiceId = new Map<string, number>();
   const adjustedBaseByInvoiceId = new Map<string, number>();
   const commissionRatesByInvoiceId = new Map<string, number[]>();
@@ -50,8 +59,8 @@ export async function CommissionStatementConfirmationPage({ agencyId, confirmAct
     }
   }
   const creditApplicationTextByInvoiceId = new Map<string, string>();
-  for (const application of (creditApplications ?? []) as CreditApplication[]) {
-    const value = `${application.credit_memo[0]?.credit_memo_number ?? "Credit memo"} | ${currency.format(Number(application.amount_applied ?? 0))}`;
+  for (const application of appliedCreditApplications) {
+    const value = `${creditMemoNumberById.get(application.credit_memo_id) ?? "Credit memo"} | ${currency.format(Number(application.amount_applied ?? 0))}`;
     creditApplicationTextByInvoiceId.set(application.customer_invoice_id, [
       creditApplicationTextByInvoiceId.get(application.customer_invoice_id),
       value,

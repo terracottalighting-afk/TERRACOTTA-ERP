@@ -24,9 +24,10 @@ type Invoice = {
 type SalesOrder = { customer_po_number: string; id: string };
 type CreditApplication = {
   amount_applied: number;
-  credit_memo: { credit_memo_number: string }[];
+  credit_memo_id: string;
   customer_invoice_id: string;
 };
+type CreditMemo = { credit_memo_number: string; id: string };
 
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -102,7 +103,7 @@ export async function CommissionStatementPage({ paymentId }: { paymentId?: strin
     invoiceIds.length
       ? supabase
           .from("credit_memo_application")
-          .select("customer_invoice_id, amount_applied, credit_memo:credit_memo_id(credit_memo_number)")
+          .select("customer_invoice_id, credit_memo_id, amount_applied")
           .in("customer_invoice_id", invoiceIds)
           .eq("application_status", "posted")
       : Promise.resolve({ data: [] as CreditApplication[], error: null }),
@@ -123,9 +124,24 @@ export async function CommissionStatementPage({ paymentId }: { paymentId?: strin
     ((salesOrdersResult.data ?? []) as SalesOrder[]).map((order) => [order.id, order]),
   );
   const snapshotById = new Map(snapshots.map((snapshot) => [snapshot.id, snapshot]));
+  const appliedCreditApplications = (creditApplicationsResult.data ?? []) as CreditApplication[];
+  const creditMemoIds = [...new Set(appliedCreditApplications.map((application) => application.credit_memo_id))];
+  const { data: creditMemos, error: creditMemosError } = creditMemoIds.length
+    ? await supabase
+        .from("credit_memo")
+        .select("id, credit_memo_number")
+        .in("id", creditMemoIds)
+    : { data: [] as CreditMemo[], error: null };
+  if (creditMemosError) throw new Error(creditMemosError.message);
+  const creditMemoNumberById = new Map(
+    ((creditMemos ?? []) as CreditMemo[]).map((creditMemo) => [
+      creditMemo.id,
+      creditMemo.credit_memo_number,
+    ]),
+  );
   const creditAppliedTextByInvoiceId = new Map<string, string>();
-  for (const application of (creditApplicationsResult.data ?? []) as CreditApplication[]) {
-    const applicationText = `${application.credit_memo[0]?.credit_memo_number ?? "Credit memo"} | ${currency.format(Number(application.amount_applied ?? 0))}`;
+  for (const application of appliedCreditApplications) {
+    const applicationText = `${creditMemoNumberById.get(application.credit_memo_id) ?? "Credit memo"} | ${currency.format(Number(application.amount_applied ?? 0))}`;
     creditAppliedTextByInvoiceId.set(application.customer_invoice_id, [
       creditAppliedTextByInvoiceId.get(application.customer_invoice_id),
       applicationText,

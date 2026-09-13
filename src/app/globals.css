@@ -1851,7 +1851,8 @@ input {
   .commission-statement-page .account-header { margin: 0; padding-bottom: 18px; }
   .commission-statement-page .info-panel, .commission-statement-page .data-section { box-shadow: none; }
   .commission-statement-page .table-wrap { max-width: none; overflow: visible; }
-  .commission-statement-page .data-table { min-width: 0; width: 100%; }
+  .commission-statement-page .data-table { font-size: 8px; min-width: 0; width: 100%; }
+  .commission-statement-page .data-table th, .commission-statement-page .data-table td { padding: 4px; white-space: normal; }
 }
 
 .text-action--danger {

@@ -46,11 +46,6 @@ type SalesOrderDetail = {
 
 type ConvertQuoteAction = (formData: FormData) => Promise<void>;
 
-function snapshotEmail(snapshot: Record<string, unknown> | null) {
-  const email = snapshot?.shipping_contact_email ?? snapshot?.email;
-  return typeof email === "string" && email.trim() ? email : null;
-}
-
 export async function OrderDetailPage({
   convertQuoteToOrderAction,
   order,
@@ -192,22 +187,12 @@ export async function OrderDetailPage({
         .eq("rga_number", replacementRgaNumber)
         .maybeSingle()
       : { data: null, error: null };
-  const acknowledgementRecipientEmail =
-    snapshotEmail(order.ship_to_snapshot_json) ??
-    snapshotEmail(order.bill_to_snapshot_json);
   const hasShippedItems = order.lines.some(
     (line) => Number(line.quantity_shipped) > 0,
   );
   const orderDocumentLabel = hasShippedItems
     ? "Order Status"
     : "Order Acknowledgement";
-  const acknowledgementSubject = encodeURIComponent(
-    `${orderDocumentLabel} ${order.sales_order_number}`,
-  );
-  const acknowledgementBody = encodeURIComponent(
-    `Please find the ${orderDocumentLabel.toLowerCase()} for ${order.sales_order_number} attached.`,
-  );
-  const acknowledgementEmailHref = `mailto:${acknowledgementRecipientEmail ?? ""}?subject=${acknowledgementSubject}&body=${acknowledgementBody}`;
   const activeTab = ["profile", "shipments", "rga"].includes(orderTab ?? "")
     ? orderTab!
     : "profile";
@@ -271,11 +256,8 @@ export async function OrderDetailPage({
                 href={`/?module=order-acknowledgement&order=${order.id}`}
                 target="_blank"
               >
-                Download {orderDocumentLabel}
+                Download/Email {orderDocumentLabel}
               </Link>
-              <a className="secondary-action" href={acknowledgementEmailHref}>
-                Email {orderDocumentLabel}
-              </a>
             </>
           ) : null}
           {!isQuote && hasPendingShipment && latestShipment ? (

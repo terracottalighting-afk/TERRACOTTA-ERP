@@ -7,7 +7,7 @@ import { dateLabel, money, numberFormatter } from "@/lib/formatters";
 type CreditMemoDocumentDetail = {
   customerEmail: string | null;
   lines: { description: string; id: string; quantity: number; line_total: number; unit_amount: number }[];
-  memo: { brand_name_snapshot: string; credit_memo_number: string; customer_name_snapshot: string; id: string; issue_date: string; reason_code: string; rga_id: string | null; rga_number: string | null; status: string; total_credit_amount: number };
+  memo: { amount_applied: number; amount_remaining: number; brand_name_snapshot: string; credit_memo_number: string; customer_name_snapshot: string; id: string; issue_date: string; reason_code: string; rga_id: string | null; rga_number: string | null; status: string; total_credit_amount: number };
 };
 
 export async function CreditMemoDocumentPage({ creditMemoId, loadCreditMemo }: { creditMemoId?: string; loadCreditMemo: (creditMemoId: string) => Promise<CreditMemoDocumentDetail | null> }) {
@@ -32,7 +32,11 @@ export async function CreditMemoDocumentPage({ creditMemoId, loadCreditMemo }: {
       </header>
       <section className="quote-document-addresses"><div><span>Customer</span><strong>{detail.memo.customer_name_snapshot}</strong></div><div><span>Reason</span><strong>{detail.memo.reason_code}</strong></div></section>
       <table className="quote-document-table"><thead><tr><th>Item</th><th>Qty</th><th>Unit Amount</th><th>Credit Amount</th></tr></thead><tbody>{detail.lines.map((line) => <tr key={line.id}><td>{line.description}</td><td>{numberFormatter.format(Number(line.quantity))}</td><td>{money(Number(line.unit_amount))}</td><td>{money(Number(line.line_total))}</td></tr>)}</tbody></table>
-      <div className="quote-document-total"><span>Credit Total</span><strong>{money(Number(detail.memo.total_credit_amount))}</strong></div>
+      <dl className="invoice-document-totals">
+        <div><dt>Credit Total</dt><dd>{money(detail.memo.total_credit_amount)}</dd></div>
+        <div><dt>Credit Used</dt><dd>{money(detail.memo.amount_applied)}</dd></div>
+        <div><dt>Remaining Balance</dt><dd>{money(detail.memo.amount_remaining)}</dd></div>
+      </dl>
     </article>
   </section>;
 }

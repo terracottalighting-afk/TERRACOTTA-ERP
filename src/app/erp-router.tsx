@@ -11129,7 +11129,7 @@ async function getCreditMemoDocument(creditMemoId: string) {
   const [memoResult, linesResult] = await Promise.all([
     supabase
       .from("credit_memo")
-      .select("id, credit_memo_number, customer_account_id, customer_name_snapshot, brand_name_snapshot, issue_date, reason_code, status, total_credit_amount, rga_id")
+      .select("id, credit_memo_number, customer_account_id, customer_name_snapshot, brand_name_snapshot, issue_date, reason_code, status, total_credit_amount, amount_applied, amount_remaining, rga_id")
       .eq("id", creditMemoId)
       .maybeSingle(),
     supabase
@@ -11167,6 +11167,8 @@ async function getCreditMemoDocument(creditMemoId: string) {
     })),
     memo: {
       ...memoResult.data,
+      amount_applied: Number(memoResult.data.amount_applied ?? 0),
+      amount_remaining: Number(memoResult.data.amount_remaining ?? 0),
       total_credit_amount: Number(memoResult.data.total_credit_amount ?? 0),
       rga_number: rgaResult.data?.rga_number ?? null,
     },

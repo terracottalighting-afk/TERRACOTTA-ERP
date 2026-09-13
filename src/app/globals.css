@@ -1941,6 +1941,11 @@ dd {
   gap: 14px;
 }
 
+.order-confirmation {
+  display: grid;
+  gap: 14px;
+}
+
 .tab-panel-hidden {
   display: none;
 }

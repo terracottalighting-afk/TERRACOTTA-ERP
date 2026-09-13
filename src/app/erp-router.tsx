@@ -2151,6 +2151,8 @@ async function createSalesOrderAction(formData: FormData) {
   const salesRepAgencyOverrideId =
     textValue(formData, "sales_rep_agency_id_override") || null;
   const salesRepOverrideId = textValue(formData, "sales_rep_id_override") || null;
+  const payCommission = textValue(formData, "commission_payable") === "1";
+  const requestedCommissionRate = textValue(formData, "commission_rate_percent");
   const notes = textValue(formData, "notes") || null;
   const productSearch = textValue(formData, "product_search");
   const fallbackUrl = salesRepAgencyId
@@ -2414,6 +2416,38 @@ async function createSalesOrderAction(formData: FormData) {
       resolvedSalesRepId = salesRepAgencyId ? null : selectedRep?.id ?? null;
     }
   }
+  const requestedCommissionRateValue = requestedCommissionRate
+    ? Number(requestedCommissionRate)
+    : null;
+  if (
+    requestedCommissionRateValue !== null &&
+    (!Number.isFinite(requestedCommissionRateValue) ||
+      requestedCommissionRateValue < 0 ||
+      requestedCommissionRateValue > 100)
+  ) {
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent("Commission rates must be between 0 and 100 percent.")}`,
+    );
+  }
+  const { data: resolvedCommissionAgency, error: resolvedCommissionAgencyError } =
+    resolvedSalesRepAgencyId
+      ? await createSupabaseUntypedAdminClient()
+          .from("sales_rep_agency")
+          .select("commission_default_percent")
+          .eq("id", resolvedSalesRepAgencyId)
+          .eq("status", "active")
+          .maybeSingle()
+      : { data: null, error: null };
+  if (resolvedCommissionAgencyError) {
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent(resolvedCommissionAgencyError.message)}`,
+    );
+  }
+  const commissionRatePercent =
+    payCommission && resolvedCommissionAgency
+      ? requestedCommissionRateValue ??
+        Number(resolvedCommissionAgency.commission_default_percent ?? 0)
+      : null;
   const billToLocation = billToLocationResult.data;
   const dropshipName = textValue(formData, "dropship_name");
   const dropshipAddressLine1 = textValue(formData, "dropship_address_line_1");
@@ -2523,6 +2557,8 @@ async function createSalesOrderAction(formData: FormData) {
       customer_location_id: isDropship ? null : locationId,
       customer_name_snapshot: account.name,
       customer_po_number: customerPoNumber,
+      commission_payable: payCommission,
+      commission_rate_percent: commissionRatePercent,
       invoice_required: !["quote", "catalog_marketing"].includes(orderType),
       sales_order_number: quoteNumber,
       display_order_type:
@@ -10147,7 +10183,7 @@ async function getOrderEntryData(customerId: string) {
     agencyIds.length
       ? createSupabaseUntypedAdminClient()
           .from("sales_rep_agency")
-          .select("id, name")
+          .select("id, name, commission_default_percent")
           .in("id", agencyIds)
           .eq("status", "active")
       : Promise.resolve({ data: [], error: null }),
@@ -10196,6 +10232,9 @@ async function getOrderEntryData(customerId: string) {
         null;
       return {
         agencyId,
+        agencyCommissionRate: agencyId
+          ? Number(agencyById.get(agencyId)?.commission_default_percent ?? 0)
+          : null,
         agencyName: agencyId ? agencyById.get(agencyId)?.name ?? null : null,
         id: territory.id,
         name: `${territory.territory_code} - ${territory.name}`,
@@ -10620,7 +10659,7 @@ async function getInvoiceQueuePackingLists() {
       orderIds.length
         ? supabase
             .from("sales_order")
-            .select("id, order_type, territory_id_snapshot")
+            .select("id, commission_payable, commission_rate_percent, order_type, territory_id_snapshot")
             .in("id", orderIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
@@ -10711,18 +10750,18 @@ async function getInvoiceQueuePackingLists() {
   const commissionForOrder = (salesOrderId: string) => {
     const order = orderById.get(salesOrderId);
     if (order?.order_type === "rga_replacement") {
-      return { agencyName: null, defaultPercent: null, eligible: false, territoryLabel: null, unavailableReason: "RGA replacement invoices do not earn commission." };
+      return { agencyName: null, defaultPayable: false, defaultPercent: null, eligible: false, territoryLabel: null, unavailableReason: "RGA replacement invoices do not earn commission." };
     }
     if (!order?.territory_id_snapshot) {
-      return { agencyName: null, defaultPercent: null, eligible: false, territoryLabel: null, unavailableReason: "No territory is assigned to the original order." };
+      return { agencyName: null, defaultPayable: false, defaultPercent: null, eligible: false, territoryLabel: null, unavailableReason: "No territory is assigned to the original order." };
     }
     const territory = territoryById.get(order.territory_id_snapshot);
     const assignedAgencyIds = [...new Set(assignmentsByTerritory.get(order.territory_id_snapshot) ?? [])].filter((agencyId) => agencyById.has(agencyId));
     if (assignedAgencyIds.length !== 1) {
-      return { agencyName: null, defaultPercent: null, eligible: false, territoryLabel: territory ? `${territory.territory_code} - ${territory.name}` : "Territory assigned", unavailableReason: assignedAgencyIds.length ? "More than one active agency is assigned to this territory." : "No active sales agency is assigned to this territory." };
+      return { agencyName: null, defaultPayable: false, defaultPercent: null, eligible: false, territoryLabel: territory ? `${territory.territory_code} - ${territory.name}` : "Territory assigned", unavailableReason: assignedAgencyIds.length ? "More than one active agency is assigned to this territory." : "No active sales agency is assigned to this territory." };
     }
     const agency = agencyById.get(assignedAgencyIds[0])!;
-    return { agencyName: agency.name, defaultPercent: Number(agency.commission_default_percent ?? 0), eligible: true, territoryLabel: territory ? `${territory.territory_code} - ${territory.name}` : "Territory assigned", unavailableReason: null };
+    return { agencyName: agency.name, defaultPayable: order.commission_payable, defaultPercent: order.commission_rate_percent ?? Number(agency.commission_default_percent ?? 0), eligible: true, territoryLabel: territory ? `${territory.territory_code} - ${territory.name}` : "Territory assigned", unavailableReason: null };
   };
   const brandSummariesByPackingList = new Map<string, InvoiceBrandSummary[]>();
   for (const line of linesResult.data ?? []) {

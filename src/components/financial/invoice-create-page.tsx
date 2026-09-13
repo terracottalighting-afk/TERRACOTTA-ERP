@@ -21,6 +21,7 @@ type InvoiceQueuePackingList = {
   shipping_fee: number;
   commission: {
     agencyName: string | null;
+    defaultPayable: boolean;
     defaultPercent: number | null;
     eligible: boolean;
     territoryLabel: string | null;
@@ -125,7 +126,7 @@ export async function InvoiceCreatePage({
                         <td>
                           <label className="inline-checkbox">
                             <input
-                              defaultChecked
+                              defaultChecked={packingList.commission.defaultPayable}
                               name={`commission_payable_${brand.brand_id}`}
                               type="checkbox"
                             />

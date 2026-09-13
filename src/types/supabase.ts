@@ -9468,6 +9468,8 @@ export type Database = {
           customer_location_id: string | null
           customer_name_snapshot: string
           customer_po_number: string
+          commission_payable: boolean
+          commission_rate_percent: number | null
           deleted_at: string | null
           deleted_by_user_id: string | null
           discount_percent_snapshot: number
@@ -9534,6 +9536,8 @@ export type Database = {
           customer_location_id?: string | null
           customer_name_snapshot: string
           customer_po_number: string
+          commission_payable?: boolean
+          commission_rate_percent?: number | null
           deleted_at?: string | null
           deleted_by_user_id?: string | null
           discount_percent_snapshot?: number
@@ -9600,6 +9604,8 @@ export type Database = {
           customer_location_id?: string | null
           customer_name_snapshot?: string
           customer_po_number?: string
+          commission_payable?: boolean
+          commission_rate_percent?: number | null
           deleted_at?: string | null
           deleted_by_user_id?: string | null
           discount_percent_snapshot?: number

@@ -31,6 +31,7 @@ export type OrderShipToOption = {
 
 export type OrderTerritoryOption = {
   agencyId: string | null;
+  agencyCommissionRate: number | null;
   agencyName: string | null;
   id: string;
   name: string;
@@ -137,6 +138,8 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
     salesRepId: "",
     territoryId: "",
   });
+  const [payCommission, setPayCommission] = useState(true);
+  const [commissionRate, setCommissionRate] = useState("");
   const [isEditingCommission, setIsEditingCommission] = useState(false);
   const [hasCommissionOverride, setHasCommissionOverride] = useState(false);
   const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(null);
@@ -193,6 +196,11 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
   const selectedAgencyReps = salesReps.filter((rep) => rep.agencyId === commissionSelection.agencyId);
   const selectedSalesRep = selectedAgencyReps.find((rep) => rep.id === commissionSelection.salesRepId);
 
+  function defaultCommissionRate(territoryId: string) {
+    const rate = territories.find((territory) => territory.id === territoryId)?.agencyCommissionRate;
+    return rate === null || rate === undefined ? "" : String(rate);
+  }
+
   function commissionDefaultsForLocation(nextLocationId: string, dropship = isDropship) {
     const location = shipToOptions.find((option) => option.id === nextLocationId);
     return dropship || !location
@@ -201,7 +209,14 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
           agencyId: location.agencyId ?? "",
           salesRepId: location.salesRepId ?? "",
           territoryId: location.territoryId ?? "",
-        };
+    };
+  }
+
+  function selectCommissionTerritory(territoryId: string) {
+    const territory = territories.find((option) => option.id === territoryId);
+    setCommissionSelection({ agencyId: territory?.agencyId ?? "", salesRepId: "", territoryId });
+    setCommissionRate(defaultCommissionRate(territoryId));
+    setHasCommissionOverride(true);
   }
 
   function addProduct(product: OrderProductOption) {
@@ -286,7 +301,10 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
         ? String(formData.get("dropship_name") ?? "").trim()
         : selectedLocation?.name ?? "Not set",
     });
-    setCommissionSelection(commissionDefaultsForLocation(locationId));
+    const nextCommissionSelection = commissionDefaultsForLocation(locationId);
+    setCommissionSelection(nextCommissionSelection);
+    setCommissionRate(defaultCommissionRate(nextCommissionSelection.territoryId));
+    setPayCommission(true);
     setHasCommissionOverride(false);
     setIsEditingCommission(false);
   }
@@ -317,6 +335,8 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
       <input name="sales_rep_agency_id_override" type="hidden" value={commissionSelection.agencyId} />
       <input name="sales_rep_id_override" type="hidden" value={commissionSelection.salesRepId} />
       <input name="commission_override_enabled" type="hidden" value={hasCommissionOverride ? "1" : ""} />
+      <input name="commission_payable" type="hidden" value={payCommission ? "1" : ""} />
+      <input name="commission_rate_percent" type="hidden" value={commissionRate} />
 
       <div hidden={Boolean(confirmation)}>
       <fieldset id="order-header">
@@ -375,7 +395,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
       <fieldset id="order-ship-to">
         <legend>Ship-to</legend>
         <label className="checkbox-label ship-to-mode-toggle">
-          <input checked={isDropship} name="is_dropship" onChange={(event) => { setIsDropship(event.target.checked); setCommissionSelection(commissionDefaultsForLocation(locationId, event.target.checked)); }} type="checkbox" />
+          <input checked={isDropship} name="is_dropship" onChange={(event) => { const nextSelection = commissionDefaultsForLocation(locationId, event.target.checked); setIsDropship(event.target.checked); setCommissionSelection(nextSelection); setCommissionRate(defaultCommissionRate(nextSelection.territoryId)); }} type="checkbox" />
           Manual Ship-to / Drop Ship
         </label>
         <div className="ship-to-mode ship-to-mode--saved form-grid">
@@ -385,7 +405,9 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
                 const nextLocationId = event.target.value;
                 const nextLocation = shipToOptions.find((location) => location.id === nextLocationId);
                 setLocationId(nextLocationId);
-                setCommissionSelection(commissionDefaultsForLocation(nextLocationId));
+                const nextSelection = commissionDefaultsForLocation(nextLocationId);
+                setCommissionSelection(nextSelection);
+                setCommissionRate(defaultCommissionRate(nextSelection.territoryId));
                 setShippingContactName(nextLocation?.contactName ?? "");
                 setShippingContactPhone(nextLocation?.phone ?? "");
                 setShippingContactEmail(nextLocation?.email ?? "");
@@ -577,12 +599,14 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
             <div className="section-title"><h3>Territory &amp; Commission</h3><button className="text-action text-action--button" onClick={() => setIsEditingCommission((current) => !current)} type="button">{isEditingCommission ? "Done" : "Edit"}</button></div>
             {isEditingCommission ? (
               <div className="detail-grid detail-grid--inside">
-                <label>Territory<select onChange={(event) => { const territoryId = event.target.value; const territory = territories.find((option) => option.id === territoryId); setCommissionSelection({ agencyId: territory?.agencyId ?? "", salesRepId: "", territoryId }); setHasCommissionOverride(true); }} value={commissionSelection.territoryId}><option value="">Not assigned</option>{territories.map((territory) => <option key={territory.id} value={territory.id}>{territory.name}</option>)}</select></label>
+                <label>Territory<select onChange={(event) => selectCommissionTerritory(event.target.value)} value={commissionSelection.territoryId}><option value="">Not assigned</option>{territories.map((territory) => <option key={territory.id} value={territory.id}>{territory.name}</option>)}</select></label>
                 <label>Sales Agency<select disabled={!commissionSelection.territoryId} onChange={(event) => { setCommissionSelection((current) => ({ ...current, agencyId: event.target.value, salesRepId: "" })); setHasCommissionOverride(true); }} value={commissionSelection.agencyId}><option value="">Not assigned</option>{selectedTerritory?.agencyId ? <option value={selectedTerritory.agencyId}>{selectedTerritory.agencyName ?? "Assigned sales agency"}</option> : null}</select></label>
                 <label>Sales Rep<select disabled={!commissionSelection.agencyId} onChange={(event) => { setCommissionSelection((current) => ({ ...current, salesRepId: event.target.value })); setHasCommissionOverride(true); }} value={commissionSelection.salesRepId}><option value="">Not assigned</option>{selectedAgencyReps.map((rep) => <option key={rep.id} value={rep.id}>{rep.name}</option>)}</select></label>
+                <label className="inline-checkbox">Pay Commission<input checked={payCommission} onChange={(event) => setPayCommission(event.target.checked)} type="checkbox" /></label>
+                {payCommission ? <label>Commission Rate (%)<input disabled={!commissionSelection.agencyId} max="100" min="0" onChange={(event) => setCommissionRate(event.target.value)} step="0.01" type="number" value={commissionRate} /></label> : null}
               </div>
             ) : (
-              <div className="detail-grid detail-grid--inside"><article className="info-panel"><dl><div><dt>Territory</dt><dd>{selectedTerritory?.name ?? "Not assigned"}</dd></div><div><dt>Sales Agency</dt><dd>{selectedTerritory?.agencyName ?? "Not assigned"}</dd></div><div><dt>Sales Rep</dt><dd>{selectedSalesRep?.name ?? "Not assigned"}</dd></div></dl></article></div>
+              <div className="detail-grid detail-grid--inside"><article className="info-panel"><dl><div><dt>Territory</dt><dd>{selectedTerritory?.name ?? "Not assigned"}</dd></div><div><dt>Sales Agency</dt><dd>{selectedTerritory?.agencyName ?? "Not assigned"}</dd></div><div><dt>Sales Rep</dt><dd>{selectedSalesRep?.name ?? "Not assigned"}</dd></div><div><dt>Pay Commission</dt><dd>{payCommission ? "Yes" : "No"}</dd></div>{payCommission ? <div><dt>Commission Rate</dt><dd>{commissionRate ? `${commissionRate}%` : "Not assigned"}</dd></div> : null}</dl></article></div>
             )}
           </article>
 

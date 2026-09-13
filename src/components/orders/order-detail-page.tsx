@@ -277,11 +277,6 @@ export async function OrderDetailPage({
               Continue Shipment
             </Link>
           ) : null}
-          {!isQuote && hasPostedShipment && latestShipment ? (
-            <Link className="primary-action" href={`/?module=shipment-detail&shipment=${latestShipment.id}`}>
-              View Shipment
-            </Link>
-          ) : null}
           {!isQuote && !hasPendingShipment && !hasPostedShipment && canShip ? (
             <Link className="primary-action" href={`/?module=shipment-create&order=${order.id}`}>
               Ship Order

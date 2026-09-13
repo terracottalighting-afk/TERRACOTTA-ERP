@@ -22,7 +22,7 @@ function currency(value: number) {
 export function PaymentSettlementFields({ balanceDue, creditMemos }: PaymentSettlementFieldsProps) {
   const [creditMemoId, setCreditMemoId] = useState("");
   const [creditAmountInput, setCreditAmountInput] = useState("0.00");
-  const [waiverAmount, setWaiverAmount] = useState(0);
+  const [waiverAmountInput, setWaiverAmountInput] = useState("0.00");
   const selectedMemo = useMemo(
     () => creditMemos.find((memo) => memo.id === creditMemoId),
     [creditMemoId, creditMemos]
@@ -33,7 +33,10 @@ export function PaymentSettlementFields({ balanceDue, creditMemos }: PaymentSett
     ? Math.max(0, Math.min(enteredCredit, maximumCredit))
     : 0;
   const maximumWaiver = Math.max(0, balanceDue - normalizedCredit);
-  const normalizedWaiver = Math.max(0, Math.min(waiverAmount, maximumWaiver));
+  const enteredWaiver = Number(waiverAmountInput);
+  const normalizedWaiver = Number.isFinite(enteredWaiver)
+    ? Math.max(0, Math.min(enteredWaiver, maximumWaiver))
+    : 0;
   const customerPaymentAmount = Math.max(0, balanceDue - normalizedCredit - normalizedWaiver);
 
   function selectCreditMemo(nextId: string) {
@@ -70,7 +73,7 @@ export function PaymentSettlementFields({ balanceDue, creditMemos }: PaymentSett
       <p className="fieldset-note">Use a waiver only when part of the invoice balance will not be collected. A reason is required and will be saved in the AR adjustment record.</p>
       <div className="form-grid">
         <label>Amount to Waive
-          <input max={maximumWaiver} min="0" name="waiver_amount" onChange={(event) => setWaiverAmount(Number(event.target.value) || 0)} step="0.01" type="number" value={normalizedWaiver.toFixed(2)} />
+          <input inputMode="decimal" name="waiver_amount" onChange={(event) => setWaiverAmountInput(event.target.value)} pattern="[0-9]*[.]?[0-9]{0,2}" type="text" value={waiverAmountInput} />
         </label>
         <label>Waiver Reason
           <textarea name="waiver_reason" placeholder="Explain why this amount is being waived" required={normalizedWaiver > 0} rows={3} />

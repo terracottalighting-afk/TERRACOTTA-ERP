@@ -160,6 +160,23 @@ export async function OrderDetailPage({
     ["open", "partially_shipped"].includes(order.status) &&
     order.credit_hold_status !== "on_credit_hold" &&
     order.lines.some((line) => line.quantity_ordered > line.quantity_shipped && line.available_inventory > 0);
+  const unshippedLines = order.lines.filter(
+    (line) => line.quantity_ordered > line.quantity_shipped,
+  );
+  const allUnshippedLinesReady = unshippedLines.every(
+    (line) =>
+      line.available_inventory >= line.quantity_ordered - line.quantity_shipped,
+  );
+  const hasAvailableUnshippedItems = unshippedLines.some(
+    (line) => line.available_inventory > 0,
+  );
+  const shippingStatus = !unshippedLines.length
+    ? "Complete"
+    : allUnshippedLinesReady
+      ? "Ready to ship"
+      : hasAvailableUnshippedItems
+        ? "Partial Ready"
+        : "On Backorder";
   const customerOrdersHref = returnCustomerId
     ? `/?customer=${returnCustomerId}&tab=shipments`
     : `/?customer=${order.customer_account_id}&tab=orders${isQuote ? "&order_mode=quotes" : ""}`;
@@ -290,8 +307,8 @@ export async function OrderDetailPage({
         <div className="metric-grid order-metric-grid">
         <Metric labelText="Order Date" value={order.order_date} />
         <Metric labelText="Order Type" value={label(order.order_type)} />
-        <Metric labelText="Shipping Priority" value={label(order.shipping_priority)} />
         <Metric labelText="Order Total" value={money(Number(order.total_amount ?? 0))} />
+        <Metric labelText="Shipping Status" value={shippingStatus} />
         </div>
       </section>
 

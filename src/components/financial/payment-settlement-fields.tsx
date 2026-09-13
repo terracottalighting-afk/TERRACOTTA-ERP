@@ -6,6 +6,7 @@ type CreditMemoOption = {
   id: string;
   creditMemoNumber: string;
   availableAmount: number;
+  brandName: string;
   issueDate: string;
 };
 
@@ -46,7 +47,7 @@ export function PaymentSettlementFields({ balanceDue, creditMemos }: PaymentSett
         <label className="full-width-field">Available Credit Memo
           <select name="credit_memo_id" onChange={(event) => selectCreditMemo(event.target.value)} value={creditMemoId}>
             <option value="">Do not apply a credit memo</option>
-            {creditMemos.map((memo) => <option key={memo.id} value={memo.id}>{memo.creditMemoNumber} - Available {currency(memo.availableAmount)} - Issued {memo.issueDate}</option>)}
+            {creditMemos.map((memo) => <option key={memo.id} value={memo.id}>{memo.creditMemoNumber} - {memo.brandName} - Available {currency(memo.availableAmount)} - Issued {memo.issueDate}</option>)}
           </select>
         </label>
         {selectedMemo ? <>

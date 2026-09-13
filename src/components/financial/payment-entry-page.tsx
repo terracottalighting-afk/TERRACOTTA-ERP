@@ -18,6 +18,7 @@ type PaymentEntryInvoice = {
 
 type PaymentEntryCreditMemo = {
   amount_remaining: number | null;
+  brand_name_snapshot: string;
   credit_memo_number: string;
   id: string;
   issue_date: string;
@@ -57,6 +58,7 @@ export async function PaymentEntryPage({
   const canRecordPayment = invoice.invoice_status !== "void" && balanceDue > 0;
   const creditMemos = paymentEntry.creditMemos.map((memo) => ({
     availableAmount: Number(memo.amount_remaining ?? 0),
+    brandName: memo.brand_name_snapshot,
     creditMemoNumber: memo.credit_memo_number,
     id: memo.id,
     issueDate: dateLabel(memo.issue_date),

@@ -10921,9 +10921,8 @@ async function getPaymentEntry(invoiceId: string) {
 
   const { data: availableCreditMemos, error: creditMemoError } = await supabase
     .from("credit_memo")
-    .select("id, credit_memo_number, issue_date, amount_remaining")
+    .select("id, credit_memo_number, brand_name_snapshot, issue_date, amount_remaining")
     .eq("customer_account_id", invoice.customer_account_id)
-    .eq("brand_id", invoice.brand_id)
     .in("status", ["posted", "partially_applied"])
     .gt("amount_remaining", 0)
     .order("issue_date", { ascending: false });

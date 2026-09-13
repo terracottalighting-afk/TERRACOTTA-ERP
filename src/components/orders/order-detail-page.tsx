@@ -195,11 +195,17 @@ export async function OrderDetailPage({
   const acknowledgementRecipientEmail =
     snapshotEmail(order.ship_to_snapshot_json) ??
     snapshotEmail(order.bill_to_snapshot_json);
+  const hasShippedItems = order.lines.some(
+    (line) => Number(line.quantity_shipped) > 0,
+  );
+  const orderDocumentLabel = hasShippedItems
+    ? "Order Status"
+    : "Order Acknowledgement";
   const acknowledgementSubject = encodeURIComponent(
-    `Order Acknowledgement ${order.sales_order_number}`,
+    `${orderDocumentLabel} ${order.sales_order_number}`,
   );
   const acknowledgementBody = encodeURIComponent(
-    `Please find the order acknowledgement for ${order.sales_order_number} attached.`,
+    `Please find the ${orderDocumentLabel.toLowerCase()} for ${order.sales_order_number} attached.`,
   );
   const acknowledgementEmailHref = `mailto:${acknowledgementRecipientEmail ?? ""}?subject=${acknowledgementSubject}&body=${acknowledgementBody}`;
   const activeTab = ["profile", "shipments", "rga"].includes(orderTab ?? "")
@@ -265,10 +271,10 @@ export async function OrderDetailPage({
                 href={`/?module=order-acknowledgement&order=${order.id}`}
                 target="_blank"
               >
-                Download Order Acknowledgement
+                Download {orderDocumentLabel}
               </Link>
               <a className="secondary-action" href={acknowledgementEmailHref}>
-                Email Order Acknowledgement
+                Email {orderDocumentLabel}
               </a>
             </>
           ) : null}

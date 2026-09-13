@@ -375,10 +375,17 @@ type SalesOrderDetail = SalesOrder & {
     product_id: string;
     product_name_snapshot: string;
     product_sku_snapshot: string;
+    next_incoming_eta: string | null;
     quantity_cancelled: number;
     quantity_cleared: number;
     quantity_ordered: number;
     quantity_shipped: number;
+    shipment_details: {
+      carrier: string | null;
+      ship_date: string | null;
+      shipped_quantity: number;
+      tracking_number: string | null;
+    }[];
     unit_price: number;
     line_total: number;
   }[];
@@ -10551,16 +10558,89 @@ async function getSalesOrderDetail(
   const inventoryResult = productIds.length
     ? await supabase
         .from("inventory_sku_summary")
-        .select("product_id, sellable_quantity")
+        .select("product_id, sellable_quantity, next_incoming_eta")
         .in("product_id", productIds)
     : { data: [], error: null };
   if (inventoryResult.error) throw new Error(inventoryResult.error.message);
   const inventoryByProduct = new Map(
     (inventoryResult.data ?? []).map((item) => [
       item.product_id,
-      Number(item.sellable_quantity ?? 0),
+      {
+        availableInventory: Number(item.sellable_quantity ?? 0),
+        nextIncomingEta: item.next_incoming_eta ?? null,
+      },
     ]),
   );
+
+  const lineIds = (linesResult.data ?? []).map((line) => line.id);
+  const packingLineResult = lineIds.length
+    ? await supabase
+        .from("packing_list_line")
+        .select("sales_order_line_id, packing_list_id, quantity_shipped")
+        .in("sales_order_line_id", lineIds)
+    : { data: [], error: null };
+  if (packingLineResult.error) throw new Error(packingLineResult.error.message);
+
+  const packingListIds = [
+    ...new Set((packingLineResult.data ?? []).map((line) => line.packing_list_id)),
+  ];
+  const packingListsResult = packingListIds.length
+    ? await supabase
+        .from("packing_list")
+        .select("id, freight_shipment_id, ship_date, status")
+        .in("id", packingListIds)
+    : { data: [], error: null };
+  if (packingListsResult.error) throw new Error(packingListsResult.error.message);
+
+  const postedPackingLists = (packingListsResult.data ?? []).filter((packingList) =>
+    ["shipped", "invoiced"].includes(packingList.status),
+  );
+  const shipmentIds = [
+    ...new Set(
+      postedPackingLists
+        .map((packingList) => packingList.freight_shipment_id)
+        .filter((shipmentId): shipmentId is string => Boolean(shipmentId)),
+    ),
+  ];
+  const shipmentsResult = shipmentIds.length
+    ? await supabase
+        .from("freight_shipment")
+        .select("id, carrier, master_tracking_number")
+        .in("id", shipmentIds)
+    : { data: [], error: null };
+  if (shipmentsResult.error) throw new Error(shipmentsResult.error.message);
+
+  const packingListById = new Map(
+    postedPackingLists.map((packingList) => [packingList.id, packingList]),
+  );
+  const shipmentById = new Map(
+    (shipmentsResult.data ?? []).map((shipment) => [shipment.id, shipment]),
+  );
+  const shipmentDetailsByLineId = new Map<
+    string,
+    {
+      carrier: string | null;
+      ship_date: string | null;
+      shipped_quantity: number;
+      tracking_number: string | null;
+    }[]
+  >();
+  for (const packingLine of packingLineResult.data ?? []) {
+    const packingList = packingListById.get(packingLine.packing_list_id);
+    if (!packingList || Number(packingLine.quantity_shipped ?? 0) <= 0) continue;
+    const shipment = packingList.freight_shipment_id
+      ? shipmentById.get(packingList.freight_shipment_id)
+      : null;
+    shipmentDetailsByLineId.set(packingLine.sales_order_line_id, [
+      ...(shipmentDetailsByLineId.get(packingLine.sales_order_line_id) ?? []),
+      {
+        carrier: shipment?.carrier ?? null,
+        ship_date: packingList.ship_date ?? null,
+        shipped_quantity: Number(packingLine.quantity_shipped ?? 0),
+        tracking_number: shipment?.master_tracking_number ?? null,
+      },
+    ]);
+  }
 
   const billToLocationResult = orderResult.data.bill_to_snapshot_json
     ? { data: null, error: null }
@@ -10602,8 +10682,10 @@ async function getSalesOrderDetail(
     converted_order: convertedOrderResult.data,
     lines: (linesResult.data ?? []).map((line) => ({
       ...line,
-      available_inventory: inventoryByProduct.get(line.product_id) ?? 0,
+      available_inventory: inventoryByProduct.get(line.product_id)?.availableInventory ?? 0,
       line_total: Number(line.line_total ?? 0),
+      next_incoming_eta: inventoryByProduct.get(line.product_id)?.nextIncomingEta ?? null,
+      shipment_details: shipmentDetailsByLineId.get(line.id) ?? [],
     })),
   } as unknown as SalesOrderDetail;
 }

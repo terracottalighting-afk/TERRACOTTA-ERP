@@ -21,7 +21,17 @@ type OrderAcknowledgement = {
     line_total: number;
     product_name_snapshot: string;
     product_sku_snapshot: string;
+    available_inventory: number;
+    next_incoming_eta: string | null;
+    quantity_cancelled: number;
     quantity_ordered: number;
+    quantity_shipped: number;
+    shipment_details: {
+      carrier: string | null;
+      ship_date: string | null;
+      shipped_quantity: number;
+      tracking_number: string | null;
+    }[];
     unit_price: number;
   }[];
   notes: string | null;
@@ -55,6 +65,32 @@ export async function OrderAcknowledgementPage({
   const recipientEmail =
     snapshotEmail(order.ship_to_snapshot_json) ??
     snapshotEmail(order.bill_to_snapshot_json);
+  const hasShippedItems = order.lines.some(
+    (line) => Number(line.quantity_shipped) > 0,
+  );
+  const documentLabel = hasShippedItems
+    ? "Order Status"
+    : "Order Acknowledgement";
+  const unshippedLines = order.lines.filter(
+    (line) =>
+      Number(line.quantity_ordered) -
+        Number(line.quantity_shipped) -
+        Number(line.quantity_cancelled) >
+      0,
+  );
+  const shippingStatus = !unshippedLines.length
+    ? "Complete"
+    : unshippedLines.every(
+          (line) =>
+            Number(line.available_inventory) >=
+            Number(line.quantity_ordered) -
+              Number(line.quantity_shipped) -
+              Number(line.quantity_cancelled),
+        )
+      ? "Ready to ship"
+      : unshippedLines.some((line) => Number(line.available_inventory) > 0)
+        ? "Partial Ready"
+        : "On Backorder";
 
   return (
     <section className="quote-document-page">
@@ -63,6 +99,7 @@ export async function OrderAcknowledgementPage({
           Back to Order
         </Link>
         <OrderAcknowledgementControls
+          documentLabel={documentLabel}
           orderNumber={order.sales_order_number}
           recipientEmail={recipientEmail}
         />
@@ -71,7 +108,7 @@ export async function OrderAcknowledgementPage({
         <header className="quote-document-header">
           <div>
             <span className="eyebrow">Terracotta Designs and Kanova &amp; Co.</span>
-            <h2>Order Acknowledgement</h2>
+            <h2>{documentLabel}</h2>
           </div>
           <dl>
             <div>
@@ -86,6 +123,12 @@ export async function OrderAcknowledgementPage({
               <dt>Customer PO</dt>
               <dd>{order.customer_po_number ?? "Not provided"}</dd>
             </div>
+            {hasShippedItems ? (
+              <div>
+                <dt>Shipping Status</dt>
+                <dd>{shippingStatus}</dd>
+              </div>
+            ) : null}
           </dl>
         </header>
         <section className="quote-document-addresses">
@@ -109,28 +152,79 @@ export async function OrderAcknowledgementPage({
         </section>
         <table className="quote-document-table">
           <thead>
-            <tr>
-              <th>SKU</th>
-              <th>Item</th>
-              <th>Brand</th>
-              <th>Qty</th>
-              <th>Unit Price</th>
-              <th>Discount</th>
-              <th>Line Total</th>
-            </tr>
+            {hasShippedItems ? (
+              <tr>
+                <th>SKU</th>
+                <th>Item</th>
+                <th>Ordered</th>
+                <th>Shipped Qty</th>
+                <th>Status</th>
+                <th>Shipment Details</th>
+                <th>ETA</th>
+              </tr>
+            ) : (
+              <tr>
+                <th>SKU</th>
+                <th>Item</th>
+                <th>Brand</th>
+                <th>Qty</th>
+                <th>Unit Price</th>
+                <th>Discount</th>
+                <th>Line Total</th>
+              </tr>
+            )}
           </thead>
           <tbody>
-            {order.lines.map((line) => (
-              <tr key={line.id}>
-                <td>{line.product_sku_snapshot}</td>
-                <td>{line.product_name_snapshot}</td>
-                <td>{line.brand_name_snapshot}</td>
-                <td>{numberFormatter.format(line.quantity_ordered)}</td>
-                <td>{money(Number(line.unit_price))}</td>
-                <td>{line.discount_percent}%</td>
-                <td>{money(Number(line.line_total))}</td>
-              </tr>
-            ))}
+            {order.lines.map((line) => {
+              const remainingQuantity = Math.max(
+                0,
+                Number(line.quantity_ordered) -
+                  Number(line.quantity_shipped) -
+                  Number(line.quantity_cancelled),
+              );
+              const lineStatus =
+                remainingQuantity === 0
+                  ? "Complete"
+                  : Number(line.available_inventory) >= remainingQuantity
+                    ? "Available for Ship"
+                    : Number(line.available_inventory) > 0
+                      ? "Partial Ready"
+                      : "On Backorder";
+
+              return hasShippedItems ? (
+                <tr key={line.id}>
+                  <td>{line.product_sku_snapshot}</td>
+                  <td>{line.product_name_snapshot}</td>
+                  <td>{numberFormatter.format(line.quantity_ordered)}</td>
+                  <td>{numberFormatter.format(line.quantity_shipped)}</td>
+                  <td>{lineStatus}</td>
+                  <td>
+                    {line.shipment_details.length
+                      ? line.shipment_details.map((shipment, index) => (
+                          <div key={`${line.id}-${shipment.ship_date}-${index}`}>
+                            {dateLabel(shipment.ship_date)} | {shipment.carrier ?? "Not set"} | {shipment.tracking_number ?? "Not set"}
+                          </div>
+                        ))
+                      : "Not shipped"}
+                  </td>
+                  <td>
+                    {remainingQuantity > 0 && line.next_incoming_eta
+                      ? dateLabel(line.next_incoming_eta)
+                      : ""}
+                  </td>
+                </tr>
+              ) : (
+                <tr key={line.id}>
+                  <td>{line.product_sku_snapshot}</td>
+                  <td>{line.product_name_snapshot}</td>
+                  <td>{line.brand_name_snapshot}</td>
+                  <td>{numberFormatter.format(line.quantity_ordered)}</td>
+                  <td>{money(Number(line.unit_price))}</td>
+                  <td>{line.discount_percent}%</td>
+                  <td>{money(Number(line.line_total))}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         <div className="quote-document-total">

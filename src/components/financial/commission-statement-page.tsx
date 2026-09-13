@@ -16,10 +16,8 @@ type CommissionSnapshot = {
   sales_order_id: string;
 };
 type Invoice = {
-  brand_name_snapshot: string;
   customer_name_snapshot: string;
   id: string;
-  invoice_date: string;
   invoice_number: string;
   total_amount: number | null;
 };
@@ -92,7 +90,7 @@ export async function CommissionStatementPage({ paymentId }: { paymentId?: strin
     invoiceIds.length
       ? supabase
           .from("customer_invoice")
-          .select("id, invoice_number, invoice_date, customer_name_snapshot, brand_name_snapshot, total_amount")
+          .select("id, invoice_number, customer_name_snapshot, total_amount")
           .in("id", invoiceIds)
       : Promise.resolve({ data: [] as Invoice[], error: null }),
     salesOrderIds.length
@@ -179,7 +177,7 @@ export async function CommissionStatementPage({ paymentId }: { paymentId?: strin
     <section className="detail-grid"><article className="info-panel"><h3>Statement Details</h3><dl><div><dt>Statement Date</dt><dd>{statement.payment_date}</dd></div><div><dt>Payment Method</dt><dd>{statement.status === "posted" ? statement.payment_type.toUpperCase() : "Not paid"}</dd></div><div><dt>Payment Reference</dt><dd>{statement.status === "posted" ? statement.payment_reference ?? "Not set" : "Not paid"}</dd></div><div><dt>Commission Total</dt><dd>{currency.format(total)}</dd></div></dl></article></section>
     <section className="data-section">
       <div className="section-title"><div><h3>Included Invoices</h3><p>Commission items included in this statement.</p></div></div>
-      {rows.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Invoice</th><th>PO #</th><th>Customer</th><th>Invoice Date</th><th>Brand</th><th>Invoice Amount</th><th>Credit Applied</th><th>Adjusted Commission Base</th><th>Commission Rate</th><th>Commission</th></tr></thead><tbody>{rows.map(([invoiceId, row]) => <tr key={invoiceId}><td>{row.invoice ? <Link className="table-link" href={`/?module=invoice-document&invoice=${row.invoice.id}`}>{row.invoice.invoice_number}</Link> : "Invoice not found"}</td><td>{row.purchaseOrder}</td><td>{row.invoice?.customer_name_snapshot ?? "Not set"}</td><td>{row.invoice?.invoice_date ?? "Not set"}</td><td>{row.invoice?.brand_name_snapshot ?? "Not set"}</td><td>{currency.format(Number(row.invoice?.total_amount ?? 0))}</td><td>{creditAppliedTextByInvoiceId.get(invoiceId) ?? ""}</td><td>{currency.format(row.adjustedBase)}</td><td>{[...row.rates].map((rate) => `${rate}%`).join(", ")}</td><td>{currency.format(row.commission)}</td></tr>)}</tbody><tfoot><tr><th colSpan={9}>Statement Total</th><th>{currency.format(total)}</th></tr></tfoot></table></div> : <p className="fieldset-note">No invoices are included in this statement.</p>}
+      {rows.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>Invoice</th><th>PO #</th><th>Customer</th><th>Invoice Amount</th><th>Credit Applied</th><th>Adjusted Commission Base</th><th>Commission Rate</th><th>Commission</th></tr></thead><tbody>{rows.map(([invoiceId, row]) => <tr key={invoiceId}><td>{row.invoice ? <Link className="table-link" href={`/?module=invoice-document&invoice=${row.invoice.id}`}>{row.invoice.invoice_number}</Link> : "Invoice not found"}</td><td>{row.purchaseOrder}</td><td>{row.invoice?.customer_name_snapshot ?? "Not set"}</td><td>{currency.format(Number(row.invoice?.total_amount ?? 0))}</td><td>{creditAppliedTextByInvoiceId.get(invoiceId) ?? ""}</td><td>{currency.format(row.adjustedBase)}</td><td>{[...row.rates].map((rate) => `${rate}%`).join(", ")}</td><td>{currency.format(row.commission)}</td></tr>)}</tbody><tfoot><tr><th colSpan={7}>Statement Total</th><th>{currency.format(total)}</th></tr></tfoot></table></div> : <p className="fieldset-note">No invoices are included in this statement.</p>}
     </section>
   </section>;
 }

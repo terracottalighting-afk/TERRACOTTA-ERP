@@ -191,12 +191,12 @@ export function CustomerListOverview({
                       </td>
                     ) : null}
                     <td>
-                      <Link
+                      <a
                         className="table-link"
                         href={`/?customer=${customer.id}${query ? `&q=${encodeURIComponent(query)}` : ""}`}
                       >
                         {customer.name}
-                      </Link>
+                      </a>
                     </td>
                     <td>{customer.account_number}</td>
                     <td>{customer.legacy_account_id ?? "Not set"}</td>

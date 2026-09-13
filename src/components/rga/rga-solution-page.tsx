@@ -72,6 +72,8 @@ export async function RgaSolutionPage({
   ]);
   if (replacementOrderError) throw new Error(replacementOrderError.message);
   if (creditMemoError) throw new Error(creditMemoError.message);
+  const completedWithCreditMemo =
+    approvedSolution === "credit" && Boolean(creditMemo);
 
   return (
     <section className="dashboard-panel">
@@ -137,7 +139,7 @@ export async function RgaSolutionPage({
                 <dd>
                   <Link
                     className="table-link"
-                    href={`/?customer=${rga.customer_account_id}&tab=credit-memo`}
+                    href={`/?module=credit-memo-document&credit_memo=${creditMemo.id}`}
                   >
                     {creditMemo.credit_memo_number}
                   </Link>
@@ -183,7 +185,10 @@ export async function RgaSolutionPage({
               approved, its credit or replacement progress will appear here.
             </p>
           ) : null}
-          {isApproved && approvedSolution === "credit" ? (
+          {completedWithCreditMemo ? (
+            <p className="form-notice">Completed with Credit Memo</p>
+          ) : null}
+          {isApproved && approvedSolution === "credit" && !completedWithCreditMemo ? (
             <form action={issueCreditMemoAction} className="form-actions">
               <input type="hidden" name="rga_id" value={rga.id} />
               <button className="primary-action" type="submit">

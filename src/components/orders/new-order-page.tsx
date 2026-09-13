@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ModulePlaceholder } from "@/components/ui";
-import { OrderEntryForm, type OrderPartOption, type OrderProductOption, type OrderShipToOption } from "./order-entry-form";
+import { OrderEntryForm, type OrderPartOption, type OrderProductOption, type OrderSalesRepOption, type OrderShipToOption, type OrderTerritoryOption } from "./order-entry-form";
 
 type OrderEntryData = {
   customer: {
@@ -9,7 +9,9 @@ type OrderEntryData = {
   };
   partOptions: OrderPartOption[];
   products: OrderProductOption[];
+  salesReps: OrderSalesRepOption[];
   shipToOptions: OrderShipToOption[];
+  territories: OrderTerritoryOption[];
 };
 
 export async function NewOrderPage({
@@ -57,8 +59,10 @@ export async function NewOrderPage({
         isAgencyOrder={isAgencyOrder}
         parts={data.partOptions}
         products={data.products}
+        salesReps={data.salesReps}
         saveAction={saveAction}
         shipToOptions={data.shipToOptions}
+        territories={data.territories}
       />
     </section>
   );

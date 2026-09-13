@@ -18,12 +18,28 @@ export type OrderPartOption = OrderProductOption & {
 
 export type OrderShipToOption = {
   address: string;
+  agencyId: string | null;
   contactName: string | null;
   email: string | null;
   id: string;
   isDefault: boolean;
   name: string;
   phone: string | null;
+  salesRepId: string | null;
+  territoryId: string | null;
+};
+
+export type OrderTerritoryOption = {
+  agencyId: string | null;
+  agencyName: string | null;
+  id: string;
+  name: string;
+};
+
+export type OrderSalesRepOption = {
+  agencyId: string;
+  id: string;
+  name: string;
 };
 
 type OrderLine = OrderProductOption & {
@@ -67,7 +83,9 @@ type Props = {
   parts: OrderPartOption[];
   products: OrderProductOption[];
   saveAction: (formData: FormData) => void;
+  salesReps: OrderSalesRepOption[];
   shipToOptions: OrderShipToOption[];
+  territories: OrderTerritoryOption[];
 };
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
@@ -89,7 +107,7 @@ const orderTypeLabels: Record<string, string> = {
   regular: "Regular Order",
 };
 
-export function OrderEntryForm({ accountName, agencyId, customerId, defaultDiscountPercent, defaultLocationId, isAgencyOrder = false, parts, products, saveAction, shipToOptions }: Props) {
+export function OrderEntryForm({ accountName, agencyId, customerId, defaultDiscountPercent, defaultLocationId, isAgencyOrder = false, parts, products, salesReps, saveAction, shipToOptions, territories }: Props) {
   const [productQuery, setProductQuery] = useState("");
   const [searchParts, setSearchParts] = useState(false);
   const [partSearchMode, setPartSearchMode] = useState<"parent" | "generic">("parent");
@@ -114,6 +132,13 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
     postalCode: "",
     stateProvince: "",
   });
+  const [commissionSelection, setCommissionSelection] = useState({
+    agencyId: "",
+    salesRepId: "",
+    territoryId: "",
+  });
+  const [isEditingCommission, setIsEditingCommission] = useState(false);
+  const [hasCommissionOverride, setHasCommissionOverride] = useState(false);
   const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, startSaving] = useTransition();
@@ -164,6 +189,20 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
   }, [activeParentId, partSearchMode, partQuery, parts, searchParts]);
 
   const subtotal = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice * (1 - line.discountPercent / 100), 0);
+  const selectedTerritory = territories.find((territory) => territory.id === commissionSelection.territoryId);
+  const selectedAgencyReps = salesReps.filter((rep) => rep.agencyId === commissionSelection.agencyId);
+  const selectedSalesRep = selectedAgencyReps.find((rep) => rep.id === commissionSelection.salesRepId);
+
+  function commissionDefaultsForLocation(nextLocationId: string, dropship = isDropship) {
+    const location = shipToOptions.find((option) => option.id === nextLocationId);
+    return dropship || !location
+      ? { agencyId: "", salesRepId: "", territoryId: "" }
+      : {
+          agencyId: location.agencyId ?? "",
+          salesRepId: location.salesRepId ?? "",
+          territoryId: location.territoryId ?? "",
+        };
+  }
 
   function addProduct(product: OrderProductOption) {
     setLines((current) => {
@@ -247,6 +286,9 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
         ? String(formData.get("dropship_name") ?? "").trim()
         : selectedLocation?.name ?? "Not set",
     });
+    setCommissionSelection(commissionDefaultsForLocation(locationId));
+    setHasCommissionOverride(false);
+    setIsEditingCommission(false);
   }
 
   function returnToEditor(sectionId?: string) {
@@ -271,6 +313,10 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
       <input name="customer_id" type="hidden" value={customerId} />
       {agencyId ? <input name="sales_rep_agency_id" type="hidden" value={agencyId} /> : null}
       <input data-order-lines name="order_lines" type="hidden" value={JSON.stringify(lines.map((line) => ({ discountPercent: line.discountPercent, productId: line.id, quantity: line.quantity, unitPrice: line.unitPrice })))} />
+      <input name="territory_id_override" type="hidden" value={commissionSelection.territoryId} />
+      <input name="sales_rep_agency_id_override" type="hidden" value={commissionSelection.agencyId} />
+      <input name="sales_rep_id_override" type="hidden" value={commissionSelection.salesRepId} />
+      <input name="commission_override_enabled" type="hidden" value={hasCommissionOverride ? "1" : ""} />
 
       <div hidden={Boolean(confirmation)}>
       <fieldset id="order-header">
@@ -329,7 +375,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
       <fieldset id="order-ship-to">
         <legend>Ship-to</legend>
         <label className="checkbox-label ship-to-mode-toggle">
-          <input checked={isDropship} name="is_dropship" onChange={(event) => setIsDropship(event.target.checked)} type="checkbox" />
+          <input checked={isDropship} name="is_dropship" onChange={(event) => { setIsDropship(event.target.checked); setCommissionSelection(commissionDefaultsForLocation(locationId, event.target.checked)); }} type="checkbox" />
           Manual Ship-to / Drop Ship
         </label>
         <div className="ship-to-mode ship-to-mode--saved form-grid">
@@ -339,6 +385,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
                 const nextLocationId = event.target.value;
                 const nextLocation = shipToOptions.find((location) => location.id === nextLocationId);
                 setLocationId(nextLocationId);
+                setCommissionSelection(commissionDefaultsForLocation(nextLocationId));
                 setShippingContactName(nextLocation?.contactName ?? "");
                 setShippingContactPhone(nextLocation?.phone ?? "");
                 setShippingContactEmail(nextLocation?.email ?? "");
@@ -524,6 +571,19 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
           <article className="data-section">
             <div className="section-title"><h3>Ship-to</h3><button className="text-action text-action--button" onClick={() => returnToEditor("order-ship-to")} type="button">Edit</button></div>
             <div className="detail-grid detail-grid--inside"><article className="info-panel"><dl><div><dt>{isDropship ? "Manual Ship-to" : "Saved Shipping Address"}</dt><dd>{confirmation.shipToName}</dd></div><div><dt>Address</dt><dd>{confirmation.shipToAddress}</dd></div><div><dt>Contact</dt><dd>{confirmation.shipToContact || "Not set"}</dd></div></dl></article></div>
+          </article>
+
+          <article className="data-section">
+            <div className="section-title"><h3>Territory &amp; Commission</h3><button className="text-action text-action--button" onClick={() => setIsEditingCommission((current) => !current)} type="button">{isEditingCommission ? "Done" : "Edit"}</button></div>
+            {isEditingCommission ? (
+              <div className="detail-grid detail-grid--inside">
+                <label>Territory<select onChange={(event) => { const territoryId = event.target.value; const territory = territories.find((option) => option.id === territoryId); setCommissionSelection({ agencyId: territory?.agencyId ?? "", salesRepId: "", territoryId }); setHasCommissionOverride(true); }} value={commissionSelection.territoryId}><option value="">Not assigned</option>{territories.map((territory) => <option key={territory.id} value={territory.id}>{territory.name}</option>)}</select></label>
+                <label>Sales Agency<select disabled={!commissionSelection.territoryId} onChange={(event) => { setCommissionSelection((current) => ({ ...current, agencyId: event.target.value, salesRepId: "" })); setHasCommissionOverride(true); }} value={commissionSelection.agencyId}><option value="">Not assigned</option>{selectedTerritory?.agencyId ? <option value={selectedTerritory.agencyId}>{selectedTerritory.agencyName ?? "Assigned sales agency"}</option> : null}</select></label>
+                <label>Sales Rep<select disabled={!commissionSelection.agencyId} onChange={(event) => { setCommissionSelection((current) => ({ ...current, salesRepId: event.target.value })); setHasCommissionOverride(true); }} value={commissionSelection.salesRepId}><option value="">Not assigned</option>{selectedAgencyReps.map((rep) => <option key={rep.id} value={rep.id}>{rep.name}</option>)}</select></label>
+              </div>
+            ) : (
+              <div className="detail-grid detail-grid--inside"><article className="info-panel"><dl><div><dt>Territory</dt><dd>{selectedTerritory?.name ?? "Not assigned"}</dd></div><div><dt>Sales Agency</dt><dd>{selectedTerritory?.agencyName ?? "Not assigned"}</dd></div><div><dt>Sales Rep</dt><dd>{selectedSalesRep?.name ?? "Not assigned"}</dd></div></dl></article></div>
+            )}
           </article>
 
           <article className="data-section">

@@ -56,7 +56,9 @@ import {
 import {
   type OrderPartOption,
   type OrderProductOption,
+  type OrderSalesRepOption,
   type OrderShipToOption,
+  type OrderTerritoryOption,
 } from "@/components/orders/order-entry-form";
 import { NewOrderPage } from "@/components/orders/new-order-page";
 import { OrdersOverview } from "@/components/orders/orders-overview";
@@ -2143,6 +2145,12 @@ async function createSalesOrderAction(formData: FormData) {
   const displayOrderType = textValue(formData, "display_order_type") || null;
   const isDropship = formData.get("is_dropship") === "on";
   const locationId = textValue(formData, "customer_location_id") || null;
+  const commissionOverrideEnabled =
+    textValue(formData, "commission_override_enabled") === "1";
+  const territoryOverrideId = textValue(formData, "territory_id_override") || null;
+  const salesRepAgencyOverrideId =
+    textValue(formData, "sales_rep_agency_id_override") || null;
+  const salesRepOverrideId = textValue(formData, "sales_rep_id_override") || null;
   const notes = textValue(formData, "notes") || null;
   const productSearch = textValue(formData, "product_search");
   const fallbackUrl = salesRepAgencyId
@@ -2356,13 +2364,56 @@ async function createSalesOrderAction(formData: FormData) {
   const account = accountResult.data;
   const savedLocation = locationResult.data;
   const locationCoverage = locationCoverageResult.data;
-  const resolvedTerritoryId =
+  let resolvedTerritoryId =
     locationCoverage?.territory_id ?? savedLocation?.territory_id ?? null;
-  const resolvedSalesRepAgencyId =
+  let resolvedSalesRepAgencyId =
     salesRepAgencyId ?? locationCoverage?.sales_rep_agency_id ?? null;
-  const resolvedSalesRepId = salesRepAgencyId
+  let resolvedSalesRepId = salesRepAgencyId
     ? null
     : locationCoverage?.sales_rep_id ?? null;
+
+  if (commissionOverrideEnabled) {
+    if (!territoryOverrideId) {
+      if (salesRepAgencyOverrideId || salesRepOverrideId) {
+        redirect(
+          `${fallbackUrl}&error=${encodeURIComponent("Choose a territory before selecting a sales agency or sales rep.")}`,
+        );
+      }
+      resolvedTerritoryId = null;
+      resolvedSalesRepAgencyId = salesRepAgencyId;
+      resolvedSalesRepId = null;
+    } else {
+      const coverageOptions = await getLocationCoverageOptions(territoryOverrideId);
+      const selectedAgencyId =
+        salesRepAgencyId ??
+        salesRepAgencyOverrideId ??
+        (coverageOptions.agencies.length === 1
+          ? coverageOptions.agencies[0].id
+          : null);
+      const selectedAgency = selectedAgencyId
+        ? coverageOptions.agencies.find((agency) => agency.id === selectedAgencyId)
+        : null;
+      if (!selectedAgency) {
+        redirect(
+          `${fallbackUrl}&error=${encodeURIComponent("Choose a sales agency that covers the selected territory.")}`,
+        );
+      }
+      const agencyReps = coverageOptions.reps.filter(
+        (rep) => rep.agencyId === selectedAgency.id,
+      );
+      const selectedRep = salesRepOverrideId
+        ? agencyReps.find((rep) => rep.id === salesRepOverrideId)
+        : null;
+      if (salesRepOverrideId && !selectedRep) {
+        redirect(
+          `${fallbackUrl}&error=${encodeURIComponent("Choose a sales rep assigned to the selected sales agency.")}`,
+        );
+      }
+      resolvedTerritoryId = territoryOverrideId;
+      resolvedSalesRepAgencyId = selectedAgency.id;
+      resolvedSalesRepId = salesRepAgencyId ? null : selectedRep?.id ?? null;
+    }
+  }
   const billToLocation = billToLocationResult.data;
   const dropshipName = textValue(formData, "dropship_name");
   const dropshipAddressLine1 = textValue(formData, "dropship_address_line_1");
@@ -10011,7 +10062,7 @@ async function getOrderEntryData(customerId: string) {
     supabase
       .from("customer_location")
       .select(
-        "id, location_name, address_line_1, city, state_province, country_code, receiver_name, phone, email, is_default_ship_to",
+        "id, location_name, address_line_1, city, state_province, country_code, receiver_name, phone, email, is_default_ship_to, territory_id",
       )
       .eq("customer_account_id", customerId)
       .eq("is_shipping_address", true)
@@ -10034,6 +10085,130 @@ async function getOrderEntryData(customerId: string) {
   }
 
   if (!customerResult.data) return null;
+
+  const locationIds = (locationsResult.data ?? []).map((location) => location.id);
+  const { data: locationAssignments, error: locationAssignmentsError } =
+    locationIds.length
+      ? await createSupabaseUntypedAdminClient()
+          .from("customer_location_rep_assignment")
+          .select("customer_location_id, territory_id, sales_rep_agency_id, sales_rep_id")
+          .in("customer_location_id", locationIds)
+          .eq("coverage_role", "primary")
+          .eq("status", "active")
+          .is("end_date", null)
+      : { data: [], error: null };
+  if (locationAssignmentsError) throw new Error(locationAssignmentsError.message);
+
+  const territoryIds = [
+    ...new Set(
+      [
+        ...(locationsResult.data ?? []).map((location) => location.territory_id),
+        ...(locationAssignments ?? []).map((assignment) => assignment.territory_id),
+      ].filter((territoryId): territoryId is string => Boolean(territoryId)),
+    ),
+  ];
+  const [territoriesResult, territoryAssignmentsResult] = await Promise.all([
+    territoryIds.length
+      ? createSupabaseUntypedAdminClient()
+          .from("territory")
+          .select("id, territory_code, name")
+          .in("id", territoryIds)
+          .eq("status", "active")
+      : Promise.resolve({ data: [], error: null }),
+    territoryIds.length
+      ? createSupabaseUntypedAdminClient()
+          .from("territory_assignment")
+          .select("territory_id, sales_rep_agency_id")
+          .in("territory_id", territoryIds)
+          .eq("status", "active")
+          .is("end_date", null)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (territoriesResult.error || territoryAssignmentsResult.error) {
+    throw new Error(
+      territoriesResult.error?.message ??
+        territoryAssignmentsResult.error?.message ??
+        "Unable to load customer territory coverage.",
+    );
+  }
+  const agencyIds = [
+    ...new Set(
+      [
+        ...(locationAssignments ?? []).map(
+          (assignment) => assignment.sales_rep_agency_id,
+        ),
+        ...(territoryAssignmentsResult.data ?? []).map(
+          (assignment) => assignment.sales_rep_agency_id,
+        ),
+      ].filter((agencyId): agencyId is string => Boolean(agencyId)),
+    ),
+  ];
+  const [agenciesResult, repsResult] = await Promise.all([
+    agencyIds.length
+      ? createSupabaseUntypedAdminClient()
+          .from("sales_rep_agency")
+          .select("id, name")
+          .in("id", agencyIds)
+          .eq("status", "active")
+      : Promise.resolve({ data: [], error: null }),
+    agencyIds.length
+      ? createSupabaseUntypedAdminClient()
+          .from("sales_rep")
+          .select("id, name, sales_rep_agency_id")
+          .in("sales_rep_agency_id", agencyIds)
+          .eq("status", "active")
+          .order("name", { ascending: true })
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (agenciesResult.error || repsResult.error) {
+    throw new Error(
+      agenciesResult.error?.message ??
+        repsResult.error?.message ??
+        "Unable to load sales coverage choices.",
+    );
+  }
+  const assignmentByLocation = new Map(
+    (locationAssignments ?? []).map((assignment) => [
+      assignment.customer_location_id,
+      assignment,
+    ]),
+  );
+  const territoryAgencyByTerritory = new Map<string, string>();
+  for (const assignment of territoryAssignmentsResult.data ?? []) {
+    if (!territoryAgencyByTerritory.has(assignment.territory_id)) {
+      territoryAgencyByTerritory.set(
+        assignment.territory_id,
+        assignment.sales_rep_agency_id,
+      );
+    }
+  }
+  const agencyById = new Map(
+    (agenciesResult.data ?? []).map((agency) => [agency.id, agency]),
+  );
+  const territories: OrderTerritoryOption[] = (territoriesResult.data ?? [])
+    .map((territory) => {
+      const locationAssignment = (locationAssignments ?? []).find(
+        (assignment) => assignment.territory_id === territory.id,
+      );
+      const agencyId =
+        locationAssignment?.sales_rep_agency_id ??
+        territoryAgencyByTerritory.get(territory.id) ??
+        null;
+      return {
+        agencyId,
+        agencyName: agencyId ? agencyById.get(agencyId)?.name ?? null : null,
+        id: territory.id,
+        name: `${territory.territory_code} - ${territory.name}`,
+      };
+    })
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const salesReps: OrderSalesRepOption[] = (repsResult.data ?? []).map(
+    (rep) => ({
+      agencyId: rep.sales_rep_agency_id,
+      id: rep.id,
+      name: rep.name,
+    }),
+  );
 
   const accessoryIds = (accessoryResult.data ?? []).map(
     (category) => category.id,
@@ -10141,7 +10316,10 @@ async function getOrderEntryData(customerId: string) {
     },
   );
   const shipToOptions: OrderShipToOption[] = (locationsResult.data ?? []).map(
-    (location) => ({
+    (location) => {
+      const assignment = assignmentByLocation.get(location.id);
+      const territoryId = assignment?.territory_id ?? location.territory_id ?? null;
+      return {
       address: [
         location.address_line_1,
         location.city,
@@ -10150,20 +10328,28 @@ async function getOrderEntryData(customerId: string) {
       ]
         .filter(Boolean)
         .join(", "),
+      agencyId:
+        assignment?.sales_rep_agency_id ??
+        (territoryId ? territoryAgencyByTerritory.get(territoryId) ?? null : null),
       contactName: location.receiver_name,
       email: location.email,
       id: location.id,
       isDefault: location.is_default_ship_to,
       name: location.location_name,
       phone: location.phone,
-    }),
+      salesRepId: assignment?.sales_rep_id ?? null,
+      territoryId,
+    };
+    },
   );
 
   return {
     customer: customerResult.data,
     partOptions,
     products: productOptions,
+    salesReps,
     shipToOptions,
+    territories,
   };
 }
 

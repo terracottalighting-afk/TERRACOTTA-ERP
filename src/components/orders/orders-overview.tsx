@@ -171,6 +171,7 @@ export async function OrdersOverview({
           .join(", "),
         addressLine1: location.address_line_1,
         addressLine2: location.address_line_2,
+        agencyId: null,
         city: location.city,
         country: location.country,
         countryCode: location.country_code,
@@ -181,7 +182,9 @@ export async function OrdersOverview({
         name: location.location_name,
         phone: location.phone,
         postalCode: location.postal_code,
+        salesRepId: null,
         stateProvince: location.state_province,
+        territoryId: null,
       }));
       return (
         <EditOrderPage

@@ -113,6 +113,7 @@ export async function OrdersOverview({
   orderSku,
   orderSort,
   orderStatus,
+  orderTab,
   orderTerritory,
   quoteMode = false,
   returnCustomerId,
@@ -141,6 +142,7 @@ export async function OrdersOverview({
   orderSku?: string;
   orderSort?: string;
   orderStatus?: string;
+  orderTab?: string;
   orderTerritory?: string;
   quoteMode?: boolean;
   returnCustomerId?: string;
@@ -205,7 +207,7 @@ export async function OrdersOverview({
         />
       );
     }
-    return <OrderDetailPage convertQuoteToOrderAction={convertQuoteToOrderAction} order={order} returnCustomerId={returnCustomerId} />;
+    return <OrderDetailPage convertQuoteToOrderAction={convertQuoteToOrderAction} order={order} orderTab={orderTab} returnCustomerId={returnCustomerId} />;
   }
 
   let ordersQuery = supabase

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Metric, MetricLink, StatusBadge } from "@/components/ui";
+import { Metric, StatusBadge } from "@/components/ui";
 import {
   addressSnapshotLines,
   dateLabel,
@@ -54,42 +54,66 @@ function snapshotEmail(snapshot: Record<string, unknown> | null) {
 export async function OrderDetailPage({
   convertQuoteToOrderAction,
   order,
+  orderTab,
   returnCustomerId,
 }: {
   convertQuoteToOrderAction: ConvertQuoteAction;
   order: SalesOrderDetail;
+  orderTab?: string;
   returnCustomerId?: string;
 }) {
   const supabase = createSupabaseAdminClient();
   const [
-    { data: latestPackingList, error: latestPackingListError },
+    { data: packingLists, error: packingListsError },
     { data: invoices, error: invoicesError },
-    { count: rgaCount, error: rgaCountError },
+    { data: rgas, error: rgasError },
   ] = await Promise.all([
     supabase
       .from("packing_list")
-      .select("freight_shipment_id")
+      .select("id, packing_list_number, freight_shipment_id, invoice_generation_status_snapshot, invoice_required, ship_date, status")
       .eq("sales_order_id", order.id)
-      .not("freight_shipment_id", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      .order("created_at", { ascending: false }),
     supabase
       .from("customer_invoice")
       .select(
-        "id, invoice_number, brand_name_snapshot, invoice_date, due_date, invoice_status, payment_status, total_amount, balance_due",
+        "id, packing_list_id, invoice_number, brand_name_snapshot, invoice_date, due_date, invoice_status, payment_status, total_amount, balance_due",
       )
       .eq("sales_order_id", order.id)
       .neq("invoice_status", "void")
       .order("invoice_date", { ascending: false }),
     supabase
       .from("rga")
-      .select("id", { count: "exact", head: true })
-      .eq("sales_order_id", order.id),
+      .select("id, rga_number, request_date, requested_resolution_type, status")
+      .eq("sales_order_id", order.id)
+      .order("created_at", { ascending: false }),
   ]);
-  if (latestPackingListError) throw new Error(latestPackingListError.message);
+  if (packingListsError) throw new Error(packingListsError.message);
   if (invoicesError) throw new Error(invoicesError.message);
-  if (rgaCountError) throw new Error(rgaCountError.message);
+  if (rgasError) throw new Error(rgasError.message);
+
+  const latestPackingList = (packingLists ?? []).find(
+    (packingList) => packingList.freight_shipment_id,
+  ) ?? null;
+
+  const shipmentIds = [...new Set(
+    (packingLists ?? [])
+      .map((packingList) => packingList.freight_shipment_id)
+      .filter((shipmentId): shipmentId is string => Boolean(shipmentId)),
+  )];
+  const { data: shipments, error: shipmentsError } = shipmentIds.length
+    ? await supabase
+        .from("freight_shipment")
+        .select("id, freight_shipment_number, status")
+        .in("id", shipmentIds)
+    : { data: [], error: null };
+  if (shipmentsError) throw new Error(shipmentsError.message);
+  const shipmentById = new Map((shipments ?? []).map((shipment) => [shipment.id, shipment]));
+  const invoicesByPackingList = new Map<string, NonNullable<typeof invoices>>();
+  for (const invoice of invoices ?? []) {
+    const relatedInvoices = invoicesByPackingList.get(invoice.packing_list_id) ?? [];
+    relatedInvoices.push(invoice);
+    invoicesByPackingList.set(invoice.packing_list_id, relatedInvoices);
+  }
 
   const { data: latestShipment, error: latestShipmentError } =
     latestPackingList?.freight_shipment_id
@@ -161,6 +185,9 @@ export async function OrderDetailPage({
     `Please find the order acknowledgement for ${order.sales_order_number} attached.`,
   );
   const acknowledgementEmailHref = `mailto:${acknowledgementRecipientEmail ?? ""}?subject=${acknowledgementSubject}&body=${acknowledgementBody}`;
+  const activeTab = ["profile", "shipments", "rga"].includes(orderTab ?? "")
+    ? orderTab!
+    : "profile";
 
   return (
     <section className="dashboard-panel">
@@ -243,11 +270,6 @@ export async function OrderDetailPage({
               Ship Order
             </Link>
           ) : null}
-          {!isQuote ? (
-            <Link className="secondary-action" href={`/?module=create-rga&order=${order.id}`}>
-              Create RGA
-            </Link>
-          ) : null}
           {isQuote ? (
             <Link className="secondary-action quote-export-link" href={`/?module=quote-document&quote=${order.id}`} target="_blank">
               Export
@@ -256,17 +278,21 @@ export async function OrderDetailPage({
         </div>
       </section>
 
-      <section className="metric-grid order-metric-grid">
+      <nav className="dashboard-tabs" aria-label="Order sections">
+        <Link className={activeTab === "profile" ? "dashboard-tab dashboard-tab--active" : "dashboard-tab"} href={`/?module=orders&order=${order.id}&order_tab=profile`}>Order Profile</Link>
+        <Link className={activeTab === "shipments" ? "dashboard-tab dashboard-tab--active" : "dashboard-tab"} href={`/?module=orders&order=${order.id}&order_tab=shipments`}>Shipment &amp; Invoices</Link>
+        {!isQuote ? <Link className={activeTab === "rga" ? "dashboard-tab dashboard-tab--active" : "dashboard-tab"} href={`/?module=orders&order=${order.id}&order_tab=rga`}>RGA</Link> : null}
+      </nav>
+
+      {activeTab === "profile" ? <>
+      <section className="data-section">
+        <div className="section-title"><h3>Order Header</h3></div>
+        <div className="metric-grid order-metric-grid">
         <Metric labelText="Order Date" value={order.order_date} />
         <Metric labelText="Order Type" value={label(order.order_type)} />
         <Metric labelText="Shipping Priority" value={label(order.shipping_priority)} />
         <Metric labelText="Order Total" value={money(Number(order.total_amount ?? 0))} />
-        {invoices && invoices.length > 0 ? (
-          <MetricLink href="#order-invoices" labelText="Invoices" value={numberFormatter.format(invoices.length)} />
-        ) : null}
-        {!isQuote ? (
-          <MetricLink href={`/?module=rga&rga_order=${order.id}`} labelText="RGAs" value={numberFormatter.format(rgaCount ?? 0)} />
-        ) : null}
+        </div>
       </section>
 
       <section className="detail-section">
@@ -392,61 +418,59 @@ export async function OrderDetailPage({
           <p className="long-text">{order.notes || "No internal notes."}</p>
         </article>
       </section>
+      </> : null}
 
-      {invoices && invoices.length > 0 ? (
-        <section className="detail-section" id="order-invoices">
+      {activeTab === "shipments" ? (
+        <section className="detail-section">
           <article className="data-section">
             <div className="section-title">
-              <h3>Invoices</h3>
-              <span className="section-count">{numberFormatter.format(invoices.length)}</span>
+              <h3>Shipments &amp; Invoices</h3>
+              <span className="section-count">{numberFormatter.format(packingLists?.length ?? 0)}</span>
             </div>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Invoice No.</th>
-                    <th>Brand</th>
-                    <th>Invoice Date</th>
-                    <th>Due Date</th>
-                    <th>Invoice Total</th>
-                    <th>Balance Due</th>
-                    <th>Invoice Status</th>
-                    <th>Payment Status</th>
+                    <th>Shipment</th>
+                    <th>Packing List</th>
+                    <th>Ship Date</th>
+                    <th>Shipment Status</th>
+                    <th>Invoices</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {invoices.map((invoice) => (
-                    <tr key={invoice.id}>
+                  {(packingLists ?? []).map((packingList) => {
+                    const shipment = packingList.freight_shipment_id ? shipmentById.get(packingList.freight_shipment_id) : null;
+                    const relatedInvoices = invoicesByPackingList.get(packingList.id) ?? [];
+                    const canCreateInvoice = packingList.invoice_required && packingList.invoice_generation_status_snapshot === "not_invoiced" && ["shipped", "invoiced"].includes(packingList.status);
+                    return <tr key={packingList.id}>
                       <td>
-                        <Link className="table-link" href={`/?module=invoice-document&invoice=${invoice.id}`}>
-                          {invoice.invoice_number}
-                        </Link>
+                        {shipment ? <Link className="table-link" href={`/?module=shipment-detail&shipment=${shipment.id}`}>{shipment.freight_shipment_number}</Link> : "Not created"}
                       </td>
-                      <td>{invoice.brand_name_snapshot}</td>
-                      <td>{dateLabel(invoice.invoice_date)}</td>
-                      <td>{invoice.due_date ? dateLabel(invoice.due_date) : "Not set"}</td>
-                      <td>{money(Number(invoice.total_amount))}</td>
-                      <td>{money(Number(invoice.balance_due))}</td>
-                      <td>
-                        <StatusBadge tone={invoice.invoice_status === "open" ? "primary" : "neutral"} value={invoice.invoice_status} />
-                      </td>
-                      <td>
-                        <StatusBadge
-                          tone={
-                            invoice.payment_status === "paid"
-                              ? "good"
-                              : invoice.payment_status === "partially_paid"
-                                ? "warn"
-                                : "danger"
-                          }
-                          value={invoice.payment_status}
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                      <td>{packingList.packing_list_number}</td>
+                      <td>{packingList.ship_date ? dateLabel(packingList.ship_date) : "Not shipped"}</td>
+                      <td>{shipment ? <StatusBadge tone={shipment.status === "shipped" || shipment.status === "delivered" ? "good" : "primary"} value={shipment.status} /> : "Not created"}</td>
+                      <td>{relatedInvoices.length ? relatedInvoices.map((invoice, index) => <span key={invoice.id}>{index ? ", " : ""}<Link className="table-link" href={`/?module=invoice-document&invoice=${invoice.id}`}>{invoice.invoice_number}</Link></span>) : "Not invoiced"}</td>
+                      <td>{canCreateInvoice ? <Link className="text-action" href={`/?module=invoice-create&packing_list=${packingList.id}`}>Create Invoice</Link> : null}</td>
+                    </tr>;
+                  })}
+                  {(packingLists ?? []).length === 0 ? <tr><td colSpan={6}>No shipments have been created for this order.</td></tr> : null}
                 </tbody>
               </table>
             </div>
+          </article>
+        </section>
+      ) : null}
+
+      {activeTab === "rga" && !isQuote ? (
+        <section className="detail-section">
+          <article className="data-section">
+            <div className="section-title"><h3>RGAs</h3><Link className="primary-action small-action" href={`/?module=create-rga&order=${order.id}`}>Create RGA</Link></div>
+            <div className="table-wrap"><table className="data-table"><thead><tr><th>RGA No.</th><th>Request Date</th><th>Requested Solution</th><th>Status</th></tr></thead><tbody>
+              {(rgas ?? []).map((rga) => <tr key={rga.id}><td><Link className="table-link" href={`/?module=rga-detail&rga=${rga.id}`}>{rga.rga_number}</Link></td><td>{dateLabel(rga.request_date)}</td><td>{label(rga.requested_resolution_type)}</td><td><StatusBadge tone={["closed", "resolved"].includes(rga.status) ? "neutral" : rga.status === "pending_review" ? "warn" : "primary"} value={rga.status} /></td></tr>)}
+              {(rgas ?? []).length === 0 ? <tr><td colSpan={4}>No RGAs have been created for this order.</td></tr> : null}
+            </tbody></table></div>
           </article>
         </section>
       ) : null}

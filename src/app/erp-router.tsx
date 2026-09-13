@@ -136,6 +136,7 @@ export type SearchParams = Promise<{
   quote?: string;
   order?: string;
   order_action?: string;
+  order_tab?: string;
   order_page?: string;
   order_page_size?: string;
   order_q?: string;
@@ -12220,6 +12221,7 @@ export async function ErpRouter({
             orderSku={params.order_sku}
             orderSort={params.order_sort}
             orderStatus={params.order_status}
+            orderTab={params.order_tab}
             orderTerritory={params.order_territory}
             quoteMode={activeModule === "quotes"}
             returnCustomerId={params.return_customer}

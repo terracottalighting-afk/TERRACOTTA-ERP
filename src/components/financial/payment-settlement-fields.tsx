@@ -21,14 +21,17 @@ function currency(value: number) {
 
 export function PaymentSettlementFields({ balanceDue, creditMemos }: PaymentSettlementFieldsProps) {
   const [creditMemoId, setCreditMemoId] = useState("");
-  const [creditAmount, setCreditAmount] = useState(0);
+  const [creditAmountInput, setCreditAmountInput] = useState("0.00");
   const [waiverAmount, setWaiverAmount] = useState(0);
   const selectedMemo = useMemo(
     () => creditMemos.find((memo) => memo.id === creditMemoId),
     [creditMemoId, creditMemos]
   );
   const maximumCredit = Math.min(balanceDue, selectedMemo?.availableAmount ?? 0);
-  const normalizedCredit = Math.max(0, Math.min(creditAmount, maximumCredit));
+  const enteredCredit = Number(creditAmountInput);
+  const normalizedCredit = Number.isFinite(enteredCredit)
+    ? Math.max(0, Math.min(enteredCredit, maximumCredit))
+    : 0;
   const maximumWaiver = Math.max(0, balanceDue - normalizedCredit);
   const normalizedWaiver = Math.max(0, Math.min(waiverAmount, maximumWaiver));
   const customerPaymentAmount = Math.max(0, balanceDue - normalizedCredit - normalizedWaiver);
@@ -36,7 +39,11 @@ export function PaymentSettlementFields({ balanceDue, creditMemos }: PaymentSett
   function selectCreditMemo(nextId: string) {
     const nextMemo = creditMemos.find((memo) => memo.id === nextId);
     setCreditMemoId(nextId);
-    setCreditAmount(nextMemo ? Math.min(balanceDue, nextMemo.availableAmount) : 0);
+    setCreditAmountInput(
+      nextMemo
+        ? Math.min(balanceDue, nextMemo.availableAmount).toFixed(2)
+        : "0.00",
+    );
   }
 
   return <>
@@ -53,7 +60,7 @@ export function PaymentSettlementFields({ balanceDue, creditMemos }: PaymentSett
         {selectedMemo ? <>
           <div className="settlement-available-credit"><span>Available credit</span><strong>{currency(selectedMemo.availableAmount)}</strong></div>
           <label>Credit Amount to Apply
-            <input max={maximumCredit} min="0" name="credit_memo_amount" onChange={(event) => setCreditAmount(Number(event.target.value) || 0)} step="0.01" type="number" value={normalizedCredit.toFixed(2)} />
+            <input inputMode="decimal" name="credit_memo_amount" onChange={(event) => setCreditAmountInput(event.target.value)} pattern="[0-9]*[.]?[0-9]{0,2}" type="text" value={creditAmountInput} />
           </label>
         </> : <input name="credit_memo_amount" type="hidden" value="0" />}
       </div>

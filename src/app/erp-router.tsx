@@ -427,6 +427,10 @@ type CreditMemo = {
   id: string;
   issue_date: string;
   reason_code: string;
+  rga_id: string | null;
+  rga_number: string | null;
+  sales_order_id: string | null;
+  customer_po_number: string | null;
   status: string;
   total_credit_amount: number | null;
 };
@@ -9843,7 +9847,7 @@ async function getCustomerDashboard(customerId: string) {
     supabase
       .from("credit_memo")
       .select(
-        "id, credit_memo_number, brand_name_snapshot, issue_date, reason_code, status, total_credit_amount, amount_applied, amount_remaining",
+        "id, credit_memo_number, brand_name_snapshot, issue_date, reason_code, status, total_credit_amount, amount_applied, amount_remaining, rga_id",
       )
       .eq("customer_account_id", customerId)
       .order("issue_date", { ascending: false })
@@ -9965,6 +9969,27 @@ async function getCustomerDashboard(customerId: string) {
   if (invoiceLinesResult.error) {
     throw new Error(invoiceLinesResult.error.message);
   }
+  const creditMemoRgaIds = [
+    ...new Set(
+      (creditMemosResult.data ?? [])
+        .map((creditMemo) => creditMemo.rga_id)
+        .filter((rgaId): rgaId is string => Boolean(rgaId)),
+    ),
+  ];
+  const creditMemoRgasResult = creditMemoRgaIds.length
+    ? await supabase
+        .from("rga")
+        .select(
+          "id, rga_number, sales_order_id, original_customer_po_number_snapshot",
+        )
+        .in("id", creditMemoRgaIds)
+    : { data: [], error: null };
+  if (creditMemoRgasResult.error) {
+    throw new Error(creditMemoRgasResult.error.message);
+  }
+  const creditMemoRgaById = new Map(
+    (creditMemoRgasResult.data ?? []).map((rga) => [rga.id, rga]),
+  );
   const { data: orderPackingLists, error: orderPackingListsError } =
     orderIds.length
       ? await supabase
@@ -10087,7 +10112,17 @@ async function getCustomerDashboard(customerId: string) {
     billing: billingResult.data as BillingProfile | null,
     attachments: (attachmentsResult.data ?? []) as CustomerAttachment[],
     contacts: (contactsResult.data ?? []) as CustomerContact[],
-    creditMemos: (creditMemosResult.data ?? []) as CreditMemo[],
+    creditMemos: (creditMemosResult.data ?? []).map((creditMemo) => {
+      const rga = creditMemo.rga_id
+        ? creditMemoRgaById.get(creditMemo.rga_id)
+        : null;
+      return {
+        ...creditMemo,
+        rga_number: rga?.rga_number ?? null,
+        sales_order_id: rga?.sales_order_id ?? null,
+        customer_po_number: rga?.original_customer_po_number_snapshot ?? null,
+      };
+    }) as CreditMemo[],
     customer: customerResult.data as CustomerAccount,
     freightPolicies: (freightResult.data ?? []) as FreightPolicy[],
     invoices: (invoicesResult.data ?? []) as CustomerInvoice[],
@@ -13371,7 +13406,37 @@ export async function ErpRouter({
                           <tbody>
                             {dashboard.creditMemos.map((creditMemo) => (
                               <tr key={creditMemo.id}>
-                                <td>{creditMemo.credit_memo_number}</td>
+                                <td>
+                                  <Link
+                                    className="table-link"
+                                    href={`/?module=credit-memo-document&credit_memo=${creditMemo.id}`}
+                                  >
+                                    {creditMemo.credit_memo_number}
+                                  </Link>
+                                  {creditMemo.rga_number ? (
+                                    <>
+                                      {" | "}
+                                      <Link
+                                        className="table-link"
+                                        href={`/?module=rga-detail&rga=${creditMemo.rga_id}`}
+                                      >
+                                        {creditMemo.rga_number}
+                                      </Link>
+                                    </>
+                                  ) : null}
+                                  {creditMemo.sales_order_id &&
+                                  creditMemo.customer_po_number ? (
+                                    <>
+                                      {" | "}
+                                      <Link
+                                        className="table-link"
+                                        href={`/?module=orders&order=${creditMemo.sales_order_id}`}
+                                      >
+                                        {creditMemo.customer_po_number}
+                                      </Link>
+                                    </>
+                                  ) : null}
+                                </td>
                                 <td>{creditMemo.brand_name_snapshot}</td>
                                 <td>{dateLabel(creditMemo.issue_date)}</td>
                                 <td>{label(creditMemo.reason_code)}</td>

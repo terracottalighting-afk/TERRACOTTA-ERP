@@ -1837,7 +1837,7 @@ input {
 .quote-document-total { display: flex; font-size: 17px; gap: 36px; justify-content: flex-end; padding: 22px 8px 0; }
 .packing-list-detail-table th:nth-child(4), .packing-list-detail-table td:nth-child(4) { text-align: left; }
 .packing-list-box-row td { background: #f3f7f8; color: #516273; }
-.packing-list-box-row td:nth-child(4) { font-weight: 700; }
+.packing-list-box-row td:first-child { font-weight: 700; text-align: left; }
 .packing-list-totals { border-top: 2px solid var(--ink); margin-top: 14px; }
 .preparation-list-totals { border-top: 2px solid var(--ink); margin-top: 14px; }
 .quote-document-notes { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 18px; }

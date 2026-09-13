@@ -168,13 +168,19 @@ export async function PackingListDocumentPage({
                     className={index === 0 ? "" : "packing-list-box-row"}
                     key={`${line.id}-${box.box_sequence_snapshot}-${index}`}
                   >
-                    <td>{index === 0 ? line.product_sku_snapshot : ""}</td>
-                    <td>{index === 0 ? line.brand_name_snapshot : ""}</td>
-                    <td>
-                      {index === 0
-                        ? numberFormatter.format(Number(line.quantity_shipped))
-                        : ""}
-                    </td>
+                    {index === 0 ? (
+                      <>
+                        <td rowSpan={boxes.length}>
+                          {line.product_sku_snapshot}
+                        </td>
+                        <td rowSpan={boxes.length}>
+                          {line.brand_name_snapshot}
+                        </td>
+                        <td rowSpan={boxes.length}>
+                          {numberFormatter.format(Number(line.quantity_shipped))}
+                        </td>
+                      </>
+                    ) : null}
                     <td>
                       Box {box.box_sequence_snapshot}
                       {box.box_label_snapshot

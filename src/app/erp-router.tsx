@@ -36,6 +36,7 @@ import { PaymentEntryPage } from "@/components/financial/payment-entry-page";
 import { PaymentDetailPage } from "@/components/financial/payment-detail-page";
 import { CommissionPaymentPage } from "@/components/financial/commission-payment-page";
 import { CommissionStatementPage } from "@/components/financial/commission-statement-page";
+import { CreditMemoDocumentPage } from "@/components/financial/credit-memo-document-page";
 import { ProductEditPlaceholder } from "@/components/products/product-edit-placeholder";
 import { ProductListOverview } from "@/components/products/product-list-overview";
 import { ProductPartsListOverview } from "@/components/products/product-parts-list-overview";
@@ -74,6 +75,7 @@ import { CreateRgaPage } from "@/components/rga/create-rga-page";
 import { RgaDashboardPage } from "@/components/rga/rga-dashboard-page";
 import { RgaDetailPage } from "@/components/rga/rga-detail-page";
 import { RgaSolutionPage } from "@/components/rga/rga-solution-page";
+import { CreditMemoCreationPage } from "@/components/rga/credit-memo-creation-page";
 import { AdminDashboard } from "@/components/admin/admin-dashboard";
 import { WarehouseEditor } from "@/components/admin/warehouse-editor";
 import { WarehouseInfoPage } from "@/components/admin/warehouse-info-page";
@@ -178,6 +180,7 @@ export type SearchParams = Promise<{
   packing_list?: string;
   payment?: string;
   invoice?: string;
+  credit_memo?: string;
   invoice_ids?: string;
   invoice_date?: string;
   invoice_payment_terms?: string;
@@ -4354,21 +4357,46 @@ async function issueRgaCreditMemoAction(formData: FormData) {
   "use server";
 
   const rgaId = textValue(formData, "rga_id");
-  const fallbackUrl = `/?module=rga-solution&rga=${rgaId}`;
   if (!rgaId) {
     redirect(
       "/?module=rga&error=Select an approved RGA before issuing a credit memo.",
     );
   }
 
+  redirect(`/?module=credit-memo-create&rga=${rgaId}`);
+}
+
+async function createRgaCreditMemoAction(formData: FormData) {
+  "use server";
+
+  const rgaId = textValue(formData, "rga_id");
+  const fallbackUrl = `/?module=credit-memo-create&rga=${rgaId}`;
+  if (!rgaId) {
+    redirect("/?module=rga&error=Select an authorized RGA before creating a credit memo.");
+  }
+
+  const lineCreditOverrides: Record<string, number> = {};
+  for (const [name, value] of formData.entries()) {
+    if (!name.startsWith("credit_amount_")) continue;
+    const amount = Number(value);
+    if (!Number.isFinite(amount) || amount < 0) {
+      redirect(`${fallbackUrl}&error=${encodeURIComponent("Enter a valid credit amount for every line.")}`);
+    }
+    lineCreditOverrides[name.slice("credit_amount_".length)] = Math.round(amount * 100) / 100;
+  }
+  if (!Object.keys(lineCreditOverrides).length) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent("Select at least one authorized credit line.")}`);
+  }
+
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase.rpc(
-    "issue_rga_credit_memos" as never,
+    "issue_rga_credit_memos_with_overrides" as never,
     {
       p_rga_id: rgaId,
+      p_line_credit_amount_overrides: lineCreditOverrides,
     } as never,
   );
-  const createdMemos = (data as { credit_memo_number: string }[] | null) ?? [];
+  const createdMemos = (data as { credit_memo_id: string }[] | null) ?? [];
 
   if (error || createdMemos.length === 0) {
     redirect(
@@ -4377,7 +4405,7 @@ async function issueRgaCreditMemoAction(formData: FormData) {
   }
 
   redirect(
-    `${fallbackUrl}&notice=${encodeURIComponent(`${createdMemos.length} brand-specific credit memo${createdMemos.length === 1 ? " was" : "s were"} issued.`)}`,
+    `/?module=credit-memo-document&credit_memo=${createdMemos[0].credit_memo_id}`,
   );
 }
 
@@ -11062,6 +11090,55 @@ async function getInvoiceDocument(invoiceId: string) {
   };
 }
 
+async function getCreditMemoDocument(creditMemoId: string) {
+  const supabase = createSupabaseAdminClient();
+  const [memoResult, linesResult] = await Promise.all([
+    supabase
+      .from("credit_memo")
+      .select("id, credit_memo_number, customer_account_id, customer_name_snapshot, brand_name_snapshot, issue_date, reason_code, status, total_credit_amount, rga_id")
+      .eq("id", creditMemoId)
+      .maybeSingle(),
+    supabase
+      .from("credit_memo_line")
+      .select("id, description, quantity, unit_amount, line_total")
+      .eq("credit_memo_id", creditMemoId)
+      .order("created_at"),
+  ]);
+  if (memoResult.error) throw new Error(memoResult.error.message);
+  if (linesResult.error) throw new Error(linesResult.error.message);
+  if (!memoResult.data) return null;
+
+  const [customerResult, rgaResult] = await Promise.all([
+    supabase
+      .from("customer_account")
+      .select("billing_email")
+      .eq("id", memoResult.data.customer_account_id)
+      .maybeSingle(),
+    memoResult.data.rga_id
+      ? supabase
+          .from("rga")
+          .select("rga_number")
+          .eq("id", memoResult.data.rga_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+  if (customerResult.error) throw new Error(customerResult.error.message);
+  if (rgaResult.error) throw new Error(rgaResult.error.message);
+
+  return {
+    customerEmail: customerResult.data?.billing_email ?? null,
+    lines: (linesResult.data ?? []).map((line) => ({
+      ...line,
+      line_total: Number(line.line_total ?? 0),
+    })),
+    memo: {
+      ...memoResult.data,
+      total_credit_amount: Number(memoResult.data.total_credit_amount ?? 0),
+      rga_number: rgaResult.data?.rga_number ?? null,
+    },
+  };
+}
+
 async function getCustomerName(customerId: string) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
@@ -11494,6 +11571,8 @@ export async function ErpRouter({
     "commission-statement-confirm": "Commission Statement",
     "commission-payment": "Commission Payment",
     "commission-statement": "Commission Statement",
+    "credit-memo-create": "Credit Memo Creation",
+    "credit-memo-document": "Credit Memo",
     "sales-rep-agency-edit": "Sales Rep Agency",
     "sales-rep-agency-territory-add": "Add Territory",
     "sales-rep-agencies": "Sales Rep Agencies",
@@ -12002,6 +12081,17 @@ export async function ErpRouter({
             issueCreditMemoAction={issueRgaCreditMemoAction}
             notice={params.notice}
             rgaId={params.rga}
+          />
+        ) : activeModule === "credit-memo-create" ? (
+          <CreditMemoCreationPage
+            createAction={createRgaCreditMemoAction}
+            error={params.error}
+            rgaId={params.rga}
+          />
+        ) : activeModule === "credit-memo-document" ? (
+          <CreditMemoDocumentPage
+            creditMemoId={params.credit_memo}
+            loadCreditMemo={getCreditMemoDocument}
           />
         ) : selectedPartId ? (
           <PartDetailDashboard

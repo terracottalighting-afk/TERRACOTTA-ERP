@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 
 export type OrderProductOption = {
   brandName: string;
@@ -32,6 +32,31 @@ type OrderLine = OrderProductOption & {
   unitPrice: number;
 };
 
+type OrderConfirmation = {
+  customerPoNumber: string;
+  displayOrderType: string;
+  notes: string;
+  orderDate: string;
+  orderSource: string;
+  orderType: string;
+  shipToAddress: string;
+  shipToContact: string;
+  shipToName: string;
+};
+
+type ManualShipTo = {
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  contactName: string;
+  country: string;
+  email: string;
+  name: string;
+  phone: string;
+  postalCode: string;
+  stateProvince: string;
+};
+
 type Props = {
   accountName: string;
   agencyId?: string;
@@ -47,6 +72,23 @@ type Props = {
 
 const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
+const orderSourceLabels: Record<string, string> = {
+  ecommerce: "Ecommerce",
+  email: "Email",
+  fax: "Fax",
+  manual: "Manual Entry",
+  phone: "Phone",
+  portal: "Customer Portal",
+  rep_submitted: "Rep Submitted",
+};
+
+const orderTypeLabels: Record<string, string> = {
+  catalog_marketing: "Catalog / Marketing Materials",
+  display: "Display Order",
+  quote: "Quote",
+  regular: "Regular Order",
+};
+
 export function OrderEntryForm({ accountName, agencyId, customerId, defaultDiscountPercent, defaultLocationId, isAgencyOrder = false, parts, products, saveAction, shipToOptions }: Props) {
   const [productQuery, setProductQuery] = useState("");
   const [searchParts, setSearchParts] = useState(false);
@@ -54,10 +96,28 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
   const [partQuery, setPartQuery] = useState("");
   const [selectedParentId, setSelectedParentId] = useState("");
   const [lines, setLines] = useState<OrderLine[]>([]);
+  const [customerPoNumber, setCustomerPoNumber] = useState("");
+  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [orderSource, setOrderSource] = useState("manual");
   const [orderType, setOrderType] = useState("regular");
+  const [notes, setNotes] = useState("");
   const [isDropship, setIsDropship] = useState(false);
+  const [manualShipTo, setManualShipTo] = useState<ManualShipTo>({
+    addressLine1: "",
+    addressLine2: "",
+    city: "",
+    contactName: "",
+    country: "United States",
+    email: "",
+    name: "",
+    phone: "",
+    postalCode: "",
+    stateProvince: "",
+  });
+  const [confirmation, setConfirmation] = useState<OrderConfirmation | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, startSaving] = useTransition();
+  const formRef = useRef<HTMLFormElement>(null);
   const [locationId, setLocationId] = useState(defaultLocationId ?? shipToOptions.find((location) => location.isDefault)?.id ?? shipToOptions[0]?.id ?? "");
   const [shippingContactName, setShippingContactName] = useState(() => {
     const initialLocationId = defaultLocationId ?? shipToOptions.find((location) => location.isDefault)?.id ?? shipToOptions[0]?.id;
@@ -136,6 +196,10 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
     setLines((current) => current.map((line) => (line.id === id ? { ...line, ...patch } : line)));
   }
 
+  function updateManualShipTo(field: keyof ManualShipTo, value: string) {
+    setManualShipTo((current) => ({ ...current, [field]: value }));
+  }
+
   function submitOrder(formData: FormData) {
     setSaveError(null);
 
@@ -149,18 +213,67 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
       return;
     }
 
+    const selectedLocation = shipToOptions.find((location) => location.id === locationId);
+    const manualShipToAddress = [
+      String(formData.get("dropship_address_line_1") ?? "").trim(),
+      String(formData.get("dropship_address_line_2") ?? "").trim(),
+      [
+        String(formData.get("dropship_city") ?? "").trim(),
+        String(formData.get("dropship_state_province") ?? "").trim(),
+        String(formData.get("dropship_postal_code") ?? "").trim(),
+      ].filter(Boolean).join(", "),
+      String(formData.get("dropship_country") ?? "").trim(),
+    ].filter(Boolean).join(" | ");
+    const manualShipToContact = [
+      String(formData.get("dropship_contact_name") ?? "").trim(),
+      String(formData.get("dropship_contact_phone") ?? "").trim(),
+      String(formData.get("dropship_email") ?? "").trim(),
+    ].filter(Boolean).join(" | ");
+
+    setConfirmation({
+      customerPoNumber: String(formData.get("customer_po_number") ?? "").trim(),
+      displayOrderType: String(formData.get("display_order_type") ?? "").trim(),
+      notes: String(formData.get("notes") ?? "").trim(),
+      orderDate: String(formData.get("order_date") ?? "").trim(),
+      orderSource: String(formData.get("order_source") ?? "").trim(),
+      orderType: String(formData.get("order_type") ?? "").trim(),
+      shipToAddress: isDropship ? manualShipToAddress : selectedLocation?.address ?? "Not set",
+      shipToContact: isDropship
+        ? manualShipToContact
+        : [shippingContactName, shippingContactPhone, shippingContactEmail]
+            .filter(Boolean)
+            .join(" | "),
+      shipToName: isDropship
+        ? String(formData.get("dropship_name") ?? "").trim()
+        : selectedLocation?.name ?? "Not set",
+    });
+  }
+
+  function returnToEditor(sectionId?: string) {
+    setConfirmation(null);
+    if (sectionId) {
+      requestAnimationFrame(() => {
+        document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  }
+
+  function createConfirmedOrder() {
+    if (!formRef.current) return;
+
     startSaving(async () => {
-      await saveAction(formData);
+      await saveAction(new FormData(formRef.current!));
     });
   }
 
   return (
-    <form action={submitOrder} className="customer-form order-entry-form" data-default-discount={defaultDiscountPercent}>
+    <form action={submitOrder} className="customer-form order-entry-form" data-default-discount={defaultDiscountPercent} ref={formRef}>
       <input name="customer_id" type="hidden" value={customerId} />
       {agencyId ? <input name="sales_rep_agency_id" type="hidden" value={agencyId} /> : null}
       <input data-order-lines name="order_lines" type="hidden" value={JSON.stringify(lines.map((line) => ({ discountPercent: line.discountPercent, productId: line.id, quantity: line.quantity, unitPrice: line.unitPrice })))} />
 
-      <fieldset>
+      <div hidden={Boolean(confirmation)}>
+      <fieldset id="order-header">
         <legend>Order Header</legend>
         <div className="order-account-context">
           <span>Customer Account</span>
@@ -169,15 +282,15 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
         <div className="form-grid">
           <label>
             Customer PO No.
-            <input name="customer_po_number" placeholder="Customer PO number" required />
+            <input name="customer_po_number" onChange={(event) => setCustomerPoNumber(event.target.value)} placeholder="Customer PO number" required value={customerPoNumber} />
           </label>
           <label>
             Order Date
-            <input defaultValue={new Date().toISOString().slice(0, 10)} name="order_date" type="date" required />
+            <input name="order_date" onChange={(event) => setOrderDate(event.target.value)} required type="date" value={orderDate} />
           </label>
           <label>
             Order Source
-            <select defaultValue="manual" name="order_source">
+            <select name="order_source" onChange={(event) => setOrderSource(event.target.value)} value={orderSource}>
               <option value="manual">Manual Entry</option>
               <option value="email">Email</option>
               <option value="phone">Phone</option>
@@ -213,7 +326,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
         </div>
       </fieldset>
 
-      <fieldset>
+      <fieldset id="order-ship-to">
         <legend>Ship-to</legend>
         <label className="checkbox-label ship-to-mode-toggle">
           <input checked={isDropship} name="is_dropship" onChange={(event) => setIsDropship(event.target.checked)} type="checkbox" />
@@ -254,48 +367,48 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
         <div className="ship-to-mode ship-to-mode--dropship form-grid">
             <label>
               Ship-to Name
-              <input name="dropship_name" placeholder="Recipient or business name" />
+              <input name="dropship_name" onChange={(event) => updateManualShipTo("name", event.target.value)} placeholder="Recipient or business name" value={manualShipTo.name} />
             </label>
             <label>
               Country
-              <input defaultValue="United States" name="dropship_country" />
+              <input name="dropship_country" onChange={(event) => updateManualShipTo("country", event.target.value)} value={manualShipTo.country} />
             </label>
             <label className="full-width-field">
               Address Line 1
-              <input name="dropship_address_line_1" />
+              <input name="dropship_address_line_1" onChange={(event) => updateManualShipTo("addressLine1", event.target.value)} value={manualShipTo.addressLine1} />
             </label>
             <label>
               Address Line 2
-              <input name="dropship_address_line_2" />
+              <input name="dropship_address_line_2" onChange={(event) => updateManualShipTo("addressLine2", event.target.value)} value={manualShipTo.addressLine2} />
             </label>
             <label>
               City
-              <input name="dropship_city" />
+              <input name="dropship_city" onChange={(event) => updateManualShipTo("city", event.target.value)} value={manualShipTo.city} />
             </label>
             <label>
               State / Province
-              <input name="dropship_state_province" />
+              <input name="dropship_state_province" onChange={(event) => updateManualShipTo("stateProvince", event.target.value)} value={manualShipTo.stateProvince} />
             </label>
             <label>
               Postal Code
-              <input name="dropship_postal_code" />
+              <input name="dropship_postal_code" onChange={(event) => updateManualShipTo("postalCode", event.target.value)} value={manualShipTo.postalCode} />
             </label>
             <label>
               Shipping Contact
-              <input name="dropship_contact_name" />
+              <input name="dropship_contact_name" onChange={(event) => updateManualShipTo("contactName", event.target.value)} value={manualShipTo.contactName} />
             </label>
             <label>
               Phone
-              <input name="dropship_contact_phone" type="tel" />
+              <input name="dropship_contact_phone" onChange={(event) => updateManualShipTo("phone", event.target.value)} type="tel" value={manualShipTo.phone} />
             </label>
             <label>
               Email
-              <input name="dropship_email" type="email" />
+              <input name="dropship_email" onChange={(event) => updateManualShipTo("email", event.target.value)} type="email" value={manualShipTo.email} />
             </label>
         </div>
       </fieldset>
 
-      <fieldset>
+      <fieldset id="order-products">
         <legend>Products</legend>
         <div className="order-product-search">
           <div className="order-search-heading">
@@ -377,17 +490,59 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
         <div className="order-total"><span>Order Subtotal</span><strong data-native-order-subtotal>{money.format(subtotal)}</strong></div>
       </fieldset>
 
-      <fieldset>
+      <fieldset id="order-notes">
         <legend>Notes</legend>
-        <div className="form-grid"><label className="full-width-field">Internal Order Notes<textarea name="notes" rows={3} /></label></div>
+        <div className="form-grid"><label className="full-width-field">Internal Order Notes<textarea name="notes" onChange={(event) => setNotes(event.target.value)} rows={3} value={notes} /></label></div>
       </fieldset>
 
       <div className="form-actions">
-        <button className="primary-action" disabled={isSaving} type="submit">
-          {isSaving ? "Saving Order..." : "Save Order"}
+        <button className="primary-action" type="submit">
+          Create Order
         </button>
       </div>
       {saveError ? <p aria-live="polite" className="form-alert">{saveError}</p> : null}
+      </div>
+
+      {confirmation ? (
+        <section className="order-confirmation" aria-label="Order confirmation">
+          <section className="form-header">
+            <div>
+              <span className="eyebrow">Order Confirmation</span>
+              <h2>Review New Order</h2>
+              <p className="muted-copy">Review the order before creating it. Edit returns to the saved local details.</p>
+            </div>
+          </section>
+
+          <article className="data-section">
+            <div className="section-title"><h3>Order Header</h3><button className="text-action text-action--button" onClick={() => returnToEditor("order-header")} type="button">Edit</button></div>
+            <div className="detail-grid detail-grid--inside">
+              <article className="info-panel"><dl><div><dt>Customer Account</dt><dd>{accountName}</dd></div><div><dt>Customer PO No.</dt><dd>{confirmation.customerPoNumber}</dd></div></dl></article>
+              <article className="info-panel"><dl><div><dt>Order Date</dt><dd>{confirmation.orderDate}</dd></div><div><dt>Order Source</dt><dd>{orderSourceLabels[confirmation.orderSource] ?? confirmation.orderSource}</dd></div><div><dt>Order Type</dt><dd>{orderTypeLabels[confirmation.orderType] ?? confirmation.orderType}{confirmation.displayOrderType ? ` - ${confirmation.displayOrderType.replaceAll("_", " ")}` : ""}</dd></div></dl></article>
+            </div>
+          </article>
+
+          <article className="data-section">
+            <div className="section-title"><h3>Ship-to</h3><button className="text-action text-action--button" onClick={() => returnToEditor("order-ship-to")} type="button">Edit</button></div>
+            <div className="detail-grid detail-grid--inside"><article className="info-panel"><dl><div><dt>{isDropship ? "Manual Ship-to" : "Saved Shipping Address"}</dt><dd>{confirmation.shipToName}</dd></div><div><dt>Address</dt><dd>{confirmation.shipToAddress}</dd></div><div><dt>Contact</dt><dd>{confirmation.shipToContact || "Not set"}</dd></div></dl></article></div>
+          </article>
+
+          <article className="data-section">
+            <div className="section-title"><h3>Order Lines</h3><button className="text-action text-action--button" onClick={() => returnToEditor("order-products")} type="button">Edit</button></div>
+            <div className="table-wrap"><table className="data-table"><thead><tr><th>SKU</th><th>Product</th><th>Brand</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Line Total</th></tr></thead><tbody>{lines.map((line) => <tr key={line.id}><td>{line.sku}</td><td>{line.name}</td><td>{line.brandName}</td><td>{line.quantity}</td><td>{money.format(line.unitPrice)}</td><td>{line.discountPercent}%</td><td>{money.format(line.quantity * line.unitPrice * (1 - line.discountPercent / 100))}</td></tr>)}</tbody></table></div>
+            <div className="order-total"><span>Order Subtotal</span><strong>{money.format(subtotal)}</strong></div>
+          </article>
+
+          <article className="data-section">
+            <div className="section-title"><h3>Notes</h3><button className="text-action text-action--button" onClick={() => returnToEditor("order-notes")} type="button">Edit</button></div>
+            <p className="section-copy">{confirmation.notes || "No internal notes."}</p>
+          </article>
+
+          <div className="form-actions">
+            <button className="secondary-action" disabled={isSaving} onClick={() => returnToEditor()} type="button">Back to Edit</button>
+            <button className="primary-action" disabled={isSaving} onClick={createConfirmedOrder} type="button">{isSaving ? "Creating Order..." : "Confirm and Create Order"}</button>
+          </div>
+        </section>
+      ) : null}
     </form>
   );
 }

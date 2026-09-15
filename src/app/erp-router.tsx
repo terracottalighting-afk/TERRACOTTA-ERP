@@ -37,6 +37,7 @@ import { PaymentDetailPage } from "@/components/financial/payment-detail-page";
 import { CommissionPaymentPage } from "@/components/financial/commission-payment-page";
 import { CommissionStatementPage } from "@/components/financial/commission-statement-page";
 import { CreditMemoDocumentPage } from "@/components/financial/credit-memo-document-page";
+import { RgaReplacementOrderConfirmPage } from "@/components/rga/rga-replacement-order-confirm-page";
 import { ProductEditPlaceholder } from "@/components/products/product-edit-placeholder";
 import { ProductListOverview } from "@/components/products/product-list-overview";
 import { ProductPartsListOverview } from "@/components/products/product-parts-list-overview";
@@ -4420,14 +4421,27 @@ async function createRgaReplacementOrderAction(formData: FormData) {
   "use server";
 
   const rgaId = textValue(formData, "rga_id");
-  const fallbackUrl = `/?module=rga-detail&rga=${rgaId}`;
+  const fallbackUrl = `/?module=rga-replacement-confirm&rga=${rgaId}`;
   if (!rgaId) {
     redirect(
       "/?module=rga&error=Select an approved RGA before creating a replacement order.",
     );
   }
 
+  const shipToLocationId = textValue(formData, "ship_to_location_id");
   const supabase = createSupabaseAdminClient();
+  const { data: rga, error: rgaLookupError } = await supabase.from("rga").select("customer_account_id").eq("id", rgaId).maybeSingle();
+  if (rgaLookupError || !rga) redirect(`${fallbackUrl}&error=${encodeURIComponent(rgaLookupError?.message ?? "RGA not found.")}`);
+  let shipToUpdate: Database["public"]["Tables"]["sales_order"]["Update"];
+  if (shipToLocationId) {
+    const { data: location, error: locationError } = await supabase.from("customer_location").select("id, location_name, address_line_1, address_line_2, city, state_province, postal_code, country, country_code, receiver_name, email, phone").eq("id", shipToLocationId).eq("customer_account_id", rga.customer_account_id).eq("is_shipping_address", true).eq("status", "active").maybeSingle();
+    if (locationError || !location) redirect(`${fallbackUrl}&error=${encodeURIComponent(locationError?.message ?? "Select a valid saved shipping address.")}`);
+    shipToUpdate = { customer_location_id: location.id, is_dropship: false, ship_to_display_name_snapshot: location.location_name, ship_to_snapshot_json: { ...location, ship_to_display_name: location.location_name, shipping_contact_name: location.receiver_name, shipping_contact_email: location.email, shipping_contact_phone: location.phone }, ship_to_type: "saved_location" };
+  } else {
+    const name = textValue(formData, "dropship_name"); const address = textValue(formData, "dropship_address_line_1"); const city = textValue(formData, "dropship_city"); const state = textValue(formData, "dropship_state_province"); const postal = textValue(formData, "dropship_postal_code");
+    if (!name || !address || !city || !state || !postal) redirect(`${fallbackUrl}&error=${encodeURIComponent("Enter recipient name, address, city, state/province, and postal code for a direct shipment.")}`);
+    shipToUpdate = { customer_location_id: null, is_dropship: true, ship_to_display_name_snapshot: name, ship_to_snapshot_json: { ship_to_display_name: name, address_line_1: address, city, state_province: state, postal_code: postal, country: textValue(formData, "dropship_country") || "United States", shipping_contact_email: textValue(formData, "dropship_email") || null, shipping_contact_phone: textValue(formData, "dropship_phone") || null }, ship_to_type: "dropship" };
+  }
   const { data, error } = await supabase.rpc(
     "create_rga_replacement_order" as never,
     {
@@ -4443,10 +4457,19 @@ async function createRgaReplacementOrderAction(formData: FormData) {
       `${fallbackUrl}&error=${encodeURIComponent(error?.message ?? "Unable to create the RGA replacement order.")}`,
     );
   }
+  const { error: shipToError } = await supabase.from("sales_order").update(shipToUpdate).eq("id", replacementOrder.sales_order_id);
+  if (shipToError) redirect(`${fallbackUrl}&error=${encodeURIComponent(shipToError.message)}`);
 
   redirect(
     `/?module=orders&order=${encodeURIComponent(replacementOrder.sales_order_id)}&notice=${encodeURIComponent(`Replacement order ${replacementOrder.sales_order_number} was created from RGA ${rgaId}.`)}`,
   );
+}
+
+async function prepareRgaReplacementOrderAction(formData: FormData) {
+  "use server";
+  const rgaId = textValue(formData, "rga_id");
+  if (!rgaId) redirect("/?module=rga&error=Select an approved RGA before creating a replacement order.");
+  redirect(`/?module=rga-replacement-confirm&rga=${rgaId}`);
 }
 
 async function prepareInvoiceConfirmationAction(formData: FormData) {
@@ -12203,9 +12226,11 @@ export async function ErpRouter({
             reviewAction={reviewRgaAction}
             rgaId={params.rga}
           />
+        ) : activeModule === "rga-replacement-confirm" ? (
+          <RgaReplacementOrderConfirmPage createAction={createRgaReplacementOrderAction} rgaId={params.rga} />
         ) : activeModule === "rga-solution" ? (
           <RgaSolutionPage
-            createReplacementOrderAction={createRgaReplacementOrderAction}
+            createReplacementOrderAction={prepareRgaReplacementOrderAction}
             error={params.error}
             issueCreditMemoAction={issueRgaCreditMemoAction}
             notice={params.notice}

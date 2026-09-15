@@ -3266,8 +3266,7 @@ tr:last-child td {
 
 .packing-list-work-row .packing-list-shipment-details {
   color: #516273;
-  display: block;
-  margin-top: 4px;
+  margin-left: 12px;
 }
 
 .packing-list-work-row .packing-list-po-link:hover,

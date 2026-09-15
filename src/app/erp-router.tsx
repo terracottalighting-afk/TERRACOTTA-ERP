@@ -13203,13 +13203,13 @@ export async function ErpRouter({
                                   >
                                     {packingList.customer_po_number_snapshot}
                                   </Link>
-                                </span>
-                                <span className="packing-list-shipment-details">
+                                  <span className="packing-list-shipment-details">
                                   Shipping Date: {packingList.ship_date ? dateLabel(packingList.ship_date) : "Not shipped"}
                                   {" | "}
                                   Carrier: {packingList.carrier ?? "Not set"}
                                   {" | "}
                                   Items: {numberFormatter.format(packingList.items_shipped)} / {numberFormatter.format(packingList.total_order_items)}
+                                  </span>
                                 </span>
                               </div>
                               <div className="packing-list-row-actions">

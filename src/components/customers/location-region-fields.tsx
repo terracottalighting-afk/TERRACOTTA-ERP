@@ -113,6 +113,31 @@ const countryOptions = [
   { code: "CHN", name: "China" }
 ];
 
+function normalizedCountryCode(countryCode: string) {
+  const normalized = countryCode.trim().toUpperCase();
+  if (normalized === "US") return "USA";
+  if (normalized === "CA") return "CAN";
+  if (normalized === "MX") return "MEX";
+  return countryOptions.some((option) => option.code === normalized)
+    ? normalized
+    : "USA";
+}
+
+function normalizedRegionCode(countryCode: string, stateProvince: string) {
+  const regionValue = stateProvince.trim();
+  const regionOptions =
+    regionOptionsByCountry[
+      countryCode as keyof typeof regionOptionsByCountry
+    ] ?? [];
+  const matchedRegion = regionOptions.find(
+    ([code, name]) =>
+      code.toUpperCase() === regionValue.toUpperCase() ||
+      name.toUpperCase() === regionValue.toUpperCase(),
+  );
+
+  return matchedRegion?.[0] ?? regionValue;
+}
+
 export function LocationRegionFields({
   defaultCountryCode = "USA",
   defaultStateProvince = ""
@@ -120,7 +145,13 @@ export function LocationRegionFields({
   defaultCountryCode?: string;
   defaultStateProvince?: string;
 }) {
-  const [countryCode, setCountryCode] = useState(defaultCountryCode);
+  const [countryCode, setCountryCode] = useState(() =>
+    normalizedCountryCode(defaultCountryCode),
+  );
+  const selectedRegionCode = normalizedRegionCode(
+    countryCode,
+    defaultStateProvince,
+  );
   const regionOptions = useMemo(
     () => regionOptionsByCountry[countryCode as keyof typeof regionOptionsByCountry] ?? [],
     [countryCode]
@@ -131,7 +162,7 @@ export function LocationRegionFields({
       <label>
         State / Province
         {regionOptions.length > 0 ? (
-          <select key={countryCode} defaultValue={defaultStateProvince} name="state_province">
+          <select key={countryCode} defaultValue={selectedRegionCode} name="state_province">
             <option value="">Select state / province</option>
             {regionOptions.map(([code, name]) => (
               <option key={`${countryCode}-${code}`} value={code}>
@@ -140,7 +171,7 @@ export function LocationRegionFields({
             ))}
           </select>
         ) : (
-          <input key={countryCode} defaultValue={defaultStateProvince} name="state_province" placeholder="Enter state / province" />
+          <input key={countryCode} defaultValue={selectedRegionCode} name="state_province" placeholder="Enter state / province" />
         )}
       </label>
       <label>

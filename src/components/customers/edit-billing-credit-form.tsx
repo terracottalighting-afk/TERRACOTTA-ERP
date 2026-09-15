@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { BillingPaymentTermsFields } from "@/components/customers/billing-payment-terms-fields";
 import { LocationRegionFields } from "@/components/customers/location-region-fields";
 import { ModulePlaceholder } from "@/components/ui";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -113,29 +114,12 @@ export async function EditBillingCreditForm({
         <fieldset>
           <legend>Billing / Credit</legend>
           <div className="form-grid">
-            <label>
-              Payment Terms
-              <select
-                defaultValue={billing?.payment_terms ?? "Prepaid / No Credit"}
-                name="payment_terms"
-              >
-                <option value="Prepaid / No Credit">Prepaid / No Credit</option>
-                <option value="Net 30">Net 30</option>
-                <option value="Net 60 Days">Net 60 Days</option>
-                <option value="Net 90">Net 90</option>
-                <option value="Other">Other</option>
-              </select>
-            </label>
-            <label>
-              Payment Days
-              <input
-                defaultValue={billing?.payment_days ?? 0}
-                min="0"
-                name="payment_days"
-                step="1"
-                type="number"
-              />
-            </label>
+            <BillingPaymentTermsFields
+              defaultPaymentDays={billing?.payment_days ?? 0}
+              defaultPaymentTerms={
+                billing?.payment_terms ?? "Prepaid / No Credit"
+              }
+            />
             <label>
               Credit Limit
               <input

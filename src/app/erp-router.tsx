@@ -13215,7 +13215,7 @@ export async function ErpRouter({
                               <div className="packing-list-row-actions">
                                 {canEditFreight ? (
                                   <Link
-                                    className="text-action"
+                                    className="primary-action"
                                     href={`/?module=invoice-create&packing_list=${packingList.id}`}
                                   >
                                     Create Invoice

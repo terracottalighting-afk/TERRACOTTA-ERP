@@ -3264,6 +3264,12 @@ tr:last-child td {
   font-weight: 700;
 }
 
+.packing-list-work-row .packing-list-shipment-details {
+  color: #516273;
+  display: block;
+  margin-top: 4px;
+}
+
 .packing-list-work-row .packing-list-po-link:hover,
 .packing-list-work-row .packing-list-record-link:hover {
   text-decoration: underline;

@@ -437,8 +437,10 @@ type CreditMemo = {
 
 type PackingList = {
   allocated_freight_cost: number;
+  carrier: string | null;
   freight_shipment_id: string | null;
   id: string;
+  items_shipped: number;
   packing_list_number: string;
   sales_order_id: string;
   customer_po_number_snapshot: string;
@@ -446,6 +448,7 @@ type PackingList = {
   invoice_generation_status_snapshot: string;
   shipping_fee: number;
   ship_date: string | null;
+  total_order_items: number;
 };
 
 type InvoiceQueuePackingList = PackingList & {
@@ -9948,14 +9951,42 @@ async function getCustomerDashboard(customerId: string) {
     .reduce((sum, order) => sum + Number(order.total_amount ?? 0), 0);
 
   const orderIds = (ordersResult.data ?? []).map((order) => order.id);
-  const orderLinesResult = orderIds.length
-    ? await supabase
-        .from("sales_order_line")
-        .select(
-          "sales_order_id, product_id, product_sku_snapshot, quantity_ordered, quantity_shipped, quantity_cancelled, quantity_cleared",
-        )
-        .in("sales_order_id", orderIds)
-    : { data: [], error: null };
+  const packingListIds = (packingListsResult.data ?? []).map(
+    (packingList) => packingList.id,
+  );
+  const packingShipmentIds = [
+    ...new Set(
+      (packingListsResult.data ?? [])
+        .map((packingList) => packingList.freight_shipment_id)
+        .filter((shipmentId): shipmentId is string => Boolean(shipmentId)),
+    ),
+  ];
+  const [
+    orderLinesResult,
+    packingListLinesResult,
+    packingShipmentsResult,
+  ] = await Promise.all([
+    orderIds.length
+      ? supabase
+          .from("sales_order_line")
+          .select(
+            "sales_order_id, product_id, product_sku_snapshot, quantity_ordered, quantity_shipped, quantity_cancelled, quantity_cleared",
+          )
+          .in("sales_order_id", orderIds)
+      : Promise.resolve({ data: [], error: null }),
+    packingListIds.length
+      ? supabase
+          .from("packing_list_line")
+          .select("packing_list_id, quantity_shipped")
+          .in("packing_list_id", packingListIds)
+      : Promise.resolve({ data: [], error: null }),
+    packingShipmentIds.length
+      ? supabase
+          .from("freight_shipment")
+          .select("id, carrier")
+          .in("id", packingShipmentIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
   const invoiceIds = (invoicesResult.data ?? []).map((invoice) => invoice.id);
   const invoiceLinesResult = invoiceIds.length
     ? await supabase
@@ -9963,9 +9994,12 @@ async function getCustomerDashboard(customerId: string) {
         .select("customer_invoice_id, product_sku_snapshot")
         .in("customer_invoice_id", invoiceIds)
     : { data: [], error: null };
-  if (orderLinesResult.error) {
-    throw new Error(orderLinesResult.error.message);
-  }
+  const shipmentDetailError = [
+    orderLinesResult,
+    packingListLinesResult,
+    packingShipmentsResult,
+  ].find((result) => result.error)?.error;
+  if (shipmentDetailError) throw new Error(shipmentDetailError.message);
   if (invoiceLinesResult.error) {
     throw new Error(invoiceLinesResult.error.message);
   }
@@ -10054,6 +10088,20 @@ async function getCustomerDashboard(customerId: string) {
     ]),
   );
   const shippingByOrder = new Map<string, { shipped: number; total: number }>();
+  const shipmentItemsByPackingList = new Map<string, number>();
+  for (const line of packingListLinesResult.data ?? []) {
+    shipmentItemsByPackingList.set(
+      line.packing_list_id,
+      (shipmentItemsByPackingList.get(line.packing_list_id) ?? 0) +
+        Number(line.quantity_shipped ?? 0),
+    );
+  }
+  const carrierByShipmentId = new Map(
+    (packingShipmentsResult.data ?? []).map((shipment) => [
+      shipment.id,
+      shipment.carrier,
+    ]),
+  );
   const readyToShipOrderIds = new Set<string>();
   const orderSearchSkus = new Map<string, string[]>();
   const invoiceSearchSkus = new Map<string, string[]>();
@@ -10149,7 +10197,14 @@ async function getCustomerDashboard(customerId: string) {
         order.status !== "deleted" &&
         readyToShipOrderIds.has(order.id),
     ).length,
-    packingLists: (packingListsResult.data ?? []) as PackingList[],
+    packingLists: (packingListsResult.data ?? []).map((packingList) => ({
+      ...packingList,
+      carrier: packingList.freight_shipment_id
+        ? (carrierByShipmentId.get(packingList.freight_shipment_id) ?? null)
+        : null,
+      items_shipped: shipmentItemsByPackingList.get(packingList.id) ?? 0,
+      total_order_items: shippingByOrder.get(packingList.sales_order_id)?.total ?? 0,
+    })) as PackingList[],
     primaryShowrooms: (primaryShowroomsResult.data ??
       []) as PrimaryShowroomEnrollment[],
     rgas: (rgasResult.data ?? []) as Rga[],
@@ -13148,6 +13203,13 @@ export async function ErpRouter({
                                   >
                                     {packingList.customer_po_number_snapshot}
                                   </Link>
+                                </span>
+                                <span className="packing-list-shipment-details">
+                                  Shipping Date: {packingList.ship_date ? dateLabel(packingList.ship_date) : "Not shipped"}
+                                  {" | "}
+                                  Carrier: {packingList.carrier ?? "Not set"}
+                                  {" | "}
+                                  Items: {numberFormatter.format(packingList.items_shipped)} / {numberFormatter.format(packingList.total_order_items)}
                                 </span>
                               </div>
                               <div className="packing-list-row-actions">

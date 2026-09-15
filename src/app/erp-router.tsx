@@ -11181,7 +11181,7 @@ async function getInvoiceDocument(invoiceId: string) {
 
 async function getCreditMemoDocument(creditMemoId: string) {
   const supabase = createSupabaseAdminClient();
-  const [memoResult, linesResult] = await Promise.all([
+  const [memoResult, linesResult, applicationsResult] = await Promise.all([
     supabase
       .from("credit_memo")
       .select("id, credit_memo_number, customer_account_id, customer_name_snapshot, brand_name_snapshot, issue_date, reason_code, status, total_credit_amount, amount_applied, amount_remaining, rga_id")
@@ -11192,12 +11192,22 @@ async function getCreditMemoDocument(creditMemoId: string) {
       .select("id, description, quantity, unit_amount, line_total")
       .eq("credit_memo_id", creditMemoId)
       .order("created_at"),
+    supabase
+      .from("credit_memo_application")
+      .select("id, customer_invoice_id, amount_applied, applied_date")
+      .eq("credit_memo_id", creditMemoId)
+      .eq("application_status", "posted")
+      .order("applied_date", { ascending: false }),
   ]);
   if (memoResult.error) throw new Error(memoResult.error.message);
   if (linesResult.error) throw new Error(linesResult.error.message);
+  if (applicationsResult.error) throw new Error(applicationsResult.error.message);
   if (!memoResult.data) return null;
 
-  const [customerResult, rgaResult] = await Promise.all([
+  const applications = applicationsResult.data ?? [];
+  const invoiceIds = [...new Set(applications.map((application) => application.customer_invoice_id))];
+
+  const [customerResult, rgaResult, invoicesResult] = await Promise.all([
     supabase
       .from("customer_account")
       .select("billing_email")
@@ -11206,15 +11216,40 @@ async function getCreditMemoDocument(creditMemoId: string) {
     memoResult.data.rga_id
       ? supabase
           .from("rga")
-          .select("rga_number")
+          .select("rga_number, sales_order_id, original_customer_po_number_snapshot")
           .eq("id", memoResult.data.rga_id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
+    invoiceIds.length
+      ? supabase
+          .from("customer_invoice")
+          .select("id, invoice_number, invoice_date, total_amount")
+          .in("id", invoiceIds)
+      : Promise.resolve({ data: [], error: null }),
   ]);
   if (customerResult.error) throw new Error(customerResult.error.message);
   if (rgaResult.error) throw new Error(rgaResult.error.message);
+  if (invoicesResult.error) throw new Error(invoicesResult.error.message);
+
+  const invoicesById = new Map(
+    (invoicesResult.data ?? []).map((invoice) => [invoice.id, invoice]),
+  );
 
   return {
+    applications: applications.flatMap((application) => {
+      const invoice = invoicesById.get(application.customer_invoice_id);
+      return invoice
+        ? [{
+            amount_applied: Number(application.amount_applied ?? 0),
+            applied_date: application.applied_date,
+            customer_invoice_id: application.customer_invoice_id,
+            id: application.id,
+            invoice_date: invoice.invoice_date,
+            invoice_number: invoice.invoice_number,
+            invoice_total: Number(invoice.total_amount ?? 0),
+          }]
+        : [];
+    }),
     customerEmail: customerResult.data?.billing_email ?? null,
     lines: (linesResult.data ?? []).map((line) => ({
       ...line,
@@ -11225,6 +11260,9 @@ async function getCreditMemoDocument(creditMemoId: string) {
       amount_applied: Number(memoResult.data.amount_applied ?? 0),
       amount_remaining: Number(memoResult.data.amount_remaining ?? 0),
       total_credit_amount: Number(memoResult.data.total_credit_amount ?? 0),
+      original_customer_po_number:
+        rgaResult.data?.original_customer_po_number_snapshot ?? null,
+      original_sales_order_id: rgaResult.data?.sales_order_id ?? null,
       rga_number: rgaResult.data?.rga_number ?? null,
     },
   };

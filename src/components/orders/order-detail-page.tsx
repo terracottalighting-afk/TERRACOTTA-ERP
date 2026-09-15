@@ -86,6 +86,21 @@ export async function OrderDetailPage({
   if (invoicesError) throw new Error(invoicesError.message);
   if (rgasError) throw new Error(rgasError.message);
 
+  const rgaIds = (rgas ?? []).map((rga) => rga.id);
+  const [{ data: replacementLinks, error: replacementLinksError }, { data: creditMemos, error: creditMemosError }] = await Promise.all([
+    rgaIds.length ? supabase.from("rga_replacement_order").select("rga_id, sales_order_id, status").in("rga_id", rgaIds) : Promise.resolve({ data: [], error: null }),
+    rgaIds.length ? supabase.from("credit_memo").select("rga_id").in("rga_id", rgaIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (replacementLinksError) throw new Error(replacementLinksError.message);
+  if (creditMemosError) throw new Error(creditMemosError.message);
+  const replacementOrderIds = (replacementLinks ?? []).map((link) => link.sales_order_id);
+  const { data: replacementOrders, error: replacementOrdersError } = replacementOrderIds.length
+    ? await supabase.from("sales_order").select("id, status").in("id", replacementOrderIds)
+    : { data: [], error: null };
+  if (replacementOrdersError) throw new Error(replacementOrdersError.message);
+  const replacementByRgaId = new Map((replacementLinks ?? []).map((link) => [link.rga_id, replacementOrders?.find((order) => order.id === link.sales_order_id) ?? null]));
+  const creditMemoRgaIds = new Set((creditMemos ?? []).map((memo) => memo.rga_id));
+
   const latestPackingList = (packingLists ?? []).find(
     (packingList) => packingList.freight_shipment_id,
   ) ?? null;
@@ -196,6 +211,15 @@ export async function OrderDetailPage({
   const activeTab = ["profile", "shipments", "rga"].includes(orderTab ?? "")
     ? orderTab!
     : "profile";
+  const rgaOperationalStatus = (rga: NonNullable<typeof rgas>[number]) => {
+    if (rga.requested_resolution_type === "replacement" && rga.status === "authorized") {
+      const replacementOrder = replacementByRgaId.get(rga.id);
+      if (!replacementOrder) return "Waiting for Replacement Order";
+      return ["partially_shipped", "shipped", "closed"].includes(replacementOrder.status) ? "Closed" : "Replacement Order Created";
+    }
+    if (rga.requested_resolution_type === "credit" && rga.status === "authorized") return creditMemoRgaIds.has(rga.id) ? "Closed" : "Waiting for Credit Memo";
+    return label(rga.status);
+  };
 
   return (
     <section className="dashboard-panel">
@@ -468,7 +492,7 @@ export async function OrderDetailPage({
           <article className="data-section">
             <div className="section-title"><h3>RGAs</h3><Link className="primary-action small-action" href={`/?module=create-rga&order=${order.id}`}>Create RGA</Link></div>
             <div className="table-wrap"><table className="data-table"><thead><tr><th>RGA No.</th><th>Request Date</th><th>Requested Solution</th><th>Status</th></tr></thead><tbody>
-              {(rgas ?? []).map((rga) => <tr key={rga.id}><td><Link className="table-link" href={`/?module=rga-detail&rga=${rga.id}`}>{rga.rga_number}</Link></td><td>{dateLabel(rga.request_date)}</td><td>{label(rga.requested_resolution_type)}</td><td><StatusBadge tone={["closed", "resolved"].includes(rga.status) ? "neutral" : rga.status === "pending_review" ? "warn" : "primary"} value={rga.status} /></td></tr>)}
+              {(rgas ?? []).map((rga) => { const status = rgaOperationalStatus(rga); return <tr key={rga.id}><td><Link className="table-link" href={`/?module=rga-detail&rga=${rga.id}`}>{rga.rga_number}</Link></td><td>{dateLabel(rga.request_date)}</td><td>{label(rga.requested_resolution_type)}</td><td><StatusBadge tone={status === "Closed" ? "neutral" : status.startsWith("Waiting") ? "warn" : "primary"} value={status} /></td></tr>})}
               {(rgas ?? []).length === 0 ? <tr><td colSpan={4}>No RGAs have been created for this order.</td></tr> : null}
             </tbody></table></div>
           </article>

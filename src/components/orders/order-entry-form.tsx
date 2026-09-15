@@ -331,6 +331,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
       <input name="customer_id" type="hidden" value={customerId} />
       {agencyId ? <input name="sales_rep_agency_id" type="hidden" value={agencyId} /> : null}
       <input data-order-lines name="order_lines" type="hidden" value={JSON.stringify(lines.map((line) => ({ discountPercent: line.discountPercent, productId: line.id, quantity: line.quantity, unitPrice: line.unitPrice })))} />
+      <input name="customer_location_id" type="hidden" value={locationId} />
       <input name="territory_id_override" type="hidden" value={commissionSelection.territoryId} />
       <input name="sales_rep_agency_id_override" type="hidden" value={commissionSelection.agencyId} />
       <input name="sales_rep_id_override" type="hidden" value={commissionSelection.salesRepId} />
@@ -401,7 +402,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
         <div className="ship-to-mode ship-to-mode--saved form-grid">
             <label className="full-width-field">
               Saved Shipping Address
-              <select name="customer_location_id" onChange={(event) => {
+              <select onChange={(event) => {
                 const nextLocationId = event.target.value;
                 const nextLocation = shipToOptions.find((location) => location.id === nextLocationId);
                 setLocationId(nextLocationId);

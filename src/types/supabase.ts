@@ -14170,6 +14170,7 @@ export type Database = {
         | "ltl"
         | "truck_freight"
         | "parcel"
+        | "sea_freight"
         | "will_call"
         | "drop_ship"
       showroom_display_status:
@@ -14825,6 +14826,7 @@ export const Constants = {
         "ltl",
         "truck_freight",
         "parcel",
+        "sea_freight",
         "will_call",
         "drop_ship",
       ],

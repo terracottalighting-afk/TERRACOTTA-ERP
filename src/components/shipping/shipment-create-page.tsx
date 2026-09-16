@@ -7,7 +7,8 @@ import {
   numberFormatter,
   timestampLabel,
 } from "@/lib/formatters";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createSupabaseAdminClient, createSupabaseUntypedAdminClient } from "@/lib/supabase/admin";
+import { ShipmentCarrierFields } from "./shipment-carrier-fields";
 import { ShipmentFreightFields } from "./shipment-freight-fields";
 import { ShipmentSubmitButton } from "./shipment-submit-button";
 
@@ -67,6 +68,12 @@ export async function ShipmentCreatePage({
   const order = await loadOrder(orderId);
   if (!order) return <ModulePlaceholder moduleName="Order not found" />;
   const supabase = createSupabaseAdminClient();
+  const { data: carriers, error: carriersError } = await createSupabaseUntypedAdminClient()
+    .from("freight_carrier")
+    .select("id, carrier_name, freight_type")
+    .eq("is_active", true)
+    .order("carrier_name", { ascending: true });
+  if (carriersError) throw new Error(carriersError.message);
   const [shipmentResult, documentsResult, packingListResult] = shipmentId
     ? await Promise.all([
         supabase
@@ -388,27 +395,7 @@ export async function ShipmentCreatePage({
                 <input name="order_id" type="hidden" value={order.id} />
                 <input name="shipment_id" type="hidden" value={shipment.id} />
                 <div className="form-grid">
-                  <label>
-                    Carrier
-                    <input
-                      defaultValue={shipment.carrier ?? ""}
-                      name="carrier"
-                    />
-                  </label>
-                  <label>
-                    Shipping Type
-                    <select
-                      defaultValue={shipment.shipping_type ?? ""}
-                      name="shipping_type"
-                    >
-                      <option value="">Select later</option>
-                      <option value="parcel">Ground / Parcel</option>
-                      <option value="ltl">LTL Freight</option>
-                      <option value="truck_freight">Truck Freight</option>
-                      <option value="will_call">Pick up</option>
-                      <option value="drop_ship">Drop Ship</option>
-                    </select>
-                  </label>
+                  <ShipmentCarrierFields carriers={carriers ?? []} currentCarrier={shipment.carrier ?? ""} currentShippingType={shipment.shipping_type ?? ""} />
                   <ShipmentFreightFields
                     actualCost={shipment.freight_cost ?? 0}
                     customerCharge={
@@ -908,21 +895,7 @@ export async function ShipmentCreatePage({
           <fieldset>
             <legend>Shipment Header</legend>
             <div className="form-grid">
-              <label>
-                Carrier
-                <input name="carrier" placeholder="Optional carrier name" />
-              </label>
-              <label>
-                Shipping Type
-                <select defaultValue="" name="shipping_type">
-                  <option value="">Select later</option>
-                  <option value="parcel">Ground / Parcel</option>
-                  <option value="ltl">LTL Freight</option>
-                  <option value="truck_freight">Truck Freight</option>
-                  <option value="will_call">Pick up</option>
-                  <option value="drop_ship">Drop Ship</option>
-                </select>
-              </label>
+              <ShipmentCarrierFields carriers={carriers ?? []} />
               <ShipmentFreightFields />
               <label className="full-width-field">
                 Internal Shipment Notes

@@ -121,6 +121,7 @@ export type SearchParams = Promise<{
   customer_status?: string;
   customer_territory?: string;
   error?: string;
+  freight_tab?: string;
   location?: string;
   location_tab?: string;
   module?: string;
@@ -1846,7 +1847,7 @@ async function saveFreightLevelAction(formData: FormData) {
   const freeFreightAllowance = Number(freeFreightAllowanceText);
   const freightRatePercent = Number(freightRatePercentText);
   const errorUrl = (message: string) =>
-    `/?module=admin&admin_tab=freight&error=${encodeURIComponent(message)}`;
+    `/?module=admin&admin_tab=freight&freight_tab=levels&error=${encodeURIComponent(message)}`;
 
   if (
     !levelName ||
@@ -1955,7 +1956,53 @@ async function saveFreightLevelAction(formData: FormData) {
   if (createGroupsError) redirect(errorUrl(createGroupsError.message));
 
   revalidatePath("/");
-  redirect("/?module=admin&admin_tab=freight");
+  redirect("/?module=admin&admin_tab=freight&freight_tab=levels");
+}
+
+async function saveFreightCarrierAction(formData: FormData) {
+  "use server";
+
+  const carrierId = textValue(formData, "freight_carrier_id");
+  const carrierName = textValue(formData, "carrier_name");
+  const freightType = textValue(formData, "freight_type");
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=freight&freight_tab=carriers&error=${encodeURIComponent(message)}`;
+  if (!carrierName || !["small_parcel_ground", "ltl", "sea_freight"].includes(freightType)) redirect(errorUrl("Enter a carrier name and select a freight type."));
+
+  const website = textValue(formData, "website");
+  if (website && !/^https?:\/\//i.test(website)) redirect(errorUrl("Website must start with http:// or https://."));
+  const value = {
+    carrier_name: carrierName,
+    contact_email: textValue(formData, "contact_email") || null,
+    contact_name: textValue(formData, "contact_name") || null,
+    freight_type: freightType,
+    is_active: formData.get("is_active") === "on",
+    website: website || null,
+  };
+  const supabase = createSupabaseUntypedAdminClient();
+  const result = carrierId ? await supabase.from("freight_carrier").update(value).eq("id", carrierId) : await supabase.from("freight_carrier").insert(value);
+  if (result.error) redirect(errorUrl(result.error.message));
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=freight&freight_tab=carriers");
+}
+
+async function resolveShipmentCarrier(formData: FormData) {
+  const carrierId = textValue(formData, "freight_carrier_id");
+  if (!carrierId) {
+    return {
+      carrier: textValue(formData, "existing_carrier") || null,
+      shippingType: textValue(formData, "existing_shipping_type") || null,
+    };
+  }
+  const { data, error } = await createSupabaseUntypedAdminClient()
+    .from("freight_carrier")
+    .select("carrier_name, freight_type")
+    .eq("id", carrierId)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("The selected freight carrier is no longer active.");
+  const shippingTypeByFreightType: Record<string, string> = { small_parcel_ground: "parcel", ltl: "ltl", sea_freight: "sea_freight" };
+  return { carrier: data.carrier_name, shippingType: shippingTypeByFreightType[data.freight_type] ?? null };
 }
 
 async function assignStyleToSignatureSuiteAction(formData: FormData) {
@@ -3754,8 +3801,12 @@ async function createPendingShipmentAction(formData: FormData) {
       `${fallbackUrl}&error=${encodeURIComponent(`Check the box/location quantities for ${invalidLine.product_sku_snapshot}. Every required box must have the same shipment quantity.`)}`,
     );
 
-  const shippingType = textValue(formData, "shipping_type");
-  const carrier = textValue(formData, "carrier") || null;
+  let shipmentCarrier: { carrier: string | null; shippingType: string | null };
+  try {
+    shipmentCarrier = await resolveShipmentCarrier(formData);
+  } catch (carrierError) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(carrierError instanceof Error ? carrierError.message : "The freight carrier could not be selected.")}`);
+  }
   const masterTrackingNumber =
     textValue(formData, "master_tracking_number") || null;
   const notes = textValue(formData, "shipment_notes") || null;
@@ -3781,7 +3832,7 @@ async function createPendingShipmentAction(formData: FormData) {
   const { data: shipment, error: shipmentError } = await supabase
     .from("freight_shipment")
     .insert({
-      carrier,
+      carrier: shipmentCarrier!.carrier,
       customer_account_id: order.customer_account_id,
       freight_cost: freightCost,
       is_dropship: order.is_dropship,
@@ -3791,8 +3842,8 @@ async function createPendingShipmentAction(formData: FormData) {
       ship_to_snapshot_json: order.ship_to_snapshot_json,
       ship_to_type:
         order.ship_to_type as Database["public"]["Enums"]["sales_order_ship_to_type"],
-      shipping_type: shippingType
-        ? (shippingType as Database["public"]["Enums"]["shipping_type"])
+      shipping_type: shipmentCarrier!.shippingType
+        ? (shipmentCarrier!.shippingType as unknown as Database["public"]["Enums"]["shipping_type"])
         : null,
       status: "pending",
     })
@@ -3818,8 +3869,8 @@ async function createPendingShipmentAction(formData: FormData) {
       ship_to_snapshot_json: order.ship_to_snapshot_json,
       ship_to_type:
         order.ship_to_type as Database["public"]["Enums"]["sales_order_ship_to_type"],
-      shipping_type_snapshot: shippingType
-        ? (shippingType as Database["public"]["Enums"]["shipping_type"])
+      shipping_type_snapshot: shipmentCarrier!.shippingType
+        ? (shipmentCarrier!.shippingType as unknown as Database["public"]["Enums"]["shipping_type"])
         : null,
       shipping_fee: shippingFee,
       status: "draft",
@@ -5450,16 +5501,23 @@ async function updateShipmentDetailsAction(formData: FormData) {
     );
   }
 
+  let shipmentCarrier: { carrier: string | null; shippingType: string | null };
+  try {
+    shipmentCarrier = await resolveShipmentCarrier(formData);
+  } catch (carrierError) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(carrierError instanceof Error ? carrierError.message : "The freight carrier could not be selected.")}`);
+  }
+
   const supabase = createSupabaseAdminClient();
   const { error } = await supabase
     .from("freight_shipment")
     .update({
-      carrier: textValue(formData, "carrier") || null,
+      carrier: shipmentCarrier!.carrier,
       freight_cost: freightCost,
       master_tracking_number:
         textValue(formData, "master_tracking_number") || null,
       notes: textValue(formData, "shipment_notes") || null,
-      shipping_type: (textValue(formData, "shipping_type") || null) as
+      shipping_type: shipmentCarrier!.shippingType as unknown as
         | Database["public"]["Enums"]["shipping_type"]
         | null,
     })
@@ -12772,7 +12830,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveFreightLevelAction={saveFreightLevelAction} saveProductSettingAction={saveProductSettingAction} selectedTab={params.admin_tab} />
+          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveProductSettingAction={saveProductSettingAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

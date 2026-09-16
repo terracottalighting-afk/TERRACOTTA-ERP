@@ -57,7 +57,7 @@ function FreightCarrierEditor({ carrier, onCancel, onEdit, onSubmit, saveAction 
       <label>Freight Type<select defaultValue={carrier?.freight_type ?? "small_parcel_ground"} name="freight_type"><option value="small_parcel_ground">Small Parcel / Ground</option><option value="ltl">LTL</option><option value="sea_freight">Sea Freight</option></select></label>
       <label>Contact Name<input defaultValue={carrier?.contact_name ?? ""} name="contact_name" /></label>
       <label>Contact Email<input defaultValue={carrier?.contact_email ?? ""} name="contact_email" type="email" /></label>
-      <label className="full-width-field">Website<input defaultValue={carrier?.website ?? ""} name="website" placeholder="https://example.com" type="url" /></label>
+      <label className="full-width-field">Website<input defaultValue={carrier?.website ?? ""} inputMode="url" name="website" placeholder="www.example.com" type="text" /></label>
       <label className="checkbox-label"><input defaultChecked={carrier?.is_active ?? true} name="is_active" type="checkbox" /> Active freight carrier</label>
     </div></fieldset>
     <div className="form-actions"><button className="primary-action" type="submit">{carrier ? "Save Freight Carrier" : "Create Freight Carrier"}</button><button className="secondary-action secondary-action--light" onClick={onCancel} type="button">Cancel</button></div>

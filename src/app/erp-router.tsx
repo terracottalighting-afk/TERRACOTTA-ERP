@@ -1968,8 +1968,15 @@ async function saveFreightCarrierAction(formData: FormData) {
   const errorUrl = (message: string) => `/?module=admin&admin_tab=freight&freight_tab=carriers&error=${encodeURIComponent(message)}`;
   if (!carrierName || !["small_parcel_ground", "ltl", "sea_freight"].includes(freightType)) redirect(errorUrl("Enter a carrier name and select a freight type."));
 
-  const website = textValue(formData, "website");
-  if (website && !/^https?:\/\//i.test(website)) redirect(errorUrl("Website must start with http:// or https://."));
+  const rawWebsite = textValue(formData, "website");
+  const website = rawWebsite && !/^https?:\/\//i.test(rawWebsite) ? `https://${rawWebsite}` : rawWebsite;
+  if (website) {
+    try {
+      new URL(website);
+    } catch {
+      redirect(errorUrl("Enter a valid website, such as www.example.com."));
+    }
+  }
   const value = {
     carrier_name: carrierName,
     contact_email: textValue(formData, "contact_email") || null,

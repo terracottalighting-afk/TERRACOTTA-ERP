@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StatusBadge } from "@/components/ui";
 
 type FormAction = (formData: FormData) => Promise<void>;
@@ -53,6 +53,19 @@ export function FreightLevelManager({
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [hasEditedForm, setHasEditedForm] = useState(false);
+  const freightLevelSignature = freightLevels
+    .map(
+      (level) =>
+        `${level.id}:${level.level_name}:${level.free_freight_allowance}:${level.freight_rate_percent}:${level.is_active}`,
+    )
+    .join("|");
+  const previousFreightLevelSignature = useRef(freightLevelSignature);
+  useEffect(() => {
+    if (previousFreightLevelSignature.current === freightLevelSignature) return;
+    previousFreightLevelSignature.current = freightLevelSignature;
+    setEditingId(null);
+    setHasEditedForm(false);
+  }, [freightLevelSignature]);
   const activeAccountTypes = accountTypes.filter((accountType) => accountType.is_active);
   const activeLevels = freightLevels.filter((level) => level.is_active);
   const accountTypeById = new Map(accountTypes.map((accountType) => [accountType.id, accountType]));
@@ -209,10 +222,6 @@ function FreightLevelEditor({
           <label>
             Freight Rate (%)
             <input defaultValue={level?.freight_rate_percent ?? ""} min="0" name="freight_rate_percent" required step="0.0001" type="number" />
-          </label>
-          <label>
-            Display Order
-            <input defaultValue={level?.sort_order ?? 100} min="0" name="sort_order" required step="1" type="number" />
           </label>
           <label className="checkbox-label">
             <input defaultChecked={level?.is_active ?? true} name="is_active" type="checkbox" />

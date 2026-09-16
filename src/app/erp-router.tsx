@@ -1843,10 +1843,8 @@ async function saveFreightLevelAction(formData: FormData) {
   const levelName = textValue(formData, "level_name");
   const freeFreightAllowanceText = textValue(formData, "free_freight_allowance");
   const freightRatePercentText = textValue(formData, "freight_rate_percent");
-  const sortOrderText = textValue(formData, "sort_order");
   const freeFreightAllowance = Number(freeFreightAllowanceText);
   const freightRatePercent = Number(freightRatePercentText);
-  const sortOrder = Number(sortOrderText);
   const errorUrl = (message: string) =>
     `/?module=admin&admin_tab=freight&error=${encodeURIComponent(message)}`;
 
@@ -1857,12 +1855,9 @@ async function saveFreightLevelAction(formData: FormData) {
     freeFreightAllowance < 0 ||
     !freightRatePercentText ||
     !Number.isFinite(freightRatePercent) ||
-    freightRatePercent < 0 ||
-    !sortOrderText ||
-    !Number.isInteger(sortOrder) ||
-    sortOrder < 0
+    freightRatePercent < 0
   ) {
-    redirect(errorUrl("Enter a freight level name, a non-negative FFA and freight rate, and a valid display order."));
+    redirect(errorUrl("Enter a freight level name, a non-negative FFA, and a freight rate."));
   }
 
   let customerGroups: FreightLevelCustomerGroupInput[];
@@ -1930,7 +1925,6 @@ async function saveFreightLevelAction(formData: FormData) {
     freight_rate_percent: freightRatePercent,
     is_active: formData.get("is_active") === "on",
     level_name: levelName,
-    sort_order: sortOrder,
   };
   const levelResult = freightLevelId
     ? await supabase

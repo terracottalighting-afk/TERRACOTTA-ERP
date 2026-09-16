@@ -16,6 +16,7 @@ import { EditAccountProfileForm } from "@/components/customers/edit-account-prof
 import { EditBillingCreditForm } from "@/components/customers/edit-billing-credit-form";
 import { EditContactForm } from "@/components/customers/edit-contact-form";
 import { EditFreightForm } from "@/components/customers/edit-freight-form";
+import { EditLocationFreightForm } from "@/components/customers/edit-location-freight-form";
 import { EditLocationForm } from "@/components/customers/edit-location-form";
 import { EditSalesRepForm } from "@/components/customers/edit-sales-rep-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
@@ -8696,6 +8697,77 @@ async function updateLocationAction(formData: FormData) {
   redirect(`/?customer=${customerId}&tab=locations`);
 }
 
+async function updateLocationFreightTermAction(formData: FormData) {
+  "use server";
+
+  const customerId = String(formData.get("customer_id") ?? "").trim();
+  const locationId = String(formData.get("location_id") ?? "").trim();
+  const freightLevelId = String(
+    formData.get("location_freight_level_id") ?? "",
+  ).trim();
+  const returnUrl = `/?module=edit-location-freight&customer=${customerId}&location=${locationId}`;
+
+  if (!customerId || !locationId) {
+    redirect(`${returnUrl}&error=${encodeURIComponent("A customer and shipping address are required.")}`);
+  }
+
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: location, error: locationError } = await supabase
+    .from("customer_location")
+    .select("id, is_shipping_address")
+    .eq("id", locationId)
+    .eq("customer_account_id", customerId)
+    .maybeSingle();
+  if (locationError || !location?.is_shipping_address) {
+    redirect(`${returnUrl}&error=${encodeURIComponent(locationError?.message ?? "Select a saved shipping address.")}`);
+  }
+
+  if (freightLevelId) {
+    const { data: freightLevel, error: freightLevelError } = await supabase
+      .from("freight_level")
+      .select("id")
+      .eq("id", freightLevelId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (freightLevelError || !freightLevel) {
+      redirect(`${returnUrl}&error=${encodeURIComponent(freightLevelError?.message ?? "The selected Freight Level is no longer active.")}`);
+    }
+  }
+
+  const { data: existingPolicy, error: existingPolicyError } = await supabase
+    .from("customer_freight_policy")
+    .select("id")
+    .eq("customer_account_id", customerId)
+    .eq("customer_location_id", locationId)
+    .maybeSingle();
+  if (existingPolicyError) {
+    redirect(`${returnUrl}&error=${encodeURIComponent(existingPolicyError.message)}`);
+  }
+
+  const policyResult = existingPolicy
+    ? await supabase
+        .from("customer_freight_policy")
+        .update({ freight_level_id: freightLevelId || null })
+        .eq("id", existingPolicy.id)
+    : await supabase.from("customer_freight_policy").insert({
+        customer_account_id: customerId,
+        customer_location_id: locationId,
+        freight_level_id: freightLevelId || null,
+        freight_terms: "free_freight",
+        ground_freight_terms: "free_freight",
+        is_active: true,
+        is_default: true,
+        ltl_freight_terms: "free_freight",
+        policy_name: "Location Freight Policy",
+      });
+  if (policyResult.error) {
+    redirect(`${returnUrl}&error=${encodeURIComponent(policyResult.error.message)}`);
+  }
+
+  revalidatePath("/");
+  redirect(`/?customer=${customerId}&tab=freight`);
+}
+
 async function updateContactAction(formData: FormData) {
   "use server";
 
@@ -12126,6 +12198,7 @@ export async function ErpRouter({
     "edit-billing-credit": "Edit Billing / Credit",
     "edit-contact": "Edit Contact",
     "edit-freight": "Edit Freight",
+    "edit-location-freight": "Edit Freight Term",
     "edit-location": "Edit Location",
     "edit-sales-rep": "Edit Sales Rep",
     "edit-product-boxes": "Edit Product Boxes",
@@ -12575,6 +12648,14 @@ export async function ErpRouter({
             loadLocation={getLocationForEdit}
             locationId={params.location}
             saveAction={updateLocationAction}
+          />
+        ) : activeModule === "edit-location-freight" ? (
+          <EditLocationFreightForm
+            customerId={params.customer}
+            error={params.error}
+            loadCustomer={getCustomerName}
+            locationId={params.location}
+            saveAction={updateLocationFreightTermAction}
           />
         ) : activeModule === "edit-sales-rep" ? (
           <EditSalesRepForm
@@ -14155,7 +14236,7 @@ export async function ErpRouter({
                                 <td>
                                   <Link
                                     className="text-action"
-                                    href={`/?module=edit-location&customer=${dashboard.customer.id}&location=${term.locationId}`}
+                                    href={`/?module=edit-location-freight&customer=${dashboard.customer.id}&location=${term.locationId}`}
                                   >
                                     Edit
                                   </Link>

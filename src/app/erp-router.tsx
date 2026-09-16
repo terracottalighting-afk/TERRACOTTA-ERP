@@ -13616,7 +13616,7 @@ export async function ErpRouter({
                       {dashboard.rgas.map((rga) => (
                         <div className="compact-row" key={rga.id}>
                           <div>
-                            <strong>{rga.rga_number}</strong>
+                            <Link className="table-link" href={`/?module=rga-detail&rga=${rga.id}`}>{rga.rga_number}</Link>
                             <span>{dateLabel(rga.request_date)} | Original PO {rga.sales_order_id ? <Link className="table-link" href={`/?module=orders&order=${rga.sales_order_id}`}>{rga.original_customer_po_number_snapshot ?? "View order"}</Link> : rga.original_customer_po_number_snapshot ?? "Not set"}</span>
                           </div>
                           <span>{label(rga.requested_resolution_type)}</span>

@@ -52,6 +52,7 @@ export function FreightLevelManager({
   saveAction: FormAction;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [hasEditedForm, setHasEditedForm] = useState(false);
   const activeAccountTypes = accountTypes.filter((accountType) => accountType.is_active);
   const activeLevels = freightLevels.filter((level) => level.is_active);
   const accountTypeById = new Map(accountTypes.map((accountType) => [accountType.id, accountType]));
@@ -68,20 +69,22 @@ export function FreightLevelManager({
         <div className="section-actions">
           <button
             className="small-action"
-            onClick={() => setEditingId("new")}
+            onClick={() => { setEditingId("new"); setHasEditedForm(false); }}
             type="button"
           >
             Add Freight Level
           </button>
         </div>
       </div>
-      {error ? <p className="form-error">{decodeURIComponent(error)}</p> : null}
+      {error && !hasEditedForm ? <p className="form-error">{decodeURIComponent(error)}</p> : null}
       {editingId ? (
         <FreightLevelEditor
           accountTypes={activeAccountTypes}
           groups={groups.filter((group) => group.freight_level_id === editingId)}
           level={freightLevels.find((level) => level.id === editingId) ?? null}
           onCancel={() => setEditingId(null)}
+          onEdit={() => setHasEditedForm(true)}
+          onSubmit={() => setHasEditedForm(false)}
           saveAction={saveAction}
         />
       ) : null}
@@ -124,7 +127,7 @@ export function FreightLevelManager({
                   <td>{Number(level.freight_rate_percent)}%</td>
                   <td><StatusBadge tone="good" value="Active" /></td>
                   <td>
-                    <button className="text-action text-action--button" onClick={() => setEditingId(level.id)} type="button">
+                    <button className="text-action text-action--button" onClick={() => { setEditingId(level.id); setHasEditedForm(false); }} type="button">
                       Edit
                     </button>
                   </td>
@@ -146,12 +149,16 @@ function FreightLevelEditor({
   groups,
   level,
   onCancel,
+  onEdit,
+  onSubmit,
   saveAction,
 }: {
   accountTypes: AccountType[];
   groups: FreightLevelGroup[];
   level: FreightLevel | null;
   onCancel: () => void;
+  onEdit: () => void;
+  onSubmit: () => void;
   saveAction: FormAction;
 }) {
   const [draftGroups, setDraftGroups] = useState<DraftGroup[]>(
@@ -185,7 +192,7 @@ function FreightLevelEditor({
   };
 
   return (
-    <form action={saveAction} className="product-setting-editor">
+    <form action={saveAction} className="product-setting-editor" onInput={onEdit} onSubmit={onSubmit}>
       {level ? <input name="freight_level_id" type="hidden" value={level.id} /> : null}
       <input name="customer_groups" type="hidden" value={JSON.stringify(draftGroups)} />
       <fieldset>
@@ -258,7 +265,7 @@ function FreightLevelEditor({
         ) : <p className="empty-state">Add at least one customer group for this freight level.</p>}
       </fieldset>
       <div className="form-actions">
-        <button className="primary-action" type="submit">{level ? "Save Freight Level" : "Create Freight Level"}</button>
+        <button className="primary-action" disabled={!draftGroups.length} type="submit">{level ? "Save Freight Level" : "Create Freight Level"}</button>
         <button className="secondary-action secondary-action--light" onClick={onCancel} type="button">Cancel</button>
       </div>
     </form>

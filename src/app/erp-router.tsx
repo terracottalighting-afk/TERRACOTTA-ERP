@@ -9958,6 +9958,21 @@ async function getCustomerDashboard(customerId: string) {
     throw new Error(failed.error.message);
   }
 
+  const customerRgas = (rgasResult.data ?? []) as Rga[];
+  const customerRgaIds = customerRgas.map((rga) => rga.id);
+  const { data: replacementLinks } = customerRgaIds.length ? await supabase.from("rga_replacement_order").select("rga_id, sales_order_id").in("rga_id", customerRgaIds) : { data: [] };
+  const { data: issuedCreditMemos } = customerRgaIds.length ? await supabase.from("credit_memo").select("rga_id").in("rga_id", customerRgaIds) : { data: [] };
+  const replacementOrderIds = (replacementLinks ?? []).map((link) => link.sales_order_id);
+  const { data: replacementOrders } = replacementOrderIds.length ? await supabase.from("sales_order").select("id, status").in("id", replacementOrderIds) : { data: [] };
+  const replacementByRga = new Map((replacementLinks ?? []).map((link) => [link.rga_id, replacementOrders?.find((order) => order.id === link.sales_order_id)]));
+  const creditMemoStatusRgaIds = new Set((issuedCreditMemos ?? []).map((memo) => memo.rga_id));
+  const resolvedRgas = customerRgas.map((rga) => {
+    if (rga.status !== "authorized") return rga;
+    if (rga.requested_resolution_type === "credit") return { ...rga, status: creditMemoStatusRgaIds.has(rga.id) ? "closed" : "waiting_for_credit_memo" };
+    if (rga.requested_resolution_type === "replacement") { const replacement = replacementByRga.get(rga.id); return { ...rga, status: !replacement ? "waiting_for_replacement_order" : ["partially_shipped", "shipped", "closed"].includes(replacement.status) ? "closed" : "replacement_order_created" }; }
+    return rga;
+  });
+
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const { data: last30DayOrders, error: last30DayOrdersError } = await supabase
@@ -10230,7 +10245,7 @@ async function getCustomerDashboard(customerId: string) {
     })) as PackingList[],
     primaryShowrooms: (primaryShowroomsResult.data ??
       []) as PrimaryShowroomEnrollment[],
-    rgas: (rgasResult.data ?? []) as Rga[],
+    rgas: resolvedRgas,
     salesRepAssignments: (salesRepAssignmentsResult.data ??
       []) as CustomerSalesRepAssignment[],
   };

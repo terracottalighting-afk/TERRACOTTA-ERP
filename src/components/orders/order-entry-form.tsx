@@ -21,6 +21,7 @@ export type OrderShipToOption = {
   agencyId: string | null;
   contactName: string | null;
   email: string | null;
+  freightLevel?: DefaultFreightLevel | null;
   id: string;
   isDefault: boolean;
   name: string;
@@ -199,8 +200,9 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
   }, [activeParentId, partSearchMode, partQuery, parts, searchParts]);
 
   const subtotal = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice * (1 - line.discountPercent / 100), 0);
-  const defaultFreightCharge = defaultFreightLevel && subtotal < defaultFreightLevel.freeFreightAllowance
-    ? Math.round(subtotal * (defaultFreightLevel.freightRatePercent / 100) * 100) / 100
+  const selectedFreightLevel = shipToOptions.find((location) => location.id === locationId)?.freightLevel ?? defaultFreightLevel;
+  const defaultFreightCharge = selectedFreightLevel && subtotal < selectedFreightLevel.freeFreightAllowance
+    ? Math.round(subtotal * (selectedFreightLevel.freightRatePercent / 100) * 100) / 100
     : 0;
   const selectedTerritory = territories.find((territory) => territory.id === commissionSelection.territoryId);
   const selectedAgencyReps = salesReps.filter((rep) => rep.agencyId === commissionSelection.agencyId);
@@ -625,7 +627,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
             <div className="section-title"><h3>Order Lines</h3><button className="text-action text-action--button" onClick={() => returnToEditor("order-products")} type="button">Edit</button></div>
             <div className="table-wrap"><table className="data-table"><thead><tr><th>SKU</th><th>Product</th><th>Brand</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Line Total</th></tr></thead><tbody>{lines.map((line) => <tr key={line.id}><td>{line.sku}</td><td>{line.name}</td><td>{line.brandName}</td><td>{line.quantity}</td><td>{money.format(line.unitPrice)}</td><td>{line.discountPercent}%</td><td>{money.format(line.quantity * line.unitPrice * (1 - line.discountPercent / 100))}</td></tr>)}</tbody></table></div>
             <div className="order-total"><span>Order Subtotal</span><strong>{money.format(subtotal)}</strong></div>
-            {defaultFreightLevel ? <div className="order-total"><span>Default Freight Charge ({defaultFreightLevel.levelName}: FFA {money.format(defaultFreightLevel.freeFreightAllowance)}, {defaultFreightLevel.freightRatePercent}%)</span><strong>{defaultFreightCharge === 0 ? "Free Freight" : money.format(defaultFreightCharge)}</strong></div> : null}
+            {selectedFreightLevel ? <div className="order-total"><span>Default Freight Charge ({selectedFreightLevel.levelName}: FFA {money.format(selectedFreightLevel.freeFreightAllowance)}, {selectedFreightLevel.freightRatePercent}%)</span><strong>{defaultFreightCharge === 0 ? "Free Freight" : money.format(defaultFreightCharge)}</strong></div> : null}
           </article>
 
           <article className="data-section">

@@ -2345,8 +2345,29 @@ async function createCustomerAction(formData: FormData) {
 async function resolveFreightLevelForCustomer(
   customerId: string,
   accountTypeId: string,
+  locationId?: string | null,
 ): Promise<FreightLevelConfig | null> {
   const supabase = createSupabaseUntypedAdminClient();
+  const [{ data: accountPolicy, error: accountPolicyError }, { data: primaryShowroom, error: showroomError }] = await Promise.all([
+    supabase.from("customer_freight_policy").select("freight_terms, freight_level_id").eq("customer_account_id", customerId).is("customer_location_id", null).eq("is_active", true).order("is_default", { ascending: false }).limit(1).maybeSingle(),
+    locationId ? supabase.from("primary_showroom_enrollment").select("id").eq("customer_account_id", customerId).eq("customer_location_id", locationId).eq("program_status", "active").maybeSingle() : Promise.resolve({ data: null, error: null }),
+  ]);
+  if (accountPolicyError) throw new Error(accountPolicyError.message);
+  if (showroomError) throw new Error(showroomError.message);
+  const isPrimaryShowroom = Boolean(primaryShowroom);
+
+  const loadLevel = async (levelId: string): Promise<FreightLevelConfig | null> => {
+    const { data, error } = await supabase.from("freight_level").select("id, level_name, free_freight_allowance, freight_rate_percent").eq("id", levelId).eq("is_active", true).maybeSingle();
+    if (error) throw new Error(error.message);
+    return data ? { id: data.id, level_name: data.level_name, free_freight_allowance: Number(data.free_freight_allowance), freight_rate_percent: Number(data.freight_rate_percent) } : null;
+  };
+
+  if (!isPrimaryShowroom && accountPolicy) {
+    return accountPolicy.freight_terms === "free_freight" && accountPolicy.freight_level_id
+      ? loadLevel(accountPolicy.freight_level_id)
+      : null;
+  }
+
   const { data: groups, error: groupsError } = await supabase
     .from("freight_level_customer_group")
     .select("freight_level_id, primary_showroom_requirement")
@@ -2354,30 +2375,12 @@ async function resolveFreightLevelForCustomer(
   if (groupsError) throw new Error(groupsError.message);
   if (!groups?.length) return null;
 
-  const needsShowroomStatus = groups.some(
-    (group) => group.primary_showroom_requirement !== null,
+  const locationSpecificGroups = groups.filter(
+    (group) => group.primary_showroom_requirement === isPrimaryShowroom,
   );
-  const { data: activeShowroom, error: activeShowroomError } =
-    needsShowroomStatus
-      ? await supabase
-          .from("primary_showroom_enrollment")
-          .select("id")
-          .eq("customer_account_id", customerId)
-          .eq("program_status", "active")
-          .limit(1)
-          .maybeSingle()
-      : { data: null, error: null };
-  if (activeShowroomError) throw new Error(activeShowroomError.message);
-
-  const hasPrimaryShowroom = Boolean(activeShowroom);
   const matchingLevelIds = [
     ...new Set(
-      groups
-        .filter(
-          (group) =>
-            group.primary_showroom_requirement === null ||
-            group.primary_showroom_requirement === hasPrimaryShowroom,
-        )
+      (locationSpecificGroups.length ? locationSpecificGroups : groups.filter((group) => group.primary_showroom_requirement === null))
         .map((group) => group.freight_level_id),
     ),
   ];
@@ -2645,6 +2648,7 @@ async function createSalesOrderAction(formData: FormData) {
   const defaultFreightLevel = await resolveFreightLevelForCustomer(
     customerId,
     accountResult.data.account_type_id,
+    locationId,
   );
   const defaultFreightAmount = defaultFreightCharge(
     pricedLines.reduce(
@@ -8792,6 +8796,14 @@ async function updateFreightPolicyAction(formData: FormData) {
   const freightTerms = freightTerm(formData.get("freight_terms"));
   const freightAllowanceRaw = optionalText("freight_allowance_amount");
   const flatRateRaw = optionalText("flat_rate_percent");
+  const freightLevelId = optionalText("freight_level_id");
+  let selectedFreightLevel: { free_freight_allowance: number | string } | null = null;
+  if (freightTerms === "free_freight") {
+    if (!freightLevelId) redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent("Select a Freight Level for Free Freight per FFA.")}`);
+    const { data, error } = await createSupabaseUntypedAdminClient().from("freight_level").select("free_freight_allowance").eq("id", freightLevelId!).eq("is_active", true).maybeSingle();
+    if (error || !data) redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent(error?.message ?? "The selected Freight Level is no longer active.")}`);
+    selectedFreightLevel = data;
+  }
   const policy = {
     customer_account_id: customerId,
     customer_location_id: null,
@@ -8813,9 +8825,8 @@ async function updateFreightPolicyAction(formData: FormData) {
         : null,
     flat_rate_percent:
       flatRateRaw && freightTerms === "flat_rate" ? Number(flatRateRaw) : null,
-    freight_allowance_amount: freightAllowanceRaw
-      ? Number(freightAllowanceRaw)
-      : null,
+    freight_allowance_amount: selectedFreightLevel ? Number(selectedFreightLevel.free_freight_allowance) : freightAllowanceRaw ? Number(freightAllowanceRaw) : null,
+    freight_level_id: freightTerms === "free_freight" ? freightLevelId : null,
     freight_terms: freightTerms,
     ground_freight_terms: freightTerms,
     is_default: true,
@@ -10578,6 +10589,18 @@ async function getOrderEntryData(customerId: string) {
     customerId,
     customerResult.data.account_type_id,
   );
+  const freightLevelsByLocation = new Map(
+    await Promise.all(
+      (locationsResult.data ?? []).map(async (location) => [
+        location.id,
+        await resolveFreightLevelForCustomer(
+          customerId,
+          customerResult.data.account_type_id,
+          location.id,
+        ),
+      ] as const),
+    ),
+  );
   const locationIds = (locationsResult.data ?? []).map((location) => location.id);
   const { data: locationAssignments, error: locationAssignmentsError } =
     locationIds.length
@@ -10828,6 +10851,10 @@ async function getOrderEntryData(customerId: string) {
         (territoryId ? territoryAgencyByTerritory.get(territoryId) ?? null : null),
       contactName: location.receiver_name,
       email: location.email,
+      freightLevel: (() => {
+        const freightLevel = freightLevelsByLocation.get(location.id);
+        return freightLevel ? { freeFreightAllowance: freightLevel.free_freight_allowance, freightRatePercent: freightLevel.freight_rate_percent, levelName: freightLevel.level_name } : null;
+      })(),
       id: location.id,
       isDefault: location.is_default_ship_to,
       name: location.location_name,
@@ -11627,9 +11654,10 @@ async function getDefaultFreightPolicy(customerId: string) {
   const { data, error } = await supabase
     .from("customer_freight_policy")
     .select(
-      "id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, flat_rate_percent, default_ltl_carrier, default_ltl_carrier_account_number, default_ground_carrier, default_ground_carrier_account_number",
+      "id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, freight_level_id, flat_rate_percent, default_ltl_carrier, default_ltl_carrier_account_number, default_ground_carrier, default_ground_carrier_account_number",
     )
     .eq("customer_account_id", customerId)
+    .is("customer_location_id", null)
     .eq("is_active", true)
     .order("is_default", { ascending: false })
     .limit(1)

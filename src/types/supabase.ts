@@ -1813,6 +1813,7 @@ export type Database = {
           flat_rate_percent: number | null
           free_freight_threshold: number | null
           freight_allowance_amount: number | null
+          freight_level_id: string | null
           freight_terms: Database["public"]["Enums"]["freight_terms"]
           ground_freight_terms: Database["public"]["Enums"]["freight_terms"]
           id: string
@@ -1837,6 +1838,7 @@ export type Database = {
           flat_rate_percent?: number | null
           free_freight_threshold?: number | null
           freight_allowance_amount?: number | null
+          freight_level_id?: string | null
           freight_terms?: Database["public"]["Enums"]["freight_terms"]
           ground_freight_terms?: Database["public"]["Enums"]["freight_terms"]
           id?: string
@@ -1861,6 +1863,7 @@ export type Database = {
           flat_rate_percent?: number | null
           free_freight_threshold?: number | null
           freight_allowance_amount?: number | null
+          freight_level_id?: string | null
           freight_terms?: Database["public"]["Enums"]["freight_terms"]
           ground_freight_terms?: Database["public"]["Enums"]["freight_terms"]
           id?: string

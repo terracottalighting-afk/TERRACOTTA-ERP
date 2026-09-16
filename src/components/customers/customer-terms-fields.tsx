@@ -57,23 +57,28 @@ export function PaymentTermsCreditFields() {
 export function FreightTermsFields({
   defaultFlatRatePercent = "",
   defaultFreightAllowance = "",
+  defaultFreightLevelId = "",
   defaultFreightTerms = "prepaid",
   defaultGroundCollectAccount = "",
   defaultGroundCollectCarrier = "",
   defaultLtlCollectAccount = "",
-  defaultLtlCollectCarrier = ""
+  defaultLtlCollectCarrier = "",
+  freightLevels = [],
 }: {
   defaultFlatRatePercent?: string;
   defaultFreightAllowance?: string;
+  defaultFreightLevelId?: string;
   defaultFreightTerms?: string;
   defaultGroundCollectAccount?: string;
   defaultGroundCollectCarrier?: string;
   defaultLtlCollectAccount?: string;
   defaultLtlCollectCarrier?: string;
+  freightLevels?: { id: string; levelName: string; freeFreightAllowance: number; freightRatePercent: number }[];
 }) {
   const [freightTerms, setFreightTerms] = useState(defaultFreightTerms);
   const isCollect = freightTerms === "collect";
   const isFlatRate = freightTerms === "flat_rate";
+  const isFreeFreight = freightTerms === "free_freight";
 
   return (
     <fieldset>
@@ -90,17 +95,16 @@ export function FreightTermsFields({
             <option value="manual_review">Manual Review</option>
           </select>
         </label>
-        <label>
+        {isFreeFreight && freightLevels.length ? <label>
+          Freight Level
+          <select defaultValue={defaultFreightLevelId} name="freight_level_id" required>
+            <option value="">Select freight level</option>
+            {freightLevels.map((level) => <option key={level.id} value={level.id}>{level.levelName} - FFA ${level.freeFreightAllowance.toFixed(2)} / {level.freightRatePercent}%</option>)}
+          </select>
+        </label> : <label>
           FFA Amount
-          <input
-            defaultValue={defaultFreightAllowance}
-            min="0"
-            name="freight_allowance_amount"
-            placeholder="Optional freight allowance"
-            step="0.01"
-            type="number"
-          />
-        </label>
+          <input defaultValue={defaultFreightAllowance} min="0" name="freight_allowance_amount" placeholder="Optional freight allowance" step="0.01" type="number" />
+        </label>}
         {isCollect ? (
           <>
             <label>

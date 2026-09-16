@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { FreightTermsFields } from "@/components/customers/customer-terms-fields";
 import { ModulePlaceholder } from "@/components/ui";
+import { createSupabaseUntypedAdminClient } from "@/lib/supabase/admin";
 
 type CustomerName = {
   name: string;
@@ -14,6 +15,7 @@ type FreightPolicy = {
   default_ltl_carrier_account_number?: string | null;
   flat_rate_percent?: number | null;
   freight_allowance_amount?: number | null;
+  freight_level_id?: string | null;
   freight_terms?: string;
   id?: string;
   ltl_freight_terms: string;
@@ -38,10 +40,12 @@ export async function EditFreightForm({
     );
   }
 
-  const [customer, freightPolicy] = await Promise.all([
+  const [customer, freightPolicy, freightLevelsResult] = await Promise.all([
     loadCustomer(customerId),
     loadFreightPolicy(customerId),
+    createSupabaseUntypedAdminClient().from("freight_level").select("id, level_name, free_freight_allowance, freight_rate_percent").eq("is_active", true).order("sort_order", { ascending: true }).order("level_name", { ascending: true }),
   ]);
+  if (freightLevelsResult.error) throw new Error(freightLevelsResult.error.message);
   const freightTerms =
     freightPolicy?.freight_terms ??
     freightPolicy?.ltl_freight_terms ??
@@ -81,6 +85,7 @@ export async function EditFreightForm({
           defaultFreightAllowance={
             freightPolicy?.freight_allowance_amount?.toString() ?? ""
           }
+          defaultFreightLevelId={freightPolicy?.freight_level_id ?? ""}
           defaultFreightTerms={freightTerms}
           defaultGroundCollectAccount={
             freightPolicy?.default_ground_carrier_account_number ?? ""
@@ -92,6 +97,7 @@ export async function EditFreightForm({
             freightPolicy?.default_ltl_carrier_account_number ?? ""
           }
           defaultLtlCollectCarrier={freightPolicy?.default_ltl_carrier ?? ""}
+          freightLevels={(freightLevelsResult.data ?? []).map((level) => ({ id: level.id, levelName: level.level_name, freeFreightAllowance: Number(level.free_freight_allowance), freightRatePercent: Number(level.freight_rate_percent) }))}
         />
         <div className="form-actions">
           <button className="primary-action" type="submit">

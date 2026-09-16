@@ -13,6 +13,7 @@ type OrderAcknowledgement = {
   bill_to_snapshot_json: Record<string, unknown> | null;
   customer_name_snapshot: string;
   customer_po_number: string | null;
+  freight_amount: number;
   id: string;
   lines: {
     brand_name_snapshot: string;
@@ -227,6 +228,10 @@ export async function OrderAcknowledgementPage({
             })}
           </tbody>
         </table>
+        <div className="quote-document-total">
+          <span>Estimated Freight Charge</span>
+          <strong>{money(Number(order.freight_amount ?? 0))}</strong>
+        </div>
         <div className="quote-document-total">
           <span>Order Total</span>
           <strong>{money(Number(order.total_amount ?? 0))}</strong>

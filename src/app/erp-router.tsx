@@ -2438,6 +2438,86 @@ function defaultFreightCharge(
   return Math.round(subtotal * (freightLevel.freight_rate_percent / 100) * 100) / 100;
 }
 
+async function shipmentFreightCharge(
+  order: {
+    customer_account_id: string;
+    customer_location_id: string | null;
+    subtotal_amount: number | string | null;
+  },
+  shipmentLines: {
+    discountPercent: number | string | null;
+    quantity: number | string;
+    unitPrice: number | string;
+  }[],
+) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: account, error } = await supabase
+    .from("customer_account")
+    .select("account_type_id")
+    .eq("id", order.customer_account_id)
+    .maybeSingle();
+  if (error || !account) {
+    throw new Error(error?.message ?? "Customer account was not found.");
+  }
+  const freightLevel = await resolveFreightLevelForCustomer(
+    order.customer_account_id,
+    account.account_type_id,
+    order.customer_location_id,
+  );
+  if (
+    !freightLevel ||
+    Number(order.subtotal_amount ?? 0) >= freightLevel.free_freight_allowance
+  ) {
+    return 0;
+  }
+  const shipmentSubtotal = shipmentLines.reduce(
+    (total, line) =>
+      total +
+      Number(line.quantity) *
+        Number(line.unitPrice) *
+        (1 - Number(line.discountPercent ?? 0) / 100),
+    0,
+  );
+  return Math.round(shipmentSubtotal * (freightLevel.freight_rate_percent / 100) * 100) / 100;
+}
+
+async function refreshPackingListFreightCharge(
+  packingListId: string,
+  orderId: string,
+) {
+  const supabase = createSupabaseAdminClient();
+  const [{ data: order, error: orderError }, { data: lines, error: linesError }] =
+    await Promise.all([
+      supabase
+        .from("sales_order")
+        .select("customer_account_id, customer_location_id, subtotal_amount")
+        .eq("id", orderId)
+        .maybeSingle(),
+      supabase
+        .from("packing_list_line")
+        .select("quantity_shipped, unit_price_snapshot, discount_percent_snapshot")
+        .eq("packing_list_id", packingListId),
+    ]);
+  if (orderError || linesError || !order) {
+    throw new Error(orderError?.message ?? linesError?.message ?? "Order freight details could not be loaded.");
+  }
+  const shippingFee = await shipmentFreightCharge(
+    order,
+    (lines ?? []).map((line) => ({
+      discountPercent: line.discount_percent_snapshot,
+      quantity: line.quantity_shipped,
+      unitPrice: line.unit_price_snapshot,
+    })),
+  );
+  const { error } = await supabase
+    .from("packing_list")
+    .update({ shipping_fee: shippingFee })
+    .eq("id", packingListId)
+    .eq("status", "draft")
+    .eq("invoice_generation_status_snapshot", "not_invoiced");
+  if (error) throw new Error(error.message);
+}
+
 async function createSalesOrderAction(formData: FormData) {
   "use server";
 
@@ -3684,7 +3764,7 @@ async function createPendingShipmentAction(formData: FormData) {
     supabase
       .from("sales_order")
       .select(
-        "id, customer_account_id, customer_location_id, sales_order_number, customer_po_number, order_type, status, credit_hold_status, is_dropship, ship_to_type, ship_to_snapshot_json",
+        "id, customer_account_id, customer_location_id, sales_order_number, customer_po_number, order_type, status, credit_hold_status, is_dropship, ship_to_type, ship_to_snapshot_json, subtotal_amount",
       )
       .eq("id", orderId)
       .maybeSingle(),
@@ -3845,23 +3925,24 @@ async function createPendingShipmentAction(formData: FormData) {
     textValue(formData, "master_tracking_number") || null;
   const notes = textValue(formData, "shipment_notes") || null;
   const freightCostText = textValue(formData, "freight_cost");
-  const freightChargeText = textValue(formData, "shipping_fee");
   const freightCost = freightCostText === "" ? 0 : Number(freightCostText);
-  const isFreeFreight = formData.get("is_free_freight") === "on";
-  const shippingFee = isFreeFreight
-    ? 0
-    : freightChargeText === ""
-      ? freightCost
-      : Number(freightChargeText);
-  if (
-    !Number.isFinite(freightCost) ||
-    freightCost < 0 ||
-    !Number.isFinite(shippingFee) ||
-    shippingFee < 0
-  ) {
+  if (!Number.isFinite(freightCost) || freightCost < 0) {
     redirect(
-      `${fallbackUrl}&error=${encodeURIComponent("Freight cost and customer freight charge must be valid non-negative amounts.")}`,
+      `${fallbackUrl}&error=${encodeURIComponent("Freight cost must be a valid non-negative amount.")}`,
     );
+  }
+  let shippingFee: number;
+  try {
+    shippingFee = await shipmentFreightCharge(
+      order,
+      selectedLines.map((line) => ({
+        discountPercent: line.discount_percent,
+        quantity: line.requestedQuantity,
+        unitPrice: line.unit_price,
+      })),
+    );
+  } catch (freightError) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(freightError instanceof Error ? freightError.message : "The shipment freight charge could not be calculated.")}`);
   }
   const { data: shipment, error: shipmentError } = await supabase
     .from("freight_shipment")
@@ -5229,6 +5310,11 @@ async function updatePendingPackingListLinesAction(formData: FormData) {
         redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
     }
   }
+  try {
+    await refreshPackingListFreightCharge(packingListId, orderId);
+  } catch (freightError) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(freightError instanceof Error ? freightError.message : "The shipment freight charge could not be recalculated.")}`);
+  }
   redirect(
     `${fallbackUrl}&notice=${encodeURIComponent("Draft packing-list quantities and warehouse/bin picks updated.")}`,
   );
@@ -5498,6 +5584,11 @@ async function addPendingPackingListLinesAction(formData: FormData) {
       `${fallbackUrl}&error=${encodeURIComponent(allocationsError.message)}`,
     );
   }
+  try {
+    await refreshPackingListFreightCharge(packingListId, orderId);
+  } catch (freightError) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(freightError instanceof Error ? freightError.message : "The shipment freight charge could not be recalculated.")}`);
+  }
 
   redirect(
     `${fallbackUrl}&notice=${encodeURIComponent("Additional order items were added to the draft packing list.")}`,
@@ -5516,22 +5607,10 @@ async function updateShipmentDetailsAction(formData: FormData) {
     );
 
   const freightCostText = textValue(formData, "freight_cost");
-  const freightChargeText = textValue(formData, "shipping_fee");
   const freightCost = freightCostText === "" ? 0 : Number(freightCostText);
-  const isFreeFreight = formData.get("is_free_freight") === "on";
-  const shippingFee = isFreeFreight
-    ? 0
-    : freightChargeText === ""
-      ? freightCost
-      : Number(freightChargeText);
-  if (
-    !Number.isFinite(freightCost) ||
-    freightCost < 0 ||
-    !Number.isFinite(shippingFee) ||
-    shippingFee < 0
-  ) {
+  if (!Number.isFinite(freightCost) || freightCost < 0) {
     redirect(
-      `${fallbackUrl}&error=${encodeURIComponent("Freight cost and customer freight charge must be valid non-negative amounts.")}`,
+      `${fallbackUrl}&error=${encodeURIComponent("Freight cost must be a valid non-negative amount.")}`,
     );
   }
 
@@ -5560,7 +5639,7 @@ async function updateShipmentDetailsAction(formData: FormData) {
     redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
   const { error: packingListError } = await supabase
     .from("packing_list")
-    .update({ allocated_freight_cost: freightCost, shipping_fee: shippingFee })
+    .update({ allocated_freight_cost: freightCost })
     .eq("freight_shipment_id", shipmentId)
     .eq("status", "draft")
     .eq("invoice_generation_status_snapshot", "not_invoiced");

@@ -398,9 +398,6 @@ export async function ShipmentCreatePage({
                   <ShipmentCarrierFields carriers={carriers ?? []} currentCarrier={shipment.carrier ?? ""} currentShippingType={shipment.shipping_type ?? ""} />
                   <ShipmentFreightFields
                     actualCost={shipment.freight_cost ?? 0}
-                    customerCharge={
-                      packingList?.shipping_fee ?? shipment.freight_cost ?? 0
-                    }
                     masterTrackingNumber={shipment.master_tracking_number ?? ""}
                   />
                   <label className="full-width-field">
@@ -412,10 +409,6 @@ export async function ShipmentCreatePage({
                     />
                   </label>
                 </div>
-                <p className="fieldset-note">
-                  Leave Customer Freight Charge blank to use the actual freight
-                  cost. Free Freight sets only the customer charge to $0.00.
-                </p>
                 <div className="form-actions">
                   <button className="primary-action" type="submit">
                     Save Header
@@ -902,10 +895,6 @@ export async function ShipmentCreatePage({
                 <textarea name="shipment_notes" rows={2} />
               </label>
             </div>
-            <p className="fieldset-note">
-              Leave Customer Freight Charge blank to use the actual freight
-              cost. Free Freight sets only the customer charge to $0.00.
-            </p>
           </fieldset>
           <fieldset>
             <legend>Shipping Documents</legend>

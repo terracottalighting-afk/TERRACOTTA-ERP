@@ -32,7 +32,7 @@ export async function RgaDetailPage({
     supabase
       .from("rga_line")
       .select(
-        "id, product_sku_snapshot, product_name_snapshot, brand_name_snapshot, quantity_shipped_snapshot, previous_rga_quantity_snapshot, available_rga_quantity_snapshot, quantity_requested, quantity_authorized, quantity_credited, quantity_replaced, status, notes",
+        "id, product_sku_snapshot, product_name_snapshot, brand_name_snapshot, quantity_shipped_snapshot, previous_rga_quantity_snapshot, available_rga_quantity_snapshot, quantity_requested, quantity_authorized, status, notes",
       )
       .eq("rga_id", rgaId)
       .order("product_sku_snapshot"),
@@ -276,14 +276,7 @@ export async function RgaDetailPage({
               </thead>
               <tbody>
                 {(lines ?? []).map((line) => {
-                  const lineIsClosed =
-                    rgaIsClosed &&
-                    (rga.approved_resolution_type === "replacement"
-                      ? Number(line.quantity_replaced) >=
-                        Number(line.quantity_authorized)
-                      : Number(line.quantity_credited) >=
-                        Number(line.quantity_authorized));
-                  const displayLineStatus = lineIsClosed
+                  const displayLineStatus = rgaIsClosed
                     ? "Closed"
                     : line.status;
 

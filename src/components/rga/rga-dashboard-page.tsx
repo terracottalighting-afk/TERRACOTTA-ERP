@@ -15,13 +15,26 @@ export async function RgaDashboardPage({
   rgaTab?: string;
 }) {
   const supabase = createSupabaseAdminClient();
-  const { data: rgas, error: rgasError } = await supabase
-    .from("rga")
-    .select(
-      "id, rga_number, customer_account_id, customer_name_snapshot, original_customer_po_number_snapshot, sales_order_id, request_date, requested_resolution_type, approved_resolution_type, status, created_at",
-    )
-    .order("created_at", { ascending: false });
+  const [
+    { data: rgas, error: rgasError },
+    { data: scopedOrder, error: scopedOrderError },
+  ] = await Promise.all([
+    supabase
+      .from("rga")
+      .select(
+        "id, rga_number, customer_account_id, customer_name_snapshot, original_customer_po_number_snapshot, sales_order_id, request_date, requested_resolution_type, approved_resolution_type, status, created_at",
+      )
+      .order("created_at", { ascending: false }),
+    rgaOrder
+      ? supabase
+          .from("sales_order")
+          .select("id, customer_account_id, customer_name_snapshot, customer_po_number")
+          .eq("id", rgaOrder)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
   if (rgasError) throw new Error(rgasError.message);
+  if (scopedOrderError) throw new Error(scopedOrderError.message);
 
   const rgaIds = (rgas ?? []).map((rga) => rga.id);
   const [{ data: replacementLinks }, { data: creditMemos }] = await Promise.all([
@@ -100,6 +113,23 @@ export async function RgaDashboardPage({
               ? "RGAs related to this original sales order."
               : "Start an RGA from the original sales order so every request stays tied to shipped quantities and the customer PO."}
           </p>
+          {scopedOrder ? (
+            <p>
+              <Link
+                className="context-parent-link"
+                href={`/?customer=${scopedOrder.customer_account_id}`}
+              >
+                {scopedOrder.customer_name_snapshot}
+              </Link>{" "}
+              | Original PO{" "}
+              <Link
+                className="table-link"
+                href={`/?module=orders&order=${scopedOrder.id}`}
+              >
+                {scopedOrder.customer_po_number || "Open original order"}
+              </Link>
+            </p>
+          ) : null}
         </div>
         <div className="record-hero-actions">
           <Link className="primary-action" href="/?module=orders">

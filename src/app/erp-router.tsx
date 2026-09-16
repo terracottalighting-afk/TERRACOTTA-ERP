@@ -469,6 +469,8 @@ type InvoiceBrandSummary = {
 type Rga = {
   id: string;
   rga_number: string;
+  original_customer_po_number_snapshot: string | null;
+  sales_order_id: string | null;
   status: string;
   requested_resolution_type: string;
   request_date: string;
@@ -9898,7 +9900,7 @@ async function getCustomerDashboard(customerId: string) {
       ]),
     supabase
       .from("rga")
-      .select("id, rga_number, status, requested_resolution_type, request_date")
+      .select("id, rga_number, sales_order_id, original_customer_po_number_snapshot, status, requested_resolution_type, request_date")
       .eq("customer_account_id", customerId)
       .order("request_date", { ascending: false })
       .limit(8),
@@ -13615,7 +13617,7 @@ export async function ErpRouter({
                         <div className="compact-row" key={rga.id}>
                           <div>
                             <strong>{rga.rga_number}</strong>
-                            <span>{dateLabel(rga.request_date)}</span>
+                            <span>{dateLabel(rga.request_date)} | Original PO {rga.sales_order_id ? <Link className="table-link" href={`/?module=orders&order=${rga.sales_order_id}`}>{rga.original_customer_po_number_snapshot ?? "View order"}</Link> : rga.original_customer_po_number_snapshot ?? "Not set"}</span>
                           </div>
                           <span>{label(rga.requested_resolution_type)}</span>
                           <StatusBadge value={rga.status} />

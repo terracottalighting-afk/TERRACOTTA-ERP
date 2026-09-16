@@ -258,6 +258,7 @@ type CustomerLocation = {
   is_billing_address?: boolean;
   is_showroom: boolean;
   status: string;
+  updated_at?: string;
 };
 
 type PrimaryShowroomEnrollment = {
@@ -273,6 +274,7 @@ type PrimaryShowroomEnrollment = {
   required_display_count?: number;
   showroom_notification_email?: string | null;
   showroom_size_classification?: string | null;
+  updated_at?: string;
 };
 
 type ShowroomDisplay = {
@@ -495,10 +497,20 @@ type FreightPolicy = {
   freight_allowance_amount?: number | null;
   freight_terms?: string;
   id?: string;
+  customer_location_id?: string | null;
+  freight_level_id?: string | null;
   policy_name: string;
   ltl_freight_terms: string;
   ground_freight_terms: string;
   preferred_shipping_type: string | null;
+  updated_at?: string;
+};
+
+type ShippingAddressFreightTerm = {
+  freightTerm: string;
+  locationId: string;
+  locationName: string;
+  updatedAt: string | null;
 };
 
 type FreightLevelConfig = {
@@ -10165,7 +10177,7 @@ async function getCustomerDashboard(customerId: string) {
     supabase
       .from("customer_location")
       .select(
-        "id, location_code, location_name, location_type, city, state_province, country_code, is_shipping_address, is_default_ship_to, is_billing_address, is_showroom, status",
+        "id, location_code, location_name, location_type, city, state_province, country_code, is_shipping_address, is_default_ship_to, is_billing_address, is_showroom, status, updated_at",
       )
       .eq("customer_account_id", customerId)
       .order("location_name", { ascending: true }),
@@ -10212,7 +10224,7 @@ async function getCustomerDashboard(customerId: string) {
       .limit(8),
     supabase
       .from("primary_showroom_enrollment")
-      .select("customer_location_id, program_status")
+      .select("customer_location_id, program_status, updated_at")
       .eq("customer_account_id", customerId)
       .in("program_status", [
         "pending",
@@ -10237,12 +10249,11 @@ async function getCustomerDashboard(customerId: string) {
     supabase
       .from("customer_freight_policy")
       .select(
-        "policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, flat_rate_percent",
+        "customer_location_id, freight_level_id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, flat_rate_percent, updated_at",
       )
       .eq("customer_account_id", customerId)
       .eq("is_active", true)
-      .order("is_default", { ascending: false })
-      .limit(3),
+      .order("is_default", { ascending: false }),
     supabase
       .from("active_customer_rep_assignments")
       .select(
@@ -10281,7 +10292,11 @@ async function getCustomerDashboard(customerId: string) {
   if (failed?.error) {
     throw new Error(failed.error.message);
   }
+  if (!customerResult.data) {
+    throw new Error("Customer account was not found.");
+  }
 
+  const customer = customerResult.data as CustomerAccount;
   const customerRgas = (rgasResult.data ?? []) as Rga[];
   const customerRgaIds = customerRgas.map((rga) => rga.id);
   const { data: replacementLinks } = customerRgaIds.length ? await supabase.from("rga_replacement_order").select("rga_id, sales_order_id").in("rga_id", customerRgaIds) : { data: [] };
@@ -10296,6 +10311,47 @@ async function getCustomerDashboard(customerId: string) {
     if (rga.requested_resolution_type === "replacement") { const replacement = replacementByRga.get(rga.id); return { ...rga, status: !replacement ? "waiting_for_replacement_order" : ["partially_shipped", "shipped", "closed"].includes(replacement.status) ? "closed" : "replacement_order_created" }; }
     return rga;
   });
+
+  const locations = (locationsResult.data ?? []) as CustomerLocation[];
+  const freightPolicies = (freightResult.data ?? []) as FreightPolicy[];
+  const accountFreightPolicy = freightPolicies.find(
+    (policy) => !policy.customer_location_id,
+  );
+  const locationFreightPolicies = new Map(
+    freightPolicies
+      .filter((policy) => policy.customer_location_id)
+      .map((policy) => [policy.customer_location_id!, policy]),
+  );
+  const activePrimaryShowrooms = new Map(
+    ((primaryShowroomsResult.data ?? []) as PrimaryShowroomEnrollment[])
+      .filter((showroom) => showroom.program_status === "active")
+      .map((showroom) => [showroom.customer_location_id, showroom]),
+  );
+  const shippingFreightTerms: ShippingAddressFreightTerm[] = await Promise.all(
+    locations
+      .filter((location) => location.is_shipping_address)
+      .map(async (location) => {
+        const freightLevel = await resolveFreightLevelForCustomer(
+          customerId,
+          customer.account_type_id,
+          location.id,
+        );
+        const locationPolicy = locationFreightPolicies.get(location.id);
+        const updatedAt =
+          locationPolicy?.updated_at ??
+          activePrimaryShowrooms.get(location.id)?.updated_at ??
+          accountFreightPolicy?.updated_at ??
+          location.updated_at ??
+          null;
+
+        return {
+          freightTerm: freightLevel?.level_name ?? "Not configured",
+          locationId: location.id,
+          locationName: location.location_name,
+          updatedAt,
+        };
+      }),
+  );
 
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -10533,11 +10589,11 @@ async function getCustomerDashboard(customerId: string) {
         customer_po_number: rga?.original_customer_po_number_snapshot ?? null,
       };
     }) as CreditMemo[],
-    customer: customerResult.data as CustomerAccount,
-    freightPolicies: (freightResult.data ?? []) as FreightPolicy[],
+    customer,
+    shippingFreightTerms,
     invoices: (invoicesResult.data ?? []) as CustomerInvoice[],
     invoiceSearchSkus: Object.fromEntries(invoiceSearchSkus),
-    locations: (locationsResult.data ?? []) as CustomerLocation[],
+    locations,
     orders: (ordersResult.data ?? []).map((order) => ({
       ...order,
       converted_order:
@@ -14064,44 +14120,52 @@ export async function ErpRouter({
                     <div className="section-title">
                       <h3>Freight</h3>
                       <div className="section-actions">
-                        <span>{dashboard.freightPolicies.length}</span>
+                        <span>{dashboard.shippingFreightTerms.length}</span>
                         <Link
                           className="text-action"
                           href={`/?module=edit-freight&customer=${dashboard.customer.id}`}
                         >
-                          Edit
+                          Edit Account Terms
                         </Link>
                       </div>
                     </div>
-                    <div className="compact-list">
-                      {dashboard.freightPolicies.map((policy) => (
-                        <div
-                          className="compact-row"
-                          key={`${policy.policy_name}-${policy.freight_terms ?? policy.ltl_freight_terms}`}
-                        >
-                          <div>
-                            <strong>{policy.policy_name}</strong>
-                            <span>
-                              {label(
-                                policy.freight_terms ??
-                                  policy.ltl_freight_terms,
-                              )}
-                            </span>
-                          </div>
-                          <span>
-                            FFA{" "}
-                            {policy.freight_allowance_amount
-                              ? money(policy.freight_allowance_amount)
-                              : "Not set"}
-                          </span>
-                          <span>
-                            {policy.flat_rate_percent
-                              ? `${policy.flat_rate_percent}% Flat Rate`
-                              : "No flat rate"}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                    {dashboard.shippingFreightTerms.length === 0 ? (
+                      <EmptyState text="No saved shipping addresses are configured for this customer." />
+                    ) : (
+                      <div className="table-scroll">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Shipping Address</th>
+                              <th>Freight Term</th>
+                              <th>Last Updated</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dashboard.shippingFreightTerms.map((term) => (
+                              <tr key={term.locationId}>
+                                <td>{term.locationName}</td>
+                                <td>{term.freightTerm}</td>
+                                <td>
+                                  {term.updatedAt
+                                    ? timestampLabel(term.updatedAt)
+                                    : "Not set"}
+                                </td>
+                                <td>
+                                  <Link
+                                    className="text-action"
+                                    href={`/?module=edit-location&customer=${dashboard.customer.id}&location=${term.locationId}`}
+                                  >
+                                    Edit
+                                  </Link>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </article>
 
                   <article

@@ -32,7 +32,7 @@ export async function RgaDetailPage({
     supabase
       .from("rga_line")
       .select(
-        "id, product_sku_snapshot, product_name_snapshot, brand_name_snapshot, quantity_shipped_snapshot, previous_rga_quantity_snapshot, available_rga_quantity_snapshot, quantity_requested, quantity_authorized, status, notes",
+        "id, product_sku_snapshot, product_name_snapshot, brand_name_snapshot, quantity_shipped_snapshot, previous_rga_quantity_snapshot, available_rga_quantity_snapshot, quantity_requested, quantity_authorized, quantity_credited, quantity_replaced, status, notes",
       )
       .eq("rga_id", rgaId)
       .order("product_sku_snapshot"),
@@ -51,12 +51,15 @@ export async function RgaDetailPage({
   if (documentsError) throw new Error(documentsError.message);
   if (!rga) return <ModulePlaceholder moduleName="RGA not found" />;
 
-  const [{ data: replacementOrder }, { data: creditMemo }] = await Promise.all([
+  const [
+    { data: replacementLink, error: replacementLinkError },
+    { data: creditMemo, error: creditMemoError },
+  ] = await Promise.all([
     supabase
-      .from("sales_order")
-      .select("id, sales_order_number, created_at")
-      .eq("order_type", "rga_replacement")
-      .ilike("notes", `%${rga.rga_number}%`)
+      .from("rga_replacement_order")
+      .select("sales_order_id")
+      .eq("rga_id", rga.id)
+      .neq("status", "cancelled")
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -68,6 +71,17 @@ export async function RgaDetailPage({
       .limit(1)
       .maybeSingle(),
   ]);
+  if (replacementLinkError) throw new Error(replacementLinkError.message);
+  if (creditMemoError) throw new Error(creditMemoError.message);
+
+  const { data: replacementOrder, error: replacementOrderError } = replacementLink
+    ? await supabase
+        .from("sales_order")
+        .select("id, sales_order_number, status")
+        .eq("id", replacementLink.sales_order_id)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (replacementOrderError) throw new Error(replacementOrderError.message);
 
   const documentLinks = await Promise.all(
     (documents ?? []).map(async (document) => {
@@ -78,11 +92,18 @@ export async function RgaDetailPage({
     }),
   );
   const isPendingReview = rga.status === "pending_review";
+  const replacementIsShipped = ["partially_shipped", "shipped", "closed"].includes(
+    replacementOrder?.status ?? "",
+  );
+  const rgaIsClosed =
+    (rga.approved_resolution_type === "replacement" && replacementIsShipped) ||
+    (rga.approved_resolution_type === "credit" && Boolean(creditMemo));
+  const displayRgaStatus = rgaIsClosed ? "Closed" : rga.status;
   const statusTone =
-    rga.status === "pending_review"
+    displayRgaStatus === "pending_review"
       ? "warn"
       : ["authorized", "awaiting_return", "awaiting_credit_memo"].includes(
-            rga.status,
+            displayRgaStatus,
           )
         ? "primary"
         : ["rejected", "cancelled"].includes(rga.status)
@@ -105,7 +126,7 @@ export async function RgaDetailPage({
           </Link>
           <div className="record-title-row">
             <h2>{rga.rga_number}</h2>
-            <StatusBadge tone={statusTone} value={rga.status} />
+            <StatusBadge tone={statusTone} value={displayRgaStatus} />
           </div>
           <p>
             <Link
@@ -254,42 +275,57 @@ export async function RgaDetailPage({
                 </tr>
               </thead>
               <tbody>
-                {(lines ?? []).map((line) => (
-                  <tr key={line.id}>
-                    <td>{line.product_sku_snapshot}</td>
-                    <td>{line.product_name_snapshot}</td>
-                    <td>{line.brand_name_snapshot}</td>
-                    <td>
-                      {numberFormatter.format(
-                        Number(line.quantity_shipped_snapshot),
-                      )}
-                    </td>
-                    <td>
-                      {numberFormatter.format(
-                        Number(line.previous_rga_quantity_snapshot),
-                      )}
-                    </td>
-                    <td>
-                      {numberFormatter.format(
-                        Number(line.available_rga_quantity_snapshot),
-                      )}
-                    </td>
-                    <td>
-                      {numberFormatter.format(Number(line.quantity_requested))}
-                    </td>
-                    <td>
-                      {numberFormatter.format(Number(line.quantity_authorized))}
-                    </td>
-                    <td>
-                      <StatusBadge
-                        tone={
-                          line.status === "authorized" ? "primary" : "neutral"
-                        }
-                        value={line.status}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                {(lines ?? []).map((line) => {
+                  const lineIsClosed =
+                    rgaIsClosed &&
+                    (rga.approved_resolution_type === "replacement"
+                      ? Number(line.quantity_replaced) >=
+                        Number(line.quantity_authorized)
+                      : Number(line.quantity_credited) >=
+                        Number(line.quantity_authorized));
+                  const displayLineStatus = lineIsClosed
+                    ? "Closed"
+                    : line.status;
+
+                  return (
+                    <tr key={line.id}>
+                      <td>{line.product_sku_snapshot}</td>
+                      <td>{line.product_name_snapshot}</td>
+                      <td>{line.brand_name_snapshot}</td>
+                      <td>
+                        {numberFormatter.format(
+                          Number(line.quantity_shipped_snapshot),
+                        )}
+                      </td>
+                      <td>
+                        {numberFormatter.format(
+                          Number(line.previous_rga_quantity_snapshot),
+                        )}
+                      </td>
+                      <td>
+                        {numberFormatter.format(
+                          Number(line.available_rga_quantity_snapshot),
+                        )}
+                      </td>
+                      <td>
+                        {numberFormatter.format(Number(line.quantity_requested))}
+                      </td>
+                      <td>
+                        {numberFormatter.format(Number(line.quantity_authorized))}
+                      </td>
+                      <td>
+                        <StatusBadge
+                          tone={
+                            displayLineStatus === "authorized"
+                              ? "primary"
+                              : "neutral"
+                          }
+                          value={displayLineStatus}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

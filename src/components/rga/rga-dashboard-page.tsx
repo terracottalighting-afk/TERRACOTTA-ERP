@@ -23,7 +23,23 @@ export async function RgaDashboardPage({
     .order("created_at", { ascending: false });
   if (rgasError) throw new Error(rgasError.message);
 
-  const rows = (rgas ?? []).filter(
+  const rgaIds = (rgas ?? []).map((rga) => rga.id);
+  const [{ data: replacementLinks }, { data: creditMemos }] = await Promise.all([
+    rgaIds.length ? supabase.from("rga_replacement_order").select("rga_id, sales_order_id").in("rga_id", rgaIds) : Promise.resolve({ data: [] }),
+    rgaIds.length ? supabase.from("credit_memo").select("rga_id").in("rga_id", rgaIds) : Promise.resolve({ data: [] }),
+  ]);
+  const replacementOrderIds = (replacementLinks ?? []).map((link) => link.sales_order_id);
+  const { data: replacementOrders } = replacementOrderIds.length ? await supabase.from("sales_order").select("id, status").in("id", replacementOrderIds) : { data: [] };
+  const replacementByRga = new Map((replacementLinks ?? []).map((link) => [link.rga_id, replacementOrders?.find((order) => order.id === link.sales_order_id)]));
+  const creditMemoRgaIds = new Set((creditMemos ?? []).map((memo) => memo.rga_id));
+  const operationalRgas = (rgas ?? []).map((rga) => {
+    if (rga.status !== "authorized") return rga;
+    if (rga.approved_resolution_type === "credit") return { ...rga, status: creditMemoRgaIds.has(rga.id) ? "closed" : "waiting_for_credit_memo" };
+    if (rga.approved_resolution_type === "replacement") { const replacement = replacementByRga.get(rga.id); return { ...rga, status: !replacement ? "waiting_for_replacement_order" : ["partially_shipped", "shipped", "closed"].includes(replacement.status) ? "closed" : "replacement_order_created" }; }
+    return rga;
+  });
+
+  const rows = operationalRgas.filter(
     (rga) => !rgaOrder || rga.sales_order_id === rgaOrder,
   );
   const tabs = [
@@ -31,23 +47,13 @@ export async function RgaDashboardPage({
     {
       key: "approved",
       label: "Approved",
-      statuses: [
-        "authorized",
-        "awaiting_return",
-        "received",
-        "awaiting_credit_memo",
-      ],
+      statuses: ["authorized", "awaiting_return", "received", "awaiting_credit_memo"],
     },
     {
       key: "credit-memo",
       label: "Credit Memo",
       statuses: [
-        "authorized",
-        "awaiting_return",
-        "received",
-        "awaiting_credit_memo",
-        "resolved",
-        "closed",
+        "waiting_for_credit_memo",
       ],
       solution: "credit",
     },
@@ -55,12 +61,7 @@ export async function RgaDashboardPage({
       key: "replacement-orders",
       label: "Replacement Orders",
       statuses: [
-        "authorized",
-        "awaiting_return",
-        "received",
-        "awaiting_credit_memo",
-        "resolved",
-        "closed",
+        "waiting_for_replacement_order", "replacement_order_created",
       ],
       solution: "replacement",
     },

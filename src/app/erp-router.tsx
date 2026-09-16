@@ -2435,7 +2435,7 @@ function defaultFreightCharge(
   if (!freightLevel || subtotal >= freightLevel.free_freight_allowance) {
     return 0;
   }
-  return Math.round(subtotal * (freightLevel.freight_rate_percent / 100) * 100) / 100;
+  return Math.round(subtotal * (freightLevel.freight_rate_percent / 100));
 }
 
 async function shipmentFreightCharge(
@@ -2478,7 +2478,7 @@ async function shipmentFreightCharge(
         (1 - Number(line.discountPercent ?? 0) / 100),
     0,
   );
-  return Math.round(shipmentSubtotal * (freightLevel.freight_rate_percent / 100) * 100) / 100;
+  return Math.round(shipmentSubtotal * (freightLevel.freight_rate_percent / 100));
 }
 
 async function refreshPackingListFreightCharge(

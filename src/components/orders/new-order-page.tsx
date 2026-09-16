@@ -5,6 +5,11 @@ import { OrderEntryForm, type OrderPartOption, type OrderProductOption, type Ord
 type OrderEntryData = {
   customer: {
     default_discount_percent: number | null;
+    defaultFreightLevel?: {
+      freeFreightAllowance: number;
+      freightRatePercent: number;
+      levelName: string;
+    } | null;
     name: string;
   };
   partOptions: OrderPartOption[];
@@ -55,6 +60,7 @@ export async function NewOrderPage({
         agencyId={agencyId}
         customerId={customerId}
         defaultDiscountPercent={Number(data.customer.default_discount_percent ?? 0)}
+        defaultFreightLevel={data.customer.defaultFreightLevel}
         defaultLocationId={locationId}
         isAgencyOrder={isAgencyOrder}
         parts={data.partOptions}

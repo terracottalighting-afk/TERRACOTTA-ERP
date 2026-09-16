@@ -500,6 +500,18 @@ type FreightPolicy = {
   preferred_shipping_type: string | null;
 };
 
+type FreightLevelConfig = {
+  free_freight_allowance: number;
+  freight_rate_percent: number;
+  id: string;
+  level_name: string;
+};
+
+type FreightLevelCustomerGroupInput = {
+  accountTypeId: string;
+  primaryShowroomRequirement: "any" | "no" | "yes";
+};
+
 type CustomerSalesRepAssignment = {
   agency_name: string;
   coverage_role: string;
@@ -1824,6 +1836,134 @@ async function deactivateCustomerSettingAction(formData: FormData) {
   redirect("/?module=admin&admin_tab=customers");
 }
 
+async function saveFreightLevelAction(formData: FormData) {
+  "use server";
+
+  const freightLevelId = textValue(formData, "freight_level_id");
+  const levelName = textValue(formData, "level_name");
+  const freeFreightAllowanceText = textValue(formData, "free_freight_allowance");
+  const freightRatePercentText = textValue(formData, "freight_rate_percent");
+  const sortOrderText = textValue(formData, "sort_order");
+  const freeFreightAllowance = Number(freeFreightAllowanceText);
+  const freightRatePercent = Number(freightRatePercentText);
+  const sortOrder = Number(sortOrderText);
+  const errorUrl = (message: string) =>
+    `/?module=admin&admin_tab=freight&error=${encodeURIComponent(message)}`;
+
+  if (
+    !levelName ||
+    !freeFreightAllowanceText ||
+    !Number.isFinite(freeFreightAllowance) ||
+    freeFreightAllowance < 0 ||
+    !freightRatePercentText ||
+    !Number.isFinite(freightRatePercent) ||
+    freightRatePercent < 0 ||
+    !sortOrderText ||
+    !Number.isInteger(sortOrder) ||
+    sortOrder < 0
+  ) {
+    redirect(errorUrl("Enter a freight level name, a non-negative FFA and freight rate, and a valid display order."));
+  }
+
+  let customerGroups: FreightLevelCustomerGroupInput[];
+  try {
+    customerGroups = JSON.parse(
+      textValue(formData, "customer_groups") || "[]",
+    ) as FreightLevelCustomerGroupInput[];
+  } catch {
+    redirect(errorUrl("Customer groups could not be read. Please add them again."));
+  }
+  if (!customerGroups.length) {
+    redirect(errorUrl("Add at least one customer group to this freight level."));
+  }
+  if (
+    customerGroups.some(
+      (group) =>
+        !group.accountTypeId ||
+        !["any", "yes", "no"].includes(group.primaryShowroomRequirement),
+    )
+  ) {
+    redirect(errorUrl("Each customer group must have a valid account type."));
+  }
+
+  const supabase = createSupabaseUntypedAdminClient();
+  const accountTypeIds = [...new Set(customerGroups.map((group) => group.accountTypeId))];
+  const { data: accountTypes, error: accountTypesError } = await supabase
+    .from("customer_account_type")
+    .select("id, type_code")
+    .in("id", accountTypeIds)
+    .eq("is_active", true);
+  if (accountTypesError) redirect(errorUrl(accountTypesError.message));
+  if ((accountTypes ?? []).length !== accountTypeIds.length) {
+    redirect(errorUrl("One or more selected account types are no longer active."));
+  }
+
+  const accountTypeById = new Map(
+    (accountTypes ?? []).map((accountType) => [accountType.id, accountType]),
+  );
+  const normalizedGroups = customerGroups.map((group) => {
+    const accountType = accountTypeById.get(group.accountTypeId);
+    return {
+      account_type_id: group.accountTypeId,
+      primary_showroom_requirement:
+        accountType?.type_code === "stocking_dealer"
+          ? group.primaryShowroomRequirement === "yes"
+            ? true
+            : group.primaryShowroomRequirement === "no"
+              ? false
+              : null
+          : null,
+    };
+  });
+  const groupKeys = new Set(
+    normalizedGroups.map(
+      (group) =>
+        `${group.account_type_id}:${group.primary_showroom_requirement ?? "any"}`,
+    ),
+  );
+  if (groupKeys.size !== normalizedGroups.length) {
+    redirect(errorUrl("The same customer group can only be added once to a freight level."));
+  }
+
+  const value = {
+    free_freight_allowance: freeFreightAllowance,
+    freight_rate_percent: freightRatePercent,
+    is_active: formData.get("is_active") === "on",
+    level_name: levelName,
+    sort_order: sortOrder,
+  };
+  const levelResult = freightLevelId
+    ? await supabase
+        .from("freight_level")
+        .update(value)
+        .eq("id", freightLevelId)
+        .select("id")
+        .single()
+    : await supabase.from("freight_level").insert(value).select("id").single();
+  if (levelResult.error || !levelResult.data) {
+    redirect(errorUrl(levelResult.error?.message ?? "Freight level could not be saved."));
+  }
+
+  const { error: removeGroupsError } = await supabase
+    .from("freight_level_customer_group")
+    .delete()
+    .eq("freight_level_id", levelResult.data.id);
+  if (removeGroupsError) redirect(errorUrl(removeGroupsError.message));
+
+  const { error: createGroupsError } = await supabase
+    .from("freight_level_customer_group")
+    .insert(
+      normalizedGroups.map((group) => ({
+        ...group,
+        freight_level_id: levelResult.data.id,
+      })),
+    );
+  if (createGroupsError) redirect(errorUrl(createGroupsError.message));
+
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=freight");
+}
+
 async function assignStyleToSignatureSuiteAction(formData: FormData) {
   "use server";
   const signatureSuiteId = textValue(formData, "signature_suite_id");
@@ -2154,6 +2294,76 @@ async function createCustomerAction(formData: FormData) {
   redirect(`/?customer=${customerId}`);
 }
 
+async function resolveFreightLevelForCustomer(
+  customerId: string,
+  accountTypeId: string,
+): Promise<FreightLevelConfig | null> {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: groups, error: groupsError } = await supabase
+    .from("freight_level_customer_group")
+    .select("freight_level_id, primary_showroom_requirement")
+    .eq("account_type_id", accountTypeId);
+  if (groupsError) throw new Error(groupsError.message);
+  if (!groups?.length) return null;
+
+  const needsShowroomStatus = groups.some(
+    (group) => group.primary_showroom_requirement !== null,
+  );
+  const { data: activeShowroom, error: activeShowroomError } =
+    needsShowroomStatus
+      ? await supabase
+          .from("primary_showroom_enrollment")
+          .select("id")
+          .eq("customer_account_id", customerId)
+          .eq("program_status", "active")
+          .limit(1)
+          .maybeSingle()
+      : { data: null, error: null };
+  if (activeShowroomError) throw new Error(activeShowroomError.message);
+
+  const hasPrimaryShowroom = Boolean(activeShowroom);
+  const matchingLevelIds = [
+    ...new Set(
+      groups
+        .filter(
+          (group) =>
+            group.primary_showroom_requirement === null ||
+            group.primary_showroom_requirement === hasPrimaryShowroom,
+        )
+        .map((group) => group.freight_level_id),
+    ),
+  ];
+  if (!matchingLevelIds.length) return null;
+
+  const { data: levels, error: levelsError } = await supabase
+    .from("freight_level")
+    .select("id, level_name, free_freight_allowance, freight_rate_percent")
+    .in("id", matchingLevelIds)
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .order("level_name", { ascending: true })
+    .limit(1);
+  if (levelsError) throw new Error(levelsError.message);
+  if (!levels?.[0]) return null;
+
+  return {
+    free_freight_allowance: Number(levels[0].free_freight_allowance),
+    freight_rate_percent: Number(levels[0].freight_rate_percent),
+    id: levels[0].id,
+    level_name: levels[0].level_name,
+  };
+}
+
+function defaultFreightCharge(
+  subtotal: number,
+  freightLevel: FreightLevelConfig | null,
+) {
+  if (!freightLevel || subtotal >= freightLevel.free_freight_allowance) {
+    return 0;
+  }
+  return Math.round(subtotal * (freightLevel.freight_rate_percent / 100) * 100) / 100;
+}
+
 async function createSalesOrderAction(formData: FormData) {
   "use server";
 
@@ -2241,7 +2451,7 @@ async function createSalesOrderAction(formData: FormData) {
     supabase
       .from("customer_account")
       .select(
-        "id, name, account_number, legacy_account_id, default_discount_percent, is_sales_tax_exempt, purchase_email",
+        "id, name, account_number, legacy_account_id, account_type_id, default_discount_percent, is_sales_tax_exempt, purchase_email",
       )
       .eq("id", customerId)
       .single(),
@@ -2383,6 +2593,22 @@ async function createSalesOrderAction(formData: FormData) {
       `${fallbackUrl}&error=One%20or%20more%20selected%20products%20are%20no%20longer%20available.`,
     );
   }
+
+  const defaultFreightLevel = await resolveFreightLevelForCustomer(
+    customerId,
+    accountResult.data.account_type_id,
+  );
+  const defaultFreightAmount = defaultFreightCharge(
+    pricedLines.reduce(
+      (sum, line) =>
+        sum +
+        Number(line.quantity) *
+          Number(line.unitPrice) *
+          (1 - Number(line.discountPercent) / 100),
+      0,
+    ),
+    defaultFreightLevel,
+  );
 
   const account = accountResult.data;
   const savedLocation = locationResult.data;
@@ -2594,6 +2820,7 @@ async function createSalesOrderAction(formData: FormData) {
         freight?.default_ground_carrier_account_number ?? null,
       ground_carrier_snapshot: freight?.default_ground_carrier ?? null,
       ground_freight_terms_snapshot: freight?.ground_freight_terms ?? "prepaid",
+      freight_amount: defaultFreightAmount,
       is_dropship: isDropship,
       legacy_account_id_snapshot: account.legacy_account_id,
       ltl_carrier_account_number_snapshot:
@@ -10258,7 +10485,7 @@ async function getOrderEntryData(customerId: string) {
   const [customerResult, locationsResult, accessoryResult] = await Promise.all([
     supabase
       .from("customer_account")
-      .select("id, name, default_discount_percent")
+      .select("id, name, account_type_id, default_discount_percent")
       .eq("id", customerId)
       .single(),
     supabase
@@ -10288,6 +10515,10 @@ async function getOrderEntryData(customerId: string) {
 
   if (!customerResult.data) return null;
 
+  const defaultFreightLevel = await resolveFreightLevelForCustomer(
+    customerId,
+    customerResult.data.account_type_id,
+  );
   const locationIds = (locationsResult.data ?? []).map((location) => location.id);
   const { data: locationAssignments, error: locationAssignmentsError } =
     locationIds.length
@@ -10549,7 +10780,16 @@ async function getOrderEntryData(customerId: string) {
   );
 
   return {
-    customer: customerResult.data,
+    customer: {
+      ...customerResult.data,
+      defaultFreightLevel: defaultFreightLevel
+        ? {
+            freeFreightAllowance: defaultFreightLevel.free_freight_allowance,
+            freightRatePercent: defaultFreightLevel.freight_rate_percent,
+            levelName: defaultFreightLevel.level_name,
+          }
+        : null,
+    },
     partOptions,
     products: productOptions,
     salesReps,
@@ -12538,7 +12778,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveProductSettingAction={saveProductSettingAction} selectedTab={params.admin_tab} />
+          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveFreightLevelAction={saveFreightLevelAction} saveProductSettingAction={saveProductSettingAction} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

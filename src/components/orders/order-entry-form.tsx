@@ -43,6 +43,12 @@ export type OrderSalesRepOption = {
   name: string;
 };
 
+type DefaultFreightLevel = {
+  freeFreightAllowance: number;
+  freightRatePercent: number;
+  levelName: string;
+};
+
 type OrderLine = OrderProductOption & {
   discountPercent: number;
   quantity: number;
@@ -79,6 +85,7 @@ type Props = {
   agencyId?: string;
   customerId: string;
   defaultDiscountPercent: number;
+  defaultFreightLevel?: DefaultFreightLevel | null;
   defaultLocationId?: string;
   isAgencyOrder?: boolean;
   parts: OrderPartOption[];
@@ -108,7 +115,7 @@ const orderTypeLabels: Record<string, string> = {
   regular: "Regular Order",
 };
 
-export function OrderEntryForm({ accountName, agencyId, customerId, defaultDiscountPercent, defaultLocationId, isAgencyOrder = false, parts, products, salesReps, saveAction, shipToOptions, territories }: Props) {
+export function OrderEntryForm({ accountName, agencyId, customerId, defaultDiscountPercent, defaultFreightLevel = null, defaultLocationId, isAgencyOrder = false, parts, products, salesReps, saveAction, shipToOptions, territories }: Props) {
   const [productQuery, setProductQuery] = useState("");
   const [searchParts, setSearchParts] = useState(false);
   const [partSearchMode, setPartSearchMode] = useState<"parent" | "generic">("parent");
@@ -192,6 +199,9 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
   }, [activeParentId, partSearchMode, partQuery, parts, searchParts]);
 
   const subtotal = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice * (1 - line.discountPercent / 100), 0);
+  const defaultFreightCharge = defaultFreightLevel && subtotal < defaultFreightLevel.freeFreightAllowance
+    ? Math.round(subtotal * (defaultFreightLevel.freightRatePercent / 100) * 100) / 100
+    : 0;
   const selectedTerritory = territories.find((territory) => territory.id === commissionSelection.territoryId);
   const selectedAgencyReps = salesReps.filter((rep) => rep.agencyId === commissionSelection.agencyId);
   const selectedSalesRep = selectedAgencyReps.find((rep) => rep.id === commissionSelection.salesRepId);
@@ -615,6 +625,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
             <div className="section-title"><h3>Order Lines</h3><button className="text-action text-action--button" onClick={() => returnToEditor("order-products")} type="button">Edit</button></div>
             <div className="table-wrap"><table className="data-table"><thead><tr><th>SKU</th><th>Product</th><th>Brand</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Line Total</th></tr></thead><tbody>{lines.map((line) => <tr key={line.id}><td>{line.sku}</td><td>{line.name}</td><td>{line.brandName}</td><td>{line.quantity}</td><td>{money.format(line.unitPrice)}</td><td>{line.discountPercent}%</td><td>{money.format(line.quantity * line.unitPrice * (1 - line.discountPercent / 100))}</td></tr>)}</tbody></table></div>
             <div className="order-total"><span>Order Subtotal</span><strong>{money.format(subtotal)}</strong></div>
+            {defaultFreightLevel ? <div className="order-total"><span>Default Freight Charge ({defaultFreightLevel.levelName}: FFA {money.format(defaultFreightLevel.freeFreightAllowance)}, {defaultFreightLevel.freightRatePercent}%)</span><strong>{defaultFreightCharge === 0 ? "Free Freight" : money.format(defaultFreightCharge)}</strong></div> : null}
           </article>
 
           <article className="data-section">

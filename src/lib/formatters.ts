@@ -62,11 +62,14 @@ export function dateLabel(value: string | null | undefined) {
     return "Not set";
   }
 
+  const date = new Date(value.includes("T") ? value : `${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "Not set";
+
   return new Intl.DateTimeFormat("en-US", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(new Date(`${value}T00:00:00`));
+  }).format(date);
 }
 
 export function timestampLabel(value: string | null | undefined) {

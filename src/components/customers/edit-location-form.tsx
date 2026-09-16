@@ -3,6 +3,7 @@ import Link from "next/link";
 import { LocationRegionFields } from "@/components/customers/location-region-fields";
 import { LocationRoleFields } from "@/components/customers/location-role-fields";
 import { ModulePlaceholder } from "@/components/ui";
+import { createSupabaseUntypedAdminClient } from "@/lib/supabase/admin";
 
 type CustomerName = {
   name: string;
@@ -59,10 +60,17 @@ export async function EditLocationForm({
     );
   }
 
-  const [customer, locationData] = await Promise.all([
+  const freightAdmin = createSupabaseUntypedAdminClient();
+  const [customer, locationData, freightLevelsResult, locationPolicyResult, accountPolicyResult, activeShowroomResult] = await Promise.all([
     loadCustomer(customerId),
     loadLocation(locationId),
+    freightAdmin.from("freight_level").select("id, level_name, free_freight_allowance, freight_rate_percent").eq("is_active", true).order("sort_order", { ascending: true }).order("level_name", { ascending: true }),
+    freightAdmin.from("customer_freight_policy").select("freight_level_id").eq("customer_account_id", customerId).eq("customer_location_id", locationId).eq("is_active", true).order("is_default", { ascending: false }).limit(1).maybeSingle(),
+    freightAdmin.from("customer_freight_policy").select("freight_level_id").eq("customer_account_id", customerId).is("customer_location_id", null).eq("is_active", true).order("is_default", { ascending: false }).limit(1).maybeSingle(),
+    freightAdmin.from("primary_showroom_enrollment").select("id").eq("customer_account_id", customerId).eq("customer_location_id", locationId).eq("program_status", "active").maybeSingle(),
   ]);
+  const freightResultError = [freightLevelsResult, locationPolicyResult, accountPolicyResult, activeShowroomResult].find((result) => result.error)?.error;
+  if (freightResultError) throw new Error(freightResultError.message);
   const {
     location,
     coverage,
@@ -75,6 +83,9 @@ export async function EditLocationForm({
   const defaultTerritoryId = territory?.id ?? (
     territoryAssignmentSource === "manual_unassigned" ? "" : suggestedTerritory?.id ?? ""
   );
+  const freightLevels = freightLevelsResult.data ?? [];
+  const accountFreightLevel = freightLevels.find((level) => level.id === accountPolicyResult.data?.freight_level_id) ?? null;
+  const activePrimaryShowroom = Boolean(activeShowroomResult.data);
 
   return (
     <section className="dashboard-panel">
@@ -212,6 +223,19 @@ export async function EditLocationForm({
             />
           </div>
         </fieldset>
+        {location.is_shipping_address ? <fieldset>
+          <legend>Freight Terms</legend>
+          <div className="form-grid">
+            <label>
+              Freight Level
+              <select defaultValue={locationPolicyResult.data?.freight_level_id ?? ""} name="location_freight_level_id">
+                <option value="">{activePrimaryShowroom ? "Use Level I (active primary showroom default)" : `Inherit account level${accountFreightLevel ? `: ${accountFreightLevel.level_name}` : ""}`}</option>
+                {freightLevels.map((level) => <option key={level.id} value={level.id}>{level.level_name} - FFA ${Number(level.free_freight_allowance).toFixed(2)} / {Number(level.freight_rate_percent)}%</option>)}
+              </select>
+            </label>
+          </div>
+          <p className="fieldset-note">Choose a level to override the default for this shipping address. An active primary showroom defaults to Level I; other shipping addresses inherit the account freight level.</p>
+        </fieldset> : null}
         <div className="form-actions">
           <button className="primary-action" type="submit">
             Save Location

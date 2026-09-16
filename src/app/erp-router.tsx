@@ -2348,12 +2348,14 @@ async function resolveFreightLevelForCustomer(
   locationId?: string | null,
 ): Promise<FreightLevelConfig | null> {
   const supabase = createSupabaseUntypedAdminClient();
-  const [{ data: accountPolicy, error: accountPolicyError }, { data: primaryShowroom, error: showroomError }] = await Promise.all([
+  const [{ data: accountPolicy, error: accountPolicyError }, { data: primaryShowroom, error: showroomError }, { data: locationPolicy, error: locationPolicyError }] = await Promise.all([
     supabase.from("customer_freight_policy").select("freight_terms, freight_level_id").eq("customer_account_id", customerId).is("customer_location_id", null).eq("is_active", true).order("is_default", { ascending: false }).limit(1).maybeSingle(),
     locationId ? supabase.from("primary_showroom_enrollment").select("id").eq("customer_account_id", customerId).eq("customer_location_id", locationId).eq("program_status", "active").maybeSingle() : Promise.resolve({ data: null, error: null }),
+    locationId ? supabase.from("customer_freight_policy").select("freight_level_id").eq("customer_account_id", customerId).eq("customer_location_id", locationId).eq("is_active", true).order("is_default", { ascending: false }).limit(1).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ]);
   if (accountPolicyError) throw new Error(accountPolicyError.message);
   if (showroomError) throw new Error(showroomError.message);
+  if (locationPolicyError) throw new Error(locationPolicyError.message);
   const isPrimaryShowroom = Boolean(primaryShowroom);
 
   const loadLevel = async (levelId: string): Promise<FreightLevelConfig | null> => {
@@ -2361,6 +2363,14 @@ async function resolveFreightLevelForCustomer(
     if (error) throw new Error(error.message);
     return data ? { id: data.id, level_name: data.level_name, free_freight_allowance: Number(data.free_freight_allowance), freight_rate_percent: Number(data.freight_rate_percent) } : null;
   };
+
+  if (locationPolicy?.freight_level_id) return loadLevel(locationPolicy.freight_level_id);
+
+  if (isPrimaryShowroom) {
+    const { data: levelOne, error: levelOneError } = await supabase.from("freight_level").select("id").eq("level_name", "Level I").eq("is_active", true).maybeSingle();
+    if (levelOneError) throw new Error(levelOneError.message);
+    if (levelOne) return loadLevel(levelOne.id);
+  }
 
   if (!isPrimaryShowroom && accountPolicy) {
     return accountPolicy.freight_terms === "free_freight" && accountPolicy.freight_level_id
@@ -8656,6 +8666,21 @@ async function updateLocationAction(formData: FormData) {
     }
   }
 
+  const locationFreightLevelId = optionalText("location_freight_level_id");
+  if (formData.get("is_shipping_address") === "on") {
+    const freightAdmin = createSupabaseUntypedAdminClient();
+    if (locationFreightLevelId) {
+      const { data: freightLevel, error: freightLevelError } = await freightAdmin.from("freight_level").select("id").eq("id", locationFreightLevelId).eq("is_active", true).maybeSingle();
+      if (freightLevelError || !freightLevel) redirect(`/?module=edit-location&customer=${customerId}&location=${locationId}&error=${encodeURIComponent(freightLevelError?.message ?? "The selected Freight Level is no longer active.")}`);
+    }
+    const { data: locationPolicy, error: locationPolicyLookupError } = await freightAdmin.from("customer_freight_policy").select("id").eq("customer_account_id", customerId).eq("customer_location_id", locationId).maybeSingle();
+    if (locationPolicyLookupError) redirect(`/?module=edit-location&customer=${customerId}&location=${locationId}&error=${encodeURIComponent(locationPolicyLookupError.message)}`);
+    const policyResult = locationPolicy
+      ? await freightAdmin.from("customer_freight_policy").update({ freight_level_id: locationFreightLevelId }).eq("id", locationPolicy.id)
+      : await freightAdmin.from("customer_freight_policy").insert({ customer_account_id: customerId, customer_location_id: locationId, freight_level_id: locationFreightLevelId, freight_terms: "free_freight", ground_freight_terms: "free_freight", is_active: true, is_default: true, ltl_freight_terms: "free_freight", policy_name: "Location Freight Policy" });
+    if (policyResult.error) redirect(`/?module=edit-location&customer=${customerId}&location=${locationId}&error=${encodeURIComponent(policyResult.error.message)}`);
+  }
+
   redirect(`/?customer=${customerId}&tab=locations`);
 }
 
@@ -11850,6 +11875,16 @@ async function getLocationDashboard(customerId: string, locationId: string) {
     throw new Error(failed.error.message);
   }
 
+  const { data: account, error: accountError } = await supabase
+    .from("customer_account")
+    .select("account_type_id")
+    .eq("id", customerId)
+    .maybeSingle();
+  if (accountError) throw new Error(accountError.message);
+  const freightLevel = account && locationData.location.is_shipping_address
+    ? await resolveFreightLevelForCustomer(customerId, account.account_type_id, locationId)
+    : null;
+
   return {
     ...locationData,
     contacts: (contactsResult.data ?? []) as CustomerContact[],
@@ -11857,6 +11892,7 @@ async function getLocationDashboard(customerId: string, locationId: string) {
     invoices: (invoicesResult.data ?? []) as CustomerInvoice[],
     orders: (ordersResult.data ?? []) as SalesOrder[],
     packingLists: (packingListsResult.data ?? []) as PackingList[],
+    freightLevel: freightLevel ? { levelName: freightLevel.level_name, freeFreightAllowance: freightLevel.free_freight_allowance, freightRatePercent: freightLevel.freight_rate_percent } : null,
     rgas: (rgasResult.data ?? []) as Rga[],
   };
 }

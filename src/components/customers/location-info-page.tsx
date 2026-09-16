@@ -119,6 +119,7 @@ type LocationDashboard = {
     salesRepName: string | null;
   };
   displays: ShowroomDisplay[];
+  freightLevel: { levelName: string; freeFreightAllowance: number; freightRatePercent: number } | null;
   invoices: CustomerInvoice[];
   location: CustomerLocation;
   orders: SalesOrder[];
@@ -167,6 +168,7 @@ export async function LocationInfoPage({
     contacts,
     coverage,
     displays,
+    freightLevel,
     invoices,
     location,
     orders,
@@ -310,6 +312,10 @@ export async function LocationInfoPage({
                       ? label(primaryShowroom.program_status)
                       : "No"}
                   </dd>
+                </div>
+                <div>
+                  <dt>Freight Term</dt>
+                  <dd>{location.is_shipping_address && freightLevel ? `${freightLevel.levelName} - FFA ${money(freightLevel.freeFreightAllowance)}, ${freightLevel.freightRatePercent}%` : location.is_shipping_address ? "Not configured" : "Not a shipping address"}</dd>
                 </div>
               </dl>
             </article>

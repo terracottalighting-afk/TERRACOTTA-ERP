@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { LocationFreightLevelFields } from "@/components/customers/location-freight-level-fields";
 import { ModulePlaceholder } from "@/components/ui";
 import { createSupabaseUntypedAdminClient } from "@/lib/supabase/admin";
 
@@ -57,7 +58,7 @@ export async function EditLocationFreightForm({
       .order("level_name", { ascending: true }),
     supabase
       .from("customer_freight_policy")
-      .select("freight_level_id")
+      .select("freight_level_id, freight_allowance_amount, flat_rate_percent")
       .eq("customer_account_id", customerId)
       .eq("customer_location_id", locationId)
       .eq("is_active", true)
@@ -66,7 +67,7 @@ export async function EditLocationFreightForm({
       .maybeSingle(),
     supabase
       .from("customer_freight_policy")
-      .select("freight_level_id")
+      .select("freight_level_id, freight_allowance_amount, flat_rate_percent")
       .eq("customer_account_id", customerId)
       .is("customer_location_id", null)
       .eq("is_active", true)
@@ -98,10 +99,22 @@ export async function EditLocationFreightForm({
     (level) => level.id === accountPolicyResult.data?.freight_level_id,
   );
   const isActivePrimaryShowroom = Boolean(primaryShowroomResult.data);
+  const accountCustomFreightLevel = !accountPolicyResult.data?.freight_level_id &&
+    accountPolicyResult.data?.freight_allowance_amount !== null &&
+    accountPolicyResult.data?.freight_allowance_amount !== undefined &&
+    accountPolicyResult.data?.flat_rate_percent !== null &&
+    accountPolicyResult.data?.flat_rate_percent !== undefined;
+  const locationCustomFreightLevel = !locationPolicyResult.data?.freight_level_id &&
+    locationPolicyResult.data?.freight_allowance_amount !== null &&
+    locationPolicyResult.data?.freight_allowance_amount !== undefined &&
+    locationPolicyResult.data?.flat_rate_percent !== null &&
+    locationPolicyResult.data?.flat_rate_percent !== undefined;
   const defaultTerm = isActivePrimaryShowroom
     ? "Level I (active primary showroom default)"
     : accountFreightLevel
       ? `${accountFreightLevel.level_name} (inherited from account)`
+      : accountCustomFreightLevel
+        ? `Custom - FFA $${Number(accountPolicyResult.data?.freight_allowance_amount).toFixed(2)} / ${Number(accountPolicyResult.data?.flat_rate_percent)}% (inherited from account)`
       : "No freight level configured";
 
   return (
@@ -129,22 +142,18 @@ export async function EditLocationFreightForm({
         <input name="location_id" type="hidden" value={locationId} />
         <fieldset>
           <legend>Freight Term</legend>
-          <div className="form-grid">
-            <label>
-              Freight Level
-              <select
-                defaultValue={locationPolicyResult.data?.freight_level_id ?? ""}
-                name="location_freight_level_id"
-              >
-                <option value="">Use default: {defaultTerm}</option>
-                {freightLevels.map((level) => (
-                  <option key={level.id} value={level.id}>
-                    {level.level_name} - FFA ${Number(level.free_freight_allowance).toFixed(2)} / {Number(level.freight_rate_percent)}%
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <LocationFreightLevelFields
+            defaultCustomFreightAllowance={locationPolicyResult.data?.freight_allowance_amount?.toString() ?? ""}
+            defaultCustomFreightRate={locationPolicyResult.data?.flat_rate_percent?.toString() ?? ""}
+            defaultFreightLevelId={locationPolicyResult.data?.freight_level_id ?? (locationCustomFreightLevel ? "custom" : "")}
+            defaultTerm={defaultTerm}
+            freightLevels={freightLevels.map((level) => ({
+              freeFreightAllowance: Number(level.free_freight_allowance),
+              freightRatePercent: Number(level.freight_rate_percent),
+              id: level.id,
+              levelName: level.level_name,
+            }))}
+          />
           <p className="fieldset-note">
             A saved level overrides the default for this shipping address. An active primary showroom uses Level I by default; other shipping addresses inherit the account freight level.
           </p>

@@ -85,7 +85,15 @@ export async function EditFreightForm({
           defaultFreightAllowance={
             freightPolicy?.freight_allowance_amount?.toString() ?? ""
           }
-          defaultFreightLevelId={freightPolicy?.freight_level_id ?? ""}
+          defaultFreightLevelId={
+            freightPolicy?.freight_level_id ??
+            (freightPolicy?.freight_allowance_amount !== null &&
+            freightPolicy?.freight_allowance_amount !== undefined &&
+            freightPolicy?.flat_rate_percent !== null &&
+            freightPolicy?.flat_rate_percent !== undefined
+              ? "custom"
+              : "")
+          }
           defaultFreightTerms={freightTerms}
           defaultGroundCollectAccount={
             freightPolicy?.default_ground_carrier_account_number ?? ""

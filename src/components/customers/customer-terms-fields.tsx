@@ -76,8 +76,10 @@ export function FreightTermsFields({
   freightLevels?: { id: string; levelName: string; freeFreightAllowance: number; freightRatePercent: number }[];
 }) {
   const [freightTerms, setFreightTerms] = useState(defaultFreightTerms);
+  const [freightLevelId, setFreightLevelId] = useState(defaultFreightLevelId);
   const isCollect = freightTerms === "collect";
   const isCustomerPickup = freightTerms === "customer_pickup";
+  const isCustomFreightLevel = freightLevelId === "custom";
 
   return (
     <fieldset>
@@ -93,11 +95,30 @@ export function FreightTermsFields({
         </label>
         <label>
           Freight Level
-          <select defaultValue={defaultFreightLevelId} disabled={isCustomerPickup} name="freight_level_id" required={!isCustomerPickup && freightLevels.length > 0}>
+          <select
+            disabled={isCustomerPickup}
+            name="freight_level_id"
+            onChange={(event) => setFreightLevelId(event.target.value)}
+            required={!isCustomerPickup && freightLevels.length > 0}
+            value={isCustomerPickup ? "" : freightLevelId}
+          >
             {isCustomerPickup ? <option value="">Level 0 - Free Freight</option> : <option value="">Select freight level</option>}
             {!isCustomerPickup ? freightLevels.map((level) => <option key={level.id} value={level.id}>{level.levelName} - FFA ${level.freeFreightAllowance.toFixed(2)} / {level.freightRatePercent}%</option>) : null}
+            {!isCustomerPickup ? <option value="custom">Custom</option> : null}
           </select>
         </label>
+        {isCustomFreightLevel && !isCustomerPickup ? (
+          <>
+            <label>
+              Custom FFA Amount
+              <input defaultValue={defaultFreightAllowance} min="0" name="custom_freight_allowance_amount" required step="0.01" type="number" />
+            </label>
+            <label>
+              Custom Freight Rate (%)
+              <input defaultValue={defaultFlatRatePercent} min="0" name="custom_freight_rate_percent" required step="0.01" type="number" />
+            </label>
+          </>
+        ) : null}
         {isCollect ? (
           <>
             <label>

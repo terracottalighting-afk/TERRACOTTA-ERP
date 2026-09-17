@@ -2362,9 +2362,9 @@ async function resolveFreightLevelForCustomer(
 ): Promise<FreightLevelConfig | null> {
   const supabase = createSupabaseUntypedAdminClient();
   const [{ data: accountPolicy, error: accountPolicyError }, { data: primaryShowroom, error: showroomError }, { data: locationPolicy, error: locationPolicyError }] = await Promise.all([
-    supabase.from("customer_freight_policy").select("freight_terms, freight_level_id").eq("customer_account_id", customerId).is("customer_location_id", null).eq("is_active", true).order("is_default", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("customer_freight_policy").select("freight_terms, freight_level_id, freight_allowance_amount, flat_rate_percent").eq("customer_account_id", customerId).is("customer_location_id", null).eq("is_active", true).order("is_default", { ascending: false }).limit(1).maybeSingle(),
     locationId ? supabase.from("primary_showroom_enrollment").select("id").eq("customer_account_id", customerId).eq("customer_location_id", locationId).eq("program_status", "active").maybeSingle() : Promise.resolve({ data: null, error: null }),
-    locationId ? supabase.from("customer_freight_policy").select("freight_level_id").eq("customer_account_id", customerId).eq("customer_location_id", locationId).eq("is_active", true).order("is_default", { ascending: false }).limit(1).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    locationId ? supabase.from("customer_freight_policy").select("freight_level_id, freight_allowance_amount, flat_rate_percent").eq("customer_account_id", customerId).eq("customer_location_id", locationId).eq("is_active", true).order("is_default", { ascending: false }).limit(1).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ]);
   if (accountPolicyError) throw new Error(accountPolicyError.message);
   if (showroomError) throw new Error(showroomError.message);
@@ -2376,8 +2376,34 @@ async function resolveFreightLevelForCustomer(
     if (error) throw new Error(error.message);
     return data ? { id: data.id, level_name: data.level_name, free_freight_allowance: Number(data.free_freight_allowance), freight_rate_percent: Number(data.freight_rate_percent) } : null;
   };
+  const customLevel = (
+    policy: {
+      flat_rate_percent?: number | string | null;
+      freight_allowance_amount?: number | string | null;
+      freight_level_id?: string | null;
+    } | null,
+    id: string,
+  ): FreightLevelConfig | null => {
+    if (
+      policy?.freight_level_id ||
+      policy?.freight_allowance_amount === null ||
+      policy?.freight_allowance_amount === undefined ||
+      policy?.flat_rate_percent === null ||
+      policy?.flat_rate_percent === undefined
+    ) {
+      return null;
+    }
+    return {
+      free_freight_allowance: Number(policy.freight_allowance_amount),
+      freight_rate_percent: Number(policy.flat_rate_percent),
+      id,
+      level_name: "Custom",
+    };
+  };
 
   if (locationPolicy?.freight_level_id) return loadLevel(locationPolicy.freight_level_id);
+  const locationCustomLevel = customLevel(locationPolicy, `custom-location-${locationId}`);
+  if (locationCustomLevel) return locationCustomLevel;
 
   if (isPrimaryShowroom) {
     const { data: levelOne, error: levelOneError } = await supabase.from("freight_level").select("id").eq("level_name", "Level I").eq("is_active", true).maybeSingle();
@@ -2387,6 +2413,10 @@ async function resolveFreightLevelForCustomer(
 
   if (!isPrimaryShowroom && accountPolicy?.freight_level_id) {
     return loadLevel(accountPolicy.freight_level_id);
+  }
+  if (!isPrimaryShowroom) {
+    const accountCustomLevel = customLevel(accountPolicy, `custom-account-${customerId}`);
+    if (accountCustomLevel) return accountCustomLevel;
   }
 
   const { data: groups, error: groupsError } = await supabase
@@ -8834,6 +8864,13 @@ async function updateLocationFreightTermAction(formData: FormData) {
   const freightLevelId = String(
     formData.get("location_freight_level_id") ?? "",
   ).trim();
+  const customFreightAllowance = Number(
+    String(formData.get("location_custom_freight_allowance_amount") ?? "").trim(),
+  );
+  const customFreightRate = Number(
+    String(formData.get("location_custom_freight_rate_percent") ?? "").trim(),
+  );
+  const isCustomFreightLevel = freightLevelId === "custom";
   const returnUrl = `/?module=edit-location-freight&customer=${customerId}&location=${locationId}`;
 
   if (!customerId || !locationId) {
@@ -8851,7 +8888,11 @@ async function updateLocationFreightTermAction(formData: FormData) {
     redirect(`${returnUrl}&error=${encodeURIComponent(locationError?.message ?? "Select a saved shipping address.")}`);
   }
 
-  if (freightLevelId) {
+  if (isCustomFreightLevel) {
+    if (!Number.isFinite(customFreightAllowance) || customFreightAllowance < 0 || !Number.isFinite(customFreightRate) || customFreightRate < 0) {
+      redirect(`${returnUrl}&error=${encodeURIComponent("Enter a valid custom FFA amount and freight rate.")}`);
+    }
+  } else if (freightLevelId) {
     const { data: freightLevel, error: freightLevelError } = await supabase
       .from("freight_level")
       .select("id")
@@ -8876,12 +8917,18 @@ async function updateLocationFreightTermAction(formData: FormData) {
   const policyResult = existingPolicy
     ? await supabase
         .from("customer_freight_policy")
-        .update({ freight_level_id: freightLevelId || null })
+        .update({
+          flat_rate_percent: isCustomFreightLevel ? customFreightRate : null,
+          freight_allowance_amount: isCustomFreightLevel ? customFreightAllowance : null,
+          freight_level_id: isCustomFreightLevel ? null : freightLevelId || null,
+        })
         .eq("id", existingPolicy.id)
     : await supabase.from("customer_freight_policy").insert({
         customer_account_id: customerId,
         customer_location_id: locationId,
-        freight_level_id: freightLevelId || null,
+        flat_rate_percent: isCustomFreightLevel ? customFreightRate : null,
+        freight_allowance_amount: isCustomFreightLevel ? customFreightAllowance : null,
+        freight_level_id: isCustomFreightLevel ? null : freightLevelId || null,
         freight_terms: "free_freight",
         ground_freight_terms: "free_freight",
         is_active: true,
@@ -9020,12 +9067,28 @@ async function updateFreightPolicyAction(formData: FormData) {
   };
   const freightTerms = freightTerm(formData.get("freight_terms"));
   const freightLevelId = optionalText("freight_level_id");
+  const isCustomFreightLevel = freightLevelId === "custom";
+  const customFreightAllowance = Number(
+    optionalText("custom_freight_allowance_amount"),
+  );
+  const customFreightRate = Number(optionalText("custom_freight_rate_percent"));
+  if (
+    isCustomFreightLevel &&
+    (!Number.isFinite(customFreightAllowance) ||
+      customFreightAllowance < 0 ||
+      !Number.isFinite(customFreightRate) ||
+      customFreightRate < 0)
+  ) {
+    redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent("Enter a valid custom FFA amount and freight rate.")}`);
+  }
   const freightAdmin = createSupabaseUntypedAdminClient();
   const selectedFreightLevelResult = freightTerms === "customer_pickup"
     ? await freightAdmin.from("freight_level").select("id, free_freight_allowance").eq("level_name", "Level 0").eq("is_active", true).maybeSingle()
-    : freightLevelId
+    : freightLevelId && !isCustomFreightLevel
       ? await freightAdmin.from("freight_level").select("id, free_freight_allowance").eq("id", freightLevelId).eq("is_active", true).maybeSingle()
-      : { data: null, error: null };
+      : isCustomFreightLevel
+        ? { data: { id: null, free_freight_allowance: customFreightAllowance }, error: null }
+        : { data: null, error: null };
   if (selectedFreightLevelResult.error || !selectedFreightLevelResult.data) {
     redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent(selectedFreightLevelResult.error?.message ?? (freightTerms === "customer_pickup" ? "Level 0 must be configured before Customer Pickup can be saved." : "Select an active Freight Level."))}`);
   }
@@ -9049,9 +9112,9 @@ async function updateFreightPolicyAction(formData: FormData) {
       freightTerms === "collect"
         ? optionalText("ltl_customer_collect_account_number")
         : null,
-    flat_rate_percent: null,
+    flat_rate_percent: isCustomFreightLevel ? customFreightRate : null,
     freight_allowance_amount: Number(selectedFreightLevel.free_freight_allowance),
-    freight_level_id: selectedFreightLevel.id,
+    freight_level_id: isCustomFreightLevel ? null : selectedFreightLevel.id,
     freight_terms: freightTerms,
     ground_freight_terms: freightTerms,
     is_default: true,

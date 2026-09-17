@@ -14,11 +14,13 @@ type InvoiceQueuePackingList = {
   customer_po_number_snapshot: string;
   dropship_fee_amount: number;
   id: string;
+  invoiceFreightCharge: number;
   packing_list_number: string;
   payment_days: number;
   payment_terms: string;
   ship_date: string | null;
   shipping_fee: number;
+  freightTerm: string;
   commission: {
     agencyName: string | null;
     defaultPayable: boolean;
@@ -93,7 +95,7 @@ export async function InvoiceCreatePage({
         </fieldset>
         <InvoiceTermsAndFreightFields
           actualFreightCost={Number(packingList.allocated_freight_cost ?? 0)}
-          defaultCustomerFreightCharge={Number(packingList.shipping_fee ?? 0)}
+          defaultCustomerFreightCharge={Number(packingList.invoiceFreightCharge ?? 0)}
           defaultPaymentDays={Number(packingList.payment_days ?? 0)}
           defaultPaymentTerms={
             packingList.payment_terms ?? "Prepaid / No Credit"
@@ -207,7 +209,7 @@ export async function InvoiceCreatePage({
                           <input
                             name={`freight_${brand.brand_id}`}
                             type="hidden"
-                            value={packingList.shipping_fee ?? 0}
+                            value={packingList.invoiceFreightCharge ?? 0}
                           />
                         </>
                       )}

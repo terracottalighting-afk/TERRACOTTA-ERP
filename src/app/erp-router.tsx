@@ -2385,10 +2385,8 @@ async function resolveFreightLevelForCustomer(
     if (levelOne) return loadLevel(levelOne.id);
   }
 
-  if (!isPrimaryShowroom && accountPolicy) {
-    return accountPolicy.freight_terms === "free_freight" && accountPolicy.freight_level_id
-      ? loadLevel(accountPolicy.freight_level_id)
-      : null;
+  if (!isPrimaryShowroom && accountPolicy?.freight_level_id) {
+    return loadLevel(accountPolicy.freight_level_id);
   }
 
   const { data: groups, error: groupsError } = await supabase
@@ -4242,7 +4240,7 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
     new Date().toISOString().slice(0, 10);
   const paymentTerms = textValue(formData, "payment_terms") || "Upon Receipt";
   const paymentDays = Number(textValue(formData, "payment_days"));
-  const customerFreightCharge = Number(
+  let customerFreightCharge = Number(
     textValue(formData, "customer_freight_charge"),
   );
   const fallbackUrl = `/?module=invoice-create&packing_list=${packingListId}`;
@@ -4301,6 +4299,33 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
     redirect(
       `${fallbackUrl}&error=Freight%2C%20drop-ship%2C%20and%20tax%20amounts%20must%20be%20zero%20or%20greater.`,
     );
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const { data: packingList, error: packingListError } = await supabase
+    .from("packing_list")
+    .select("sales_order_id, shipping_fee")
+    .eq("id", packingListId)
+    .maybeSingle();
+  const { data: order, error: orderError } = packingList
+    ? await supabase
+        .from("sales_order")
+        .select("ground_freight_terms_snapshot")
+        .eq("id", packingList.sales_order_id)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (packingListError || orderError || !packingList || !order) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(packingListError?.message ?? orderError?.message ?? "Packing-list freight details could not be loaded.")}`);
+  }
+  customerFreightCharge =
+    order.ground_freight_terms_snapshot === "prepaid"
+      ? Number(packingList.shipping_fee ?? 0)
+      : 0;
+  if (order.ground_freight_terms_snapshot !== "prepaid") {
+    for (const brandId of brandIds) freightAllocations[brandId] = 0;
+  }
+  if (brandIds.length === 1) {
+    freightAllocations[brandIds[0]] = customerFreightCharge;
   }
   if (
     brandIds.length > 1 &&
@@ -4870,7 +4895,7 @@ async function prepareInvoiceConfirmationAction(formData: FormData) {
     new Date().toISOString().slice(0, 10);
   const paymentTerms = textValue(formData, "payment_terms") || "Upon Receipt";
   const paymentDays = Number(textValue(formData, "payment_days"));
-  const customerFreightCharge = Number(
+  let customerFreightCharge = Number(
     textValue(formData, "customer_freight_charge"),
   );
   const fallbackUrl = `/?module=invoice-create&packing_list=${packingListId}`;
@@ -4885,6 +4910,28 @@ async function prepareInvoiceConfirmationAction(formData: FormData) {
       `${fallbackUrl}&error=${encodeURIComponent("Enter valid payment terms and a non-negative customer freight charge.")}`,
     );
   }
+
+  const invoiceSupabase = createSupabaseAdminClient();
+  const { data: invoicePackingList, error: invoicePackingListError } =
+    await invoiceSupabase
+      .from("packing_list")
+      .select("sales_order_id, shipping_fee")
+      .eq("id", packingListId)
+      .maybeSingle();
+  const { data: invoiceOrder, error: invoiceOrderError } = invoicePackingList
+    ? await invoiceSupabase
+        .from("sales_order")
+        .select("ground_freight_terms_snapshot")
+        .eq("id", invoicePackingList.sales_order_id)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (invoicePackingListError || invoiceOrderError || !invoicePackingList || !invoiceOrder) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(invoicePackingListError?.message ?? invoiceOrderError?.message ?? "Packing-list freight details could not be loaded.")}`);
+  }
+  customerFreightCharge =
+    invoiceOrder.ground_freight_terms_snapshot === "prepaid"
+      ? Number(invoicePackingList.shipping_fee ?? 0)
+      : 0;
 
   try {
     await backfillOrderCoverageFromPackingList(packingListId);
@@ -4913,6 +4960,9 @@ async function prepareInvoiceConfirmationAction(formData: FormData) {
       Number(textValue(formData, `tax_${brandId}`) || 0),
     ]),
   ) as Record<string, number>;
+  if (invoiceOrder.ground_freight_terms_snapshot !== "prepaid") {
+    for (const brandId of brandIds) freightAllocations[brandId] = 0;
+  }
   if (brandIds.length === 1)
     freightAllocations[brandIds[0]] = customerFreightCharge;
   const allAmounts = [
@@ -8964,34 +9014,22 @@ async function updateFreightPolicyAction(formData: FormData) {
   };
   const freightTerm = (value: FormDataEntryValue | null) => {
     const text = String(value ?? "prepaid");
-    return [
-      "prepaid",
-      "collect",
-      "customer_pickup",
-      "free_freight",
-      "flat_rate",
-      "manual_review",
-    ].includes(text)
-      ? (text as
-          | "prepaid"
-          | "collect"
-          | "customer_pickup"
-          | "free_freight"
-          | "flat_rate"
-          | "manual_review")
+    return ["prepaid", "collect", "customer_pickup"].includes(text)
+      ? (text as "prepaid" | "collect" | "customer_pickup")
       : "prepaid";
   };
   const freightTerms = freightTerm(formData.get("freight_terms"));
-  const freightAllowanceRaw = optionalText("freight_allowance_amount");
-  const flatRateRaw = optionalText("flat_rate_percent");
   const freightLevelId = optionalText("freight_level_id");
-  let selectedFreightLevel: { free_freight_allowance: number | string } | null = null;
-  if (freightTerms === "free_freight") {
-    if (!freightLevelId) redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent("Select a Freight Level for Free Freight per FFA.")}`);
-    const { data, error } = await createSupabaseUntypedAdminClient().from("freight_level").select("free_freight_allowance").eq("id", freightLevelId!).eq("is_active", true).maybeSingle();
-    if (error || !data) redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent(error?.message ?? "The selected Freight Level is no longer active.")}`);
-    selectedFreightLevel = data;
+  const freightAdmin = createSupabaseUntypedAdminClient();
+  const selectedFreightLevelResult = freightTerms === "customer_pickup"
+    ? await freightAdmin.from("freight_level").select("id, free_freight_allowance").eq("level_name", "Level 0").eq("is_active", true).maybeSingle()
+    : freightLevelId
+      ? await freightAdmin.from("freight_level").select("id, free_freight_allowance").eq("id", freightLevelId).eq("is_active", true).maybeSingle()
+      : { data: null, error: null };
+  if (selectedFreightLevelResult.error || !selectedFreightLevelResult.data) {
+    redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent(selectedFreightLevelResult.error?.message ?? (freightTerms === "customer_pickup" ? "Level 0 must be configured before Customer Pickup can be saved." : "Select an active Freight Level."))}`);
   }
+  const selectedFreightLevel = selectedFreightLevelResult.data;
   const policy = {
     customer_account_id: customerId,
     customer_location_id: null,
@@ -9011,10 +9049,9 @@ async function updateFreightPolicyAction(formData: FormData) {
       freightTerms === "collect"
         ? optionalText("ltl_customer_collect_account_number")
         : null,
-    flat_rate_percent:
-      flatRateRaw && freightTerms === "flat_rate" ? Number(flatRateRaw) : null,
-    freight_allowance_amount: selectedFreightLevel ? Number(selectedFreightLevel.free_freight_allowance) : freightAllowanceRaw ? Number(freightAllowanceRaw) : null,
-    freight_level_id: freightTerms === "free_freight" ? freightLevelId : null,
+    flat_rate_percent: null,
+    freight_allowance_amount: Number(selectedFreightLevel.free_freight_allowance),
+    freight_level_id: selectedFreightLevel.id,
     freight_terms: freightTerms,
     ground_freight_terms: freightTerms,
     is_default: true,
@@ -11458,7 +11495,7 @@ async function getInvoiceQueuePackingLists() {
       orderIds.length
         ? supabase
             .from("sales_order")
-            .select("id, commission_payable, commission_rate_percent, order_type, territory_id_snapshot")
+            .select("id, commission_payable, commission_rate_percent, order_type, territory_id_snapshot, ground_freight_terms_snapshot")
             .in("id", orderIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
@@ -11591,6 +11628,14 @@ async function getInvoiceQueuePackingLists() {
         ?.payment_terms ?? "Prepaid / No Credit",
     brandSummaries: brandSummariesByPackingList.get(packingList.id) ?? [],
     commission: commissionForOrder(packingList.sales_order_id),
+    freightTerm:
+      orderById.get(packingList.sales_order_id)
+        ?.ground_freight_terms_snapshot ?? "prepaid",
+    invoiceFreightCharge:
+      orderById.get(packingList.sales_order_id)
+        ?.ground_freight_terms_snapshot === "prepaid"
+        ? Number(packingList.shipping_fee ?? 0)
+        : 0,
   }));
 }
 

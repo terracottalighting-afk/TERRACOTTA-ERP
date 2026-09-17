@@ -77,8 +77,7 @@ export function FreightTermsFields({
 }) {
   const [freightTerms, setFreightTerms] = useState(defaultFreightTerms);
   const isCollect = freightTerms === "collect";
-  const isFlatRate = freightTerms === "flat_rate";
-  const isFreeFreight = freightTerms === "free_freight";
+  const isCustomerPickup = freightTerms === "customer_pickup";
 
   return (
     <fieldset>
@@ -90,21 +89,15 @@ export function FreightTermsFields({
             <option value="prepaid">Prepaid</option>
             <option value="collect">Collect</option>
             <option value="customer_pickup">Customer Pickup</option>
-            <option value="free_freight">Free Freight per FFA</option>
-            <option value="flat_rate">Flat Rate</option>
-            <option value="manual_review">Manual Review</option>
           </select>
         </label>
-        {isFreeFreight && freightLevels.length ? <label>
+        <label>
           Freight Level
-          <select defaultValue={defaultFreightLevelId} name="freight_level_id" required>
-            <option value="">Select freight level</option>
-            {freightLevels.map((level) => <option key={level.id} value={level.id}>{level.levelName} - FFA ${level.freeFreightAllowance.toFixed(2)} / {level.freightRatePercent}%</option>)}
+          <select defaultValue={defaultFreightLevelId} disabled={isCustomerPickup} name="freight_level_id" required={!isCustomerPickup && freightLevels.length > 0}>
+            {isCustomerPickup ? <option value="">Level 0 - Free Freight</option> : <option value="">Select freight level</option>}
+            {!isCustomerPickup ? freightLevels.map((level) => <option key={level.id} value={level.id}>{level.levelName} - FFA ${level.freeFreightAllowance.toFixed(2)} / {level.freightRatePercent}%</option>) : null}
           </select>
-        </label> : <label>
-          FFA Amount
-          <input defaultValue={defaultFreightAllowance} min="0" name="freight_allowance_amount" placeholder="Optional freight allowance" step="0.01" type="number" />
-        </label>}
+        </label>
         {isCollect ? (
           <>
             <label>
@@ -128,12 +121,6 @@ export function FreightTermsFields({
               <input defaultValue={defaultGroundCollectAccount} name="ground_customer_collect_account_number" />
             </label>
           </>
-        ) : null}
-        {isFlatRate ? (
-          <label>
-            Flat Rate %
-            <input defaultValue={defaultFlatRatePercent} min="0" name="flat_rate_percent" placeholder="Example: 10" step="0.01" type="number" />
-          </label>
         ) : null}
       </div>
     </fieldset>

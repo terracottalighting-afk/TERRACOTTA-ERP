@@ -91,10 +91,10 @@ export function InvoiceTermsAndFreightFields({
           </label>
           <label>
             Customer Freight Charge
-            <input defaultValue={defaultCustomerFreightCharge} min="0" name="customer_freight_charge" required step="0.01" type="number" />
+            <input readOnly value={defaultCustomerFreightCharge} min="0" name="customer_freight_charge" required step="0.01" type="number" />
           </label>
         </div>
-        <p className="fieldset-note">Authorized users may override the customer freight charge. Saving the invoice updates the packing list charge as well.</p>
+        <p className="fieldset-note">The invoice freight charge follows the order Freight Term. Only Prepay invoices include the calculated shipment freight charge.</p>
       </fieldset>
     </>
   );

@@ -16,6 +16,7 @@ import { EditAccountProfileForm } from "@/components/customers/edit-account-prof
 import { EditBillingCreditForm } from "@/components/customers/edit-billing-credit-form";
 import { EditContactForm } from "@/components/customers/edit-contact-form";
 import { EditFreightForm } from "@/components/customers/edit-freight-form";
+import { EditDropshipSettingsForm } from "@/components/customers/edit-dropship-settings-form";
 import { EditLocationFreightForm } from "@/components/customers/edit-location-freight-form";
 import { EditLocationForm } from "@/components/customers/edit-location-form";
 import { EditSalesRepForm } from "@/components/customers/edit-sales-rep-form";
@@ -9454,6 +9455,67 @@ async function updateFreightPolicyAction(formData: FormData) {
   redirect(`/?customer=${customerId}&tab=freight`);
 }
 
+async function updateCustomerDropshipSettingsAction(formData: FormData) {
+  "use server";
+
+  const customerId = String(formData.get("customer_id") ?? "").trim();
+  const returnUrl = `/?module=edit-dropship-settings&customer=${customerId}`;
+  if (!customerId) redirect("/?module=customers");
+
+  const overridesDropship = formData.get("override_dropship_settings") === "on";
+  const overridesResidential = formData.get("override_residential_surcharge") === "on";
+  const dropshipRatePercent = Number(String(formData.get("dropship_rate_percent") ?? "").trim());
+  const residentialRatePercent = Number(String(formData.get("residential_surcharge_rate_percent") ?? "").trim());
+  const dropshipFreightLevelId = String(formData.get("dropship_freight_level_id") ?? "").trim() || null;
+  if (overridesDropship && (!Number.isFinite(dropshipRatePercent) || dropshipRatePercent < 0)) {
+    redirect(`${returnUrl}&error=${encodeURIComponent("Enter a valid Dropship Rate.")}`);
+  }
+  if (overridesResidential && (!Number.isFinite(residentialRatePercent) || residentialRatePercent < 0)) {
+    redirect(`${returnUrl}&error=${encodeURIComponent("Enter a valid Residential Surcharge Rate.")}`);
+  }
+
+  const supabase = createSupabaseAdminClient();
+  if (dropshipFreightLevelId) {
+    const { data: level, error: levelError } = await createSupabaseUntypedAdminClient()
+      .from("freight_level")
+      .select("id")
+      .eq("id", dropshipFreightLevelId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (levelError || !level) {
+      redirect(`${returnUrl}&error=${encodeURIComponent(levelError?.message ?? "The selected Dropship Freight Level is no longer active.")}`);
+    }
+  }
+
+  const { data: policy, error: policyError } = await supabase
+    .from("customer_freight_policy")
+    .select("id")
+    .eq("customer_account_id", customerId)
+    .is("customer_location_id", null)
+    .eq("is_active", true)
+    .order("is_default", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (policyError || !policy) {
+    redirect(`${returnUrl}&error=${encodeURIComponent(policyError?.message ?? "Set the account Freight Terms before configuring Dropship Settings.")}`);
+  }
+
+  const { error } = await supabase
+    .from("customer_freight_policy")
+    .update({
+      dropship_freight_level_id: dropshipFreightLevelId,
+      dropship_is_active: overridesDropship ? formData.get("dropship_is_active") === "on" : null,
+      dropship_rate_percent: overridesDropship ? dropshipRatePercent : null,
+      residential_surcharge_is_active: overridesResidential ? formData.get("residential_surcharge_is_active") === "on" : null,
+      residential_surcharge_rate_percent: overridesResidential ? residentialRatePercent : null,
+    })
+    .eq("id", policy.id);
+  if (error) redirect(`${returnUrl}&error=${encodeURIComponent(error.message)}`);
+
+  revalidatePath("/");
+  redirect(`/?customer=${customerId}&tab=freight`);
+}
+
 async function saveCustomerRepAssignmentAction(formData: FormData) {
   "use server";
 
@@ -12356,7 +12418,7 @@ async function getDefaultFreightPolicy(customerId: string) {
   const { data, error } = await supabase
     .from("customer_freight_policy")
     .select(
-      "id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, freight_level_id, flat_rate_percent, default_ltl_carrier, default_ltl_carrier_account_number, default_ground_carrier, default_ground_carrier_account_number",
+      "id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, freight_level_id, flat_rate_percent, default_ltl_carrier, default_ltl_carrier_account_number, default_ground_carrier, default_ground_carrier_account_number, dropship_freight_level_id, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent",
     )
     .eq("customer_account_id", customerId)
     .is("customer_location_id", null)
@@ -12370,6 +12432,22 @@ async function getDefaultFreightPolicy(customerId: string) {
   }
 
   return data as FreightPolicy | null;
+}
+
+async function getActiveFreightLevelOptions() {
+  const { data, error } = await createSupabaseUntypedAdminClient()
+    .from("freight_level")
+    .select("id, level_name, free_freight_allowance, freight_rate_percent")
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .order("level_name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((level) => ({
+    id: level.id,
+    levelName: level.level_name,
+    freeFreightAllowance: Number(level.free_freight_allowance),
+    freightRatePercent: Number(level.freight_rate_percent),
+  }));
 }
 
 async function getLocationForEdit(locationId: string) {
@@ -12747,6 +12825,7 @@ export async function ErpRouter({
     "edit-billing-credit": "Edit Billing / Credit",
     "edit-contact": "Edit Contact",
     "edit-freight": "Edit Freight",
+    "edit-dropship-settings": "Edit Dropship Settings",
     "edit-location-freight": "Edit Freight Term",
     "edit-location": "Edit Location",
     "edit-sales-rep": "Edit Sales Rep",
@@ -13223,6 +13302,15 @@ export async function ErpRouter({
             loadCustomer={getCustomerName}
             loadFreightPolicy={getDefaultFreightPolicy}
             saveAction={updateFreightPolicyAction}
+          />
+        ) : activeModule === "edit-dropship-settings" ? (
+          <EditDropshipSettingsForm
+            customerId={params.customer ?? ""}
+            customerName={(await getCustomerName(params.customer ?? "")).name}
+            error={params.error}
+            freightLevels={await getActiveFreightLevelOptions()}
+            freightPolicy={await getDefaultFreightPolicy(params.customer ?? "")}
+            saveAction={updateCustomerDropshipSettingsAction}
           />
         ) : activeModule === "sales-rep-agencies" ? (
           <SalesRepAgenciesDashboard {...(await getSalesCoverageDashboard())} />
@@ -14800,7 +14888,7 @@ export async function ErpRouter({
                       <h3>Dropship Settings</h3>
                       <Link
                         className="text-action"
-                        href={`/?module=edit-freight&customer=${dashboard.customer.id}`}
+                        href={`/?module=edit-dropship-settings&customer=${dashboard.customer.id}`}
                       >
                         Edit
                       </Link>

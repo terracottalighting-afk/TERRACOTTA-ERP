@@ -682,6 +682,82 @@ input {
   padding: 10px;
 }
 
+.dropship-settings-editor {
+  display: grid;
+  gap: 18px;
+}
+
+.dropship-override-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.dropship-override-heading {
+  align-items: start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.dropship-override-heading p,
+.dropship-level-field p {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.settings-toggle {
+  align-items: center;
+  color: var(--foreground);
+  display: flex;
+  font-size: 14px;
+  font-weight: 700;
+  gap: 8px;
+}
+
+.settings-toggle input {
+  appearance: auto;
+  height: auto;
+  margin: 0;
+  min-height: auto;
+  width: auto;
+}
+
+.dropship-override-fields {
+  align-items: end;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.4fr);
+}
+
+.dropship-override-fields > label:not(.settings-toggle),
+.dropship-level-field label {
+  color: var(--muted);
+  display: grid;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 7px;
+}
+
+.dropship-override-fields input,
+.dropship-level-field select {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--foreground);
+  min-height: 40px;
+  padding: 0 10px;
+}
+
+.settings-toggle--field {
+  min-height: 40px;
+}
+
+.dropship-level-field {
+  display: grid;
+  gap: 8px;
+  max-width: 520px;
+}
+
 .rga-request-grid textarea {
   min-height: 104px;
   resize: vertical;

@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { DropshipTermsFields, FreightTermsFields } from "@/components/customers/customer-terms-fields";
+import { FreightTermsFields } from "@/components/customers/customer-terms-fields";
 import { ModulePlaceholder } from "@/components/ui";
 import { createSupabaseUntypedAdminClient } from "@/lib/supabase/admin";
 
@@ -16,14 +16,9 @@ type FreightPolicy = {
   flat_rate_percent?: number | null;
   freight_allowance_amount?: number | null;
   freight_level_id?: string | null;
-  dropship_freight_level_id?: string | null;
-  dropship_is_active?: boolean | null;
-  dropship_rate_percent?: number | null;
   freight_terms?: string;
   id?: string;
   ltl_freight_terms: string;
-  residential_surcharge_is_active?: boolean | null;
-  residential_surcharge_rate_percent?: number | null;
 };
 
 export async function EditFreightForm({
@@ -110,14 +105,6 @@ export async function EditFreightForm({
             freightPolicy?.default_ltl_carrier_account_number ?? ""
           }
           defaultLtlCollectCarrier={freightPolicy?.default_ltl_carrier ?? ""}
-          freightLevels={(freightLevelsResult.data ?? []).map((level) => ({ id: level.id, levelName: level.level_name, freeFreightAllowance: Number(level.free_freight_allowance), freightRatePercent: Number(level.freight_rate_percent) }))}
-        />
-        <DropshipTermsFields
-          defaultDropshipFreightLevelId={freightPolicy?.dropship_freight_level_id ?? ""}
-          defaultDropshipIsActive={freightPolicy?.dropship_is_active ?? true}
-          defaultDropshipRatePercent={freightPolicy?.dropship_rate_percent?.toString() ?? ""}
-          defaultResidentialSurchargeIsActive={freightPolicy?.residential_surcharge_is_active ?? false}
-          defaultResidentialSurchargeRatePercent={freightPolicy?.residential_surcharge_rate_percent?.toString() ?? ""}
           freightLevels={(freightLevelsResult.data ?? []).map((level) => ({ id: level.id, levelName: level.level_name, freeFreightAllowance: Number(level.free_freight_allowance), freightRatePercent: Number(level.freight_rate_percent) }))}
         />
         <div className="form-actions">

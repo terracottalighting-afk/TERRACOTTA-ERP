@@ -63,6 +63,8 @@ export async function OrderAcknowledgementPage({
   if (!order || order.order_type === "quote") {
     return <ModulePlaceholder moduleName="Order acknowledgement not found" />;
   }
+  const residentialSurcharge = Number(order.ship_to_snapshot_json?.residential_surcharge_amount ?? 0);
+  const baseDropshipFee = Math.max(0, Number(order.dropship_fee_amount ?? 0) - residentialSurcharge);
 
   const recipientEmail =
     snapshotEmail(order.ship_to_snapshot_json) ??
@@ -233,12 +235,13 @@ export async function OrderAcknowledgementPage({
           <span>Estimated Freight Charge</span>
           <strong>{money(Number(order.freight_amount ?? 0))}</strong>
         </div>
-        {Number(order.dropship_fee_amount ?? 0) > 0 ? (
+        {baseDropshipFee > 0 ? (
           <div className="quote-document-total">
             <span>Dropship Fee</span>
-            <strong>{money(Number(order.dropship_fee_amount))}</strong>
+            <strong>{money(baseDropshipFee)}</strong>
           </div>
         ) : null}
+        {residentialSurcharge > 0 ? <div className="quote-document-total"><span>Residential Surcharge</span><strong>{money(residentialSurcharge)}</strong></div> : null}
         <div className="quote-document-total">
           <span>Order Total</span>
           <strong>{money(Number(order.total_amount ?? 0))}</strong>

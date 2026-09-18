@@ -14,6 +14,8 @@ type OrderEntryData = {
     dropshipSettings: {
       isActive: boolean;
       ratePercent: number;
+      residentialSurchargeActive: boolean;
+      residentialSurchargeRatePercent: number;
     };
   };
   partOptions: OrderPartOption[];

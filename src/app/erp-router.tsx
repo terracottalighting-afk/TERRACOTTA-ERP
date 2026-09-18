@@ -2012,10 +2012,12 @@ async function saveDropshipSettingsAction(formData: FormData) {
 
   const rateText = textValue(formData, "dropship_rate_percent");
   const ratePercent = Number(rateText);
+  const residentialRateText = textValue(formData, "residential_surcharge_rate_percent");
+  const residentialSurchargeRatePercent = Number(residentialRateText);
   const errorUrl = (message: string) =>
     `/?module=admin&admin_tab=freight&freight_tab=dropship&error=${encodeURIComponent(message)}`;
-  if (!rateText || !Number.isFinite(ratePercent) || ratePercent < 0) {
-    redirect(errorUrl("Enter a non-negative Dropship Rate."));
+  if (!rateText || !residentialRateText || !Number.isFinite(ratePercent) || ratePercent < 0 || !Number.isFinite(residentialSurchargeRatePercent) || residentialSurchargeRatePercent < 0) {
+    redirect(errorUrl("Enter non-negative Dropship and Residential Surcharge rates."));
   }
 
   const { error } = await createSupabaseUntypedAdminClient()
@@ -2023,7 +2025,7 @@ async function saveDropshipSettingsAction(formData: FormData) {
     .upsert(
       {
         category: "shipping",
-        default_value_json: { isActive: true, ratePercent: 0 },
+        default_value_json: { isActive: true, ratePercent: 0, residentialSurchargeActive: false, residentialSurchargeRatePercent: 0 },
         description:
           "Controls the percentage fee applied to manual Ship-to / Drop Ship orders.",
         setting_key: "dropship_settings",
@@ -2031,6 +2033,8 @@ async function saveDropshipSettingsAction(formData: FormData) {
         setting_value: {
           isActive: formData.get("is_active_dropship") === "on",
           ratePercent,
+          residentialSurchargeActive: formData.get("is_residential_surcharge_active") === "on",
+          residentialSurchargeRatePercent,
         },
         validation_json: { type: "object" },
         value_type: "json",
@@ -2507,6 +2511,8 @@ function defaultFreightCharge(
 type DropshipSettings = {
   isActive: boolean;
   ratePercent: number;
+  residentialSurchargeActive: boolean;
+  residentialSurchargeRatePercent: number;
 };
 
 async function getDropshipSettings(): Promise<DropshipSettings> {
@@ -2516,11 +2522,14 @@ async function getDropshipSettings(): Promise<DropshipSettings> {
     .eq("setting_key", "dropship_settings")
     .maybeSingle();
   if (error) throw new Error(error.message);
-  const value = data?.setting_value as { isActive?: unknown; ratePercent?: unknown } | null;
+  const value = data?.setting_value as { isActive?: unknown; ratePercent?: unknown; residentialSurchargeActive?: unknown; residentialSurchargeRatePercent?: unknown } | null;
   const ratePercent = Number(value?.ratePercent ?? 0);
+  const residentialSurchargeRatePercent = Number(value?.residentialSurchargeRatePercent ?? 0);
   return {
     isActive: value?.isActive !== false,
     ratePercent: Number.isFinite(ratePercent) && ratePercent >= 0 ? ratePercent : 0,
+    residentialSurchargeActive: value?.residentialSurchargeActive === true,
+    residentialSurchargeRatePercent: Number.isFinite(residentialSurchargeRatePercent) && residentialSurchargeRatePercent >= 0 ? residentialSurchargeRatePercent : 0,
   };
 }
 
@@ -2531,6 +2540,11 @@ function dropshipFee(
 ) {
   if (!isDropship || !settings.isActive) return 0;
   return Math.round(amount * (settings.ratePercent / 100) * 100) / 100;
+}
+
+function residentialSurcharge(amount: number, isResidentialDropship: boolean, settings: DropshipSettings) {
+  if (!isResidentialDropship || !settings.residentialSurchargeActive) return 0;
+  return Math.round(amount * (settings.residentialSurchargeRatePercent / 100) * 100) / 100;
 }
 
 async function shipmentFreightCharge(
@@ -2637,6 +2651,7 @@ async function createSalesOrderAction(formData: FormData) {
   const orderType = textValue(formData, "order_type") || "regular";
   const displayOrderType = textValue(formData, "display_order_type") || null;
   const isDropship = formData.get("is_dropship") === "on";
+  const isResidentialDropship = isDropship && formData.get("dropship_residential_address") === "on";
   const locationId = textValue(formData, "customer_location_id") || null;
   const commissionOverrideEnabled =
     textValue(formData, "commission_override_enabled") === "1";
@@ -2873,7 +2888,11 @@ async function createSalesOrderAction(formData: FormData) {
     defaultFreightLevel,
   );
   let defaultDropshipFee = 0;
+  let residentialSurchargeAmount = 0;
+  let residentialSurchargeRatePercent = 0;
   try {
+    const settings = await getDropshipSettings();
+    residentialSurchargeRatePercent = settings.residentialSurchargeRatePercent;
     defaultDropshipFee = dropshipFee(
       pricedLines.reduce(
         (sum, line) =>
@@ -2884,8 +2903,14 @@ async function createSalesOrderAction(formData: FormData) {
         0,
       ),
       isDropship,
-      await getDropshipSettings(),
+      settings,
     );
+    residentialSurchargeAmount = residentialSurcharge(
+      pricedLines.reduce((sum, line) => sum + Number(line.quantity) * Number(line.unitPrice) * (1 - Number(line.discountPercent) / 100), 0),
+      isResidentialDropship,
+      settings,
+    );
+    defaultDropshipFee += residentialSurchargeAmount;
   } catch (dropshipError) {
     redirect(
       `${fallbackUrl}&error=${encodeURIComponent(dropshipError instanceof Error ? dropshipError.message : "The Dropship Fee could not be calculated.")}`,
@@ -3034,7 +3059,9 @@ async function createSalesOrderAction(formData: FormData) {
           account.purchase_email ||
           null,
         is_residential_address:
-          formData.get("dropship_residential_address") === "on",
+          isResidentialDropship,
+        residential_surcharge_amount: residentialSurchargeAmount,
+        residential_surcharge_rate_percent: residentialSurchargeRatePercent,
       }
     : {
         ship_to_display_name: savedLocation!.location_name,
@@ -4099,19 +4126,24 @@ async function createPendingShipmentAction(formData: FormData) {
     redirect(`${fallbackUrl}&error=${encodeURIComponent(freightError instanceof Error ? freightError.message : "The shipment freight charge could not be calculated.")}`);
   }
   let shipmentDropshipFee = 0;
+  let shipmentResidentialSurcharge = 0;
   try {
-    shipmentDropshipFee = dropshipFee(
-      selectedLines.reduce(
-        (sum, line) =>
-          sum +
-          Number(line.requestedQuantity) *
-            Number(line.unit_price) *
-            (1 - Number(line.discount_percent) / 100),
-        0,
-      ),
-      order.is_dropship,
-      await getDropshipSettings(),
+    const settings = await getDropshipSettings();
+    const shipmentSubtotal = selectedLines.reduce(
+      (sum, line) => sum + Number(line.requestedQuantity) * Number(line.unit_price) * (1 - Number(line.discount_percent) / 100),
+      0,
     );
+    shipmentDropshipFee = dropshipFee(
+      shipmentSubtotal,
+      order.is_dropship,
+      settings,
+    );
+    shipmentResidentialSurcharge = residentialSurcharge(
+      shipmentSubtotal,
+      order.is_dropship && (order.ship_to_snapshot_json as Record<string, unknown> | null)?.is_residential_address === true,
+      settings,
+    );
+    shipmentDropshipFee += shipmentResidentialSurcharge;
   } catch (dropshipError) {
     redirect(`${fallbackUrl}&error=${encodeURIComponent(dropshipError instanceof Error ? dropshipError.message : "The Dropship Fee could not be calculated.")}`);
   }
@@ -4153,7 +4185,7 @@ async function createPendingShipmentAction(formData: FormData) {
       notes,
       sales_order_id: order.id,
       sales_order_number_snapshot: order.sales_order_number,
-      ship_to_snapshot_json: order.ship_to_snapshot_json,
+      ship_to_snapshot_json: { ...(order.ship_to_snapshot_json as Record<string, unknown>), residential_surcharge_amount: shipmentResidentialSurcharge },
       ship_to_type:
         order.ship_to_type as Database["public"]["Enums"]["sales_order_ship_to_type"],
       shipping_type_snapshot: shipmentCarrier!.shippingType
@@ -11079,8 +11111,9 @@ async function getOrderEntryData(customerId: string) {
   }
 
   if (!customerResult.data) return null;
-  const dropshipSettingsValue = dropshipSettingsResult.data?.setting_value as { isActive?: unknown; ratePercent?: unknown } | null;
+  const dropshipSettingsValue = dropshipSettingsResult.data?.setting_value as { isActive?: unknown; ratePercent?: unknown; residentialSurchargeActive?: unknown; residentialSurchargeRatePercent?: unknown } | null;
   const dropshipRatePercent = Number(dropshipSettingsValue?.ratePercent ?? 0);
+  const residentialSurchargeRatePercent = Number(dropshipSettingsValue?.residentialSurchargeRatePercent ?? 0);
 
   const defaultFreightLevel = await resolveFreightLevelForCustomer(
     customerId,
@@ -11378,6 +11411,8 @@ async function getOrderEntryData(customerId: string) {
       dropshipSettings: {
         isActive: dropshipSettingsValue?.isActive !== false,
         ratePercent: Number.isFinite(dropshipRatePercent) && dropshipRatePercent >= 0 ? dropshipRatePercent : 0,
+        residentialSurchargeActive: dropshipSettingsValue?.residentialSurchargeActive === true,
+        residentialSurchargeRatePercent: Number.isFinite(residentialSurchargeRatePercent) && residentialSurchargeRatePercent >= 0 ? residentialSurchargeRatePercent : 0,
       },
       defaultFreightLevel: defaultFreightLevel
         ? {

@@ -38,8 +38,9 @@ export async function AdminDashboard({ assignStyleAction, deactivateCustomerSett
   const warehouses = warehousesResult.data ?? [];
   const deactivatedWarehouses = deactivatedWarehousesResult.data ?? [];
   const territories = territoriesResult.data ?? [];
-  const dropshipSettings = dropshipSettingsResult.data?.setting_value as { isActive?: unknown; ratePercent?: unknown } | null;
+  const dropshipSettings = dropshipSettingsResult.data?.setting_value as { isActive?: unknown; ratePercent?: unknown; residentialSurchargeActive?: unknown; residentialSurchargeRatePercent?: unknown } | null;
   const dropshipRatePercent = Number(dropshipSettings?.ratePercent ?? 0);
+  const residentialSurchargeRatePercent = Number(dropshipSettings?.residentialSurchargeRatePercent ?? 0);
 
   const activeTab: AdminTab = selectedTab === "products" || selectedTab === "warehouse" || selectedTab === "territory" || selectedTab === "customers" || selectedTab === "freight" ? selectedTab : "users";
 
@@ -65,7 +66,7 @@ export async function AdminDashboard({ assignStyleAction, deactivateCustomerSett
           <Link aria-current={selectedFreightTab === "carriers" ? "page" : undefined} href="/?module=admin&admin_tab=freight&freight_tab=carriers">Freight Carriers</Link>
           <Link aria-current={selectedFreightTab === "dropship" ? "page" : undefined} href="/?module=admin&admin_tab=freight&freight_tab=dropship">Dropship Settings</Link>
         </section>
-        {selectedFreightTab === "carriers" ? <FreightCarrierManager carriers={freightCarriersResult.data ?? []} error={error} saveAction={saveFreightCarrierAction} /> : selectedFreightTab === "dropship" ? <DropshipSettingsManager error={error} isActive={dropshipSettings?.isActive !== false} ratePercent={Number.isFinite(dropshipRatePercent) ? dropshipRatePercent : 0} saveAction={saveDropshipSettingsAction} /> : <FreightLevelManager accountTypes={customerAccountTypesResult.data ?? []} error={error} freightLevels={freightLevelsResult.data ?? []} groups={freightLevelGroupsResult.data ?? []} saveAction={saveFreightLevelAction} />}
+        {selectedFreightTab === "carriers" ? <FreightCarrierManager carriers={freightCarriersResult.data ?? []} error={error} saveAction={saveFreightCarrierAction} /> : selectedFreightTab === "dropship" ? <DropshipSettingsManager error={error} isActive={dropshipSettings?.isActive !== false} ratePercent={Number.isFinite(dropshipRatePercent) ? dropshipRatePercent : 0} residentialSurchargeActive={dropshipSettings?.residentialSurchargeActive === true} residentialSurchargeRatePercent={Number.isFinite(residentialSurchargeRatePercent) ? residentialSurchargeRatePercent : 0} saveAction={saveDropshipSettingsAction} /> : <FreightLevelManager accountTypes={customerAccountTypesResult.data ?? []} error={error} freightLevels={freightLevelsResult.data ?? []} groups={freightLevelGroupsResult.data ?? []} saveAction={saveFreightLevelAction} />}
       </article>
       <article className={activeTab === "products" ? "data-section tab-panel--flush" : "data-section tab-panel-hidden"}><ProductSettingsManager assignStyleAction={assignStyleAction} brands={brandsResult.data ?? []} categories={categoriesResult.data ?? []} deactivateAction={deactivateProductSettingAction} error={error} finishes={finishesResult.data ?? []} materials={materialsResult.data ?? []} partRoles={partRolesResult.data ?? []} saveAction={saveProductSettingAction} styles={stylesResult.data ?? []} suites={suitesResult.data ?? []} /></article>
       <article className={activeTab === "users" ? "data-section" : "data-section tab-panel-hidden"}><div className="section-title"><h3>Users and Access Roles</h3></div><p className="fieldset-note">User accounts and security roles are intentionally protected from the general application database role. This tab reserves the management area; its controlled user-administration screen will be added with the required access policy.</p></article>

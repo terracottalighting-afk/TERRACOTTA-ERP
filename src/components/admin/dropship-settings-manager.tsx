@@ -7,11 +7,15 @@ export function DropshipSettingsManager({
   error,
   isActive,
   ratePercent,
+  residentialSurchargeActive,
+  residentialSurchargeRatePercent,
   saveAction,
 }: {
   error?: string;
   isActive: boolean;
   ratePercent: number;
+  residentialSurchargeActive: boolean;
+  residentialSurchargeRatePercent: number;
   saveAction: (formData: FormData) => void | Promise<void>;
 }) {
   const [isEditing, setIsEditing] = useState(Boolean(error));
@@ -47,6 +51,14 @@ export function DropshipSettingsManager({
                 <input defaultChecked={isActive} name="is_active_dropship" type="checkbox" />
                 Active Dropship
               </label>
+              <label>
+                Residential Surcharge Rate (%)
+                <input defaultValue={residentialSurchargeRatePercent} min="0" name="residential_surcharge_rate_percent" required step="0.01" type="number" />
+              </label>
+              <label className="checkbox-label">
+                <input defaultChecked={residentialSurchargeActive} name="is_residential_surcharge_active" type="checkbox" />
+                Surcharge Active
+              </label>
             </div>
             <p className="fieldset-note">
               When active, the fee is calculated from the order subtotal and from each shipment subtotal. Inactive settings do not add a Dropship Fee to new order acknowledgements or invoices.
@@ -72,6 +84,12 @@ export function DropshipSettingsManager({
                 <td><strong>Dropship Rate</strong></td>
                 <td>{ratePercent}%</td>
                 <td><StatusBadge tone={isActive ? "good" : "warn"} value={isActive ? "Active" : "Inactive"} /></td>
+                <td><button className="text-action text-action--button" onClick={() => setIsEditing(true)} type="button">Edit</button></td>
+              </tr>
+              <tr>
+                <td><strong>Residential Surcharge Rate</strong></td>
+                <td>{residentialSurchargeRatePercent}%</td>
+                <td><StatusBadge tone={residentialSurchargeActive ? "good" : "warn"} value={residentialSurchargeActive ? "Active" : "Inactive"} /></td>
                 <td><button className="text-action text-action--button" onClick={() => setIsEditing(true)} type="button">Edit</button></td>
               </tr>
             </tbody>

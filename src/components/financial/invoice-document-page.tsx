@@ -69,6 +69,8 @@ export async function InvoiceDocumentPage({
   }
 
   const { customer, invoice, lines, salesOrder } = detail;
+  const residentialSurcharge = Number(snapshotRecord(invoice.ship_to_snapshot_json)?.residential_surcharge_amount ?? 0);
+  const baseDropshipFee = Math.max(0, Number(invoice.dropship_fee_amount ?? 0) - residentialSurcharge);
 
   return (
     <section className="quote-document-page">
@@ -175,12 +177,13 @@ export async function InvoiceDocumentPage({
             <dt>Freight</dt>
             <dd>{money(Number(invoice.freight_amount))}</dd>
           </div>
-          {Number(invoice.dropship_fee_amount ?? 0) > 0 ? (
+          {baseDropshipFee > 0 ? (
             <div>
               <dt>Drop-ship Fee</dt>
-              <dd>{money(Number(invoice.dropship_fee_amount))}</dd>
+              <dd>{money(baseDropshipFee)}</dd>
             </div>
           ) : null}
+          {residentialSurcharge > 0 ? <div><dt>Residential Surcharge</dt><dd>{money(residentialSurcharge)}</dd></div> : null}
           <div>
             <dt>Tax</dt>
             <dd>{money(Number(invoice.tax_amount))}</dd>

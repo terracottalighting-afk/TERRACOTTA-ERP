@@ -54,6 +54,8 @@ type DefaultFreightLevel = {
 type DropshipSettings = {
   isActive: boolean;
   ratePercent: number;
+  residentialSurchargeActive: boolean;
+  residentialSurchargeRatePercent: number;
 };
 
 type OrderLine = OrderProductOption & {
@@ -138,6 +140,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
   const [orderType, setOrderType] = useState("regular");
   const [notes, setNotes] = useState("");
   const [isDropship, setIsDropship] = useState(false);
+  const [isResidentialAddress, setIsResidentialAddress] = useState(false);
   const [manualShipTo, setManualShipTo] = useState<ManualShipTo>({
     addressLine1: "",
     addressLine2: "",
@@ -215,6 +218,9 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
     : 0;
   const estimatedDropshipFee = isDropship && dropshipSettings.isActive
     ? Math.round(subtotal * (dropshipSettings.ratePercent / 100) * 100) / 100
+    : 0;
+  const estimatedResidentialSurcharge = isDropship && isResidentialAddress && dropshipSettings.residentialSurchargeActive
+    ? Math.round(subtotal * (dropshipSettings.residentialSurchargeRatePercent / 100) * 100) / 100
     : 0;
   const selectedTerritory = territories.find((territory) => territory.id === commissionSelection.territoryId);
   const selectedAgency = selectedTerritory?.agencies.find((agency) => agency.id === commissionSelection.agencyId);
@@ -524,7 +530,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
               </select>
             </label>
             <label className="checkbox-label">
-              <input name="dropship_residential_address" type="checkbox" />
+              <input checked={isResidentialAddress} name="dropship_residential_address" onChange={(event) => setIsResidentialAddress(event.target.checked)} type="checkbox" />
               Residential Address
             </label>
         </div>
@@ -669,7 +675,8 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
             <div className="order-total"><span>Order Subtotal</span><strong>{money.format(subtotal)}</strong></div>
             {selectedFreightLevel ? <div className="order-total"><span>Default Freight Charge ({selectedFreightLevel.levelName}: FFA {money.format(selectedFreightLevel.freeFreightAllowance)}, {selectedFreightLevel.freightRatePercent}%)</span><strong>{defaultFreightCharge === 0 ? "Free Freight" : wholeMoney.format(defaultFreightCharge)}</strong></div> : null}
             {isDropship && dropshipSettings.isActive ? <div className="order-total"><span>Dropship Fee ({dropshipSettings.ratePercent}%)</span><strong>{money.format(estimatedDropshipFee)}</strong></div> : null}
-            <div className="order-total"><span>Estimated Order Total</span><strong>{money.format(subtotal + defaultFreightCharge + estimatedDropshipFee)}</strong></div>
+            {isDropship && isResidentialAddress && dropshipSettings.residentialSurchargeActive ? <div className="order-total"><span>Residential Surcharge ({dropshipSettings.residentialSurchargeRatePercent}%)</span><strong>{money.format(estimatedResidentialSurcharge)}</strong></div> : null}
+            <div className="order-total"><span>Estimated Order Total</span><strong>{money.format(subtotal + defaultFreightCharge + estimatedDropshipFee + estimatedResidentialSurcharge)}</strong></div>
           </article>
 
           <article className="data-section">

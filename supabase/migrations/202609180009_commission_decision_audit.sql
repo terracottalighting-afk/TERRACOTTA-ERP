@@ -20,7 +20,7 @@ create table if not exists public.sales_order_commission_decision_change (
   new_payable boolean not null,
   reason text not null check (btrim(reason) <> ''),
   created_at timestamptz not null default now(),
-  created_by_user_id uuid references public.user_profile(id)
+  created_by_user_id uuid references public.user_account(id)
 );
 
 create index if not exists sales_order_commission_decision_change_order_idx

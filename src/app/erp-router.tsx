@@ -9495,9 +9495,9 @@ async function updateCustomerDropshipSettingsAction(formData: FormData) {
       dropship_freight_level_id: dropshipFreightLevelId,
       dropship_freight_allowance_amount: isCustomDropshipFreightLevel ? customDropshipFreightAllowance : null,
       dropship_freight_rate_percent: isCustomDropshipFreightLevel ? customDropshipFreightRate : null,
-      dropship_is_active: overridesDropship ? formData.get("dropship_is_active") === "on" : null,
+      dropship_is_active: overridesDropship ? true : null,
       dropship_rate_percent: overridesDropship ? dropshipRatePercent : null,
-      residential_surcharge_is_active: overridesResidential ? formData.get("residential_surcharge_is_active") === "on" : null,
+      residential_surcharge_is_active: overridesResidential ? true : null,
       residential_surcharge_rate_percent: overridesResidential ? residentialRatePercent : null,
     })
     .eq("id", policy.id);

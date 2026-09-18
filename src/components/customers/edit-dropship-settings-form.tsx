@@ -77,16 +77,12 @@ export function EditDropshipSettingsForm({
               <input checked={overrideDropship} name="override_dropship_settings" onChange={(event) => setOverrideDropship(event.target.checked)} type="checkbox" />
               Use account-level Dropship Fee override
             </label>
-            <p>When off, the admin Dropship Rate and Active setting apply.</p>
+            <p>When off, the admin Dropship Rate setting applies.</p>
           </div>
-          <div className="dropship-override-fields">
+          <div className="dropship-override-fields dropship-override-fields--single">
             <label>
               Dropship Rate (%)
               <input defaultValue={freightPolicy?.dropship_rate_percent?.toString() ?? ""} disabled={!overrideDropship} min="0" name="dropship_rate_percent" required={overrideDropship} step="0.01" type="number" />
-            </label>
-            <label className="settings-toggle settings-toggle--field">
-              <input defaultChecked={freightPolicy?.dropship_is_active ?? true} disabled={!overrideDropship} name="dropship_is_active" type="checkbox" />
-              Active Dropship
             </label>
           </div>
         </fieldset>
@@ -98,16 +94,12 @@ export function EditDropshipSettingsForm({
               <input checked={overrideResidential} name="override_residential_surcharge" onChange={(event) => setOverrideResidential(event.target.checked)} type="checkbox" />
               Use account-level Residential Surcharge override
             </label>
-            <p>When off, the admin Residential Surcharge Rate and Active setting apply.</p>
+            <p>When off, the admin Residential Surcharge Rate setting applies.</p>
           </div>
-          <div className="dropship-override-fields">
+          <div className="dropship-override-fields dropship-override-fields--single">
             <label>
               Residential Surcharge Rate (%)
               <input defaultValue={freightPolicy?.residential_surcharge_rate_percent?.toString() ?? ""} disabled={!overrideResidential} min="0" name="residential_surcharge_rate_percent" required={overrideResidential} step="0.01" type="number" />
-            </label>
-            <label className="settings-toggle settings-toggle--field">
-              <input defaultChecked={freightPolicy?.residential_surcharge_is_active ?? false} disabled={!overrideResidential} name="residential_surcharge_is_active" type="checkbox" />
-              Surcharge Active
             </label>
           </div>
         </fieldset>

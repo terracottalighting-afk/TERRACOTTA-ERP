@@ -730,6 +730,11 @@ input {
   grid-template-columns: minmax(0, 1fr) minmax(180px, 0.4fr);
 }
 
+.dropship-override-fields--single {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 640px;
+}
+
 .dropship-override-fields > label:not(.settings-toggle),
 .dropship-level-field label {
   color: var(--muted);

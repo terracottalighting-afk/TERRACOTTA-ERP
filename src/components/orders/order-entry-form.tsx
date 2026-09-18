@@ -31,6 +31,7 @@ export type OrderShipToOption = {
 };
 
 export type OrderTerritoryOption = {
+  agencies: { id: string; name: string }[];
   agencyId: string | null;
   agencyCommissionRate: number | null;
   agencyName: string | null;
@@ -71,6 +72,7 @@ type OrderConfirmation = {
   shipToAddress: string;
   shipToContact: string;
   shipToName: string;
+  isResidentialAddress: boolean;
 };
 
 type ManualShipTo = {
@@ -215,6 +217,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
     ? Math.round(subtotal * (dropshipSettings.ratePercent / 100) * 100) / 100
     : 0;
   const selectedTerritory = territories.find((territory) => territory.id === commissionSelection.territoryId);
+  const selectedAgency = selectedTerritory?.agencies.find((agency) => agency.id === commissionSelection.agencyId);
   const selectedAgencyReps = salesReps.filter((rep) => rep.agencyId === commissionSelection.agencyId);
   const selectedSalesRep = selectedAgencyReps.find((rep) => rep.id === commissionSelection.salesRepId);
 
@@ -235,8 +238,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
   }
 
   function selectCommissionTerritory(territoryId: string) {
-    const territory = territories.find((option) => option.id === territoryId);
-    setCommissionSelection({ agencyId: territory?.agencyId ?? "", salesRepId: "", territoryId });
+    setCommissionSelection({ agencyId: "", salesRepId: "", territoryId });
     setCommissionRate(defaultCommissionRate(territoryId));
     setHasCommissionOverride(true);
   }
@@ -322,13 +324,16 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
       shipToName: isDropship
         ? String(formData.get("dropship_name") ?? "").trim()
         : selectedLocation?.name ?? "Not set",
+      isResidentialAddress: formData.get("dropship_residential_address") === "on",
     });
-    const nextCommissionSelection = commissionDefaultsForLocation(locationId);
-    setCommissionSelection(nextCommissionSelection);
-    setCommissionRate(defaultCommissionRate(nextCommissionSelection.territoryId));
-    setPayCommission(true);
-    setHasCommissionOverride(false);
-    setIsEditingCommission(false);
+    if (!isDropship) {
+      const nextCommissionSelection = commissionDefaultsForLocation(locationId);
+      setCommissionSelection(nextCommissionSelection);
+      setCommissionRate(defaultCommissionRate(nextCommissionSelection.territoryId));
+      setPayCommission(true);
+      setHasCommissionOverride(false);
+      setIsEditingCommission(false);
+    }
   }
 
   function returnToEditor(sectionId?: string) {
@@ -497,6 +502,31 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
               Email
               <input name="dropship_email" onChange={(event) => updateManualShipTo("email", event.target.value)} type="email" value={manualShipTo.email} />
             </label>
+            <label>
+              Territory
+              <select onChange={(event) => selectCommissionTerritory(event.target.value)} value={commissionSelection.territoryId}>
+                <option value="">Not Assigned</option>
+                {territories.map((territory) => <option key={territory.id} value={territory.id}>{territory.name}</option>)}
+              </select>
+            </label>
+            <label>
+              Sales Agency
+              <select disabled={!commissionSelection.territoryId} onChange={(event) => { setCommissionSelection((current) => ({ ...current, agencyId: event.target.value, salesRepId: "" })); setHasCommissionOverride(true); }} value={commissionSelection.agencyId}>
+                <option value="">Not Assigned</option>
+                {selectedTerritory?.agencies.map((agency) => <option key={agency.id} value={agency.id}>{agency.name}</option>)}
+              </select>
+            </label>
+            <label>
+              Sales Rep
+              <select disabled={!commissionSelection.agencyId} onChange={(event) => { setCommissionSelection((current) => ({ ...current, salesRepId: event.target.value })); setHasCommissionOverride(true); }} value={commissionSelection.salesRepId}>
+                <option value="">Not Assigned</option>
+                {selectedAgencyReps.map((rep) => <option key={rep.id} value={rep.id}>{rep.name}</option>)}
+              </select>
+            </label>
+            <label className="checkbox-label">
+              <input name="dropship_residential_address" type="checkbox" />
+              Residential Address
+            </label>
         </div>
       </fieldset>
 
@@ -615,7 +645,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
 
           <article className="data-section">
             <div className="section-title"><h3>Ship-to</h3><button className="text-action text-action--button" onClick={() => returnToEditor("order-ship-to")} type="button">Edit</button></div>
-            <div className="detail-grid detail-grid--inside"><article className="info-panel"><dl><div><dt>{isDropship ? "Manual Ship-to" : "Saved Shipping Address"}</dt><dd>{confirmation.shipToName}</dd></div><div><dt>Address</dt><dd>{confirmation.shipToAddress}</dd></div><div><dt>Contact</dt><dd>{confirmation.shipToContact || "Not set"}</dd></div></dl></article></div>
+            <div className="detail-grid detail-grid--inside"><article className="info-panel"><dl><div><dt>{isDropship ? "Manual Ship-to" : "Saved Shipping Address"}</dt><dd>{confirmation.shipToName}</dd></div><div><dt>Address</dt><dd>{confirmation.shipToAddress}</dd></div><div><dt>Contact</dt><dd>{confirmation.shipToContact || "Not set"}</dd></div>{isDropship ? <div><dt>Residential Address</dt><dd>{confirmation.isResidentialAddress ? "Yes" : "No"}</dd></div> : null}</dl></article></div>
           </article>
 
           <article className="data-section">
@@ -623,13 +653,13 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
             {isEditingCommission ? (
               <div className="detail-grid detail-grid--inside">
                 <label>Territory<select onChange={(event) => selectCommissionTerritory(event.target.value)} value={commissionSelection.territoryId}><option value="">Not assigned</option>{territories.map((territory) => <option key={territory.id} value={territory.id}>{territory.name}</option>)}</select></label>
-                <label>Sales Agency<select disabled={!commissionSelection.territoryId} onChange={(event) => { setCommissionSelection((current) => ({ ...current, agencyId: event.target.value, salesRepId: "" })); setHasCommissionOverride(true); }} value={commissionSelection.agencyId}><option value="">Not assigned</option>{selectedTerritory?.agencyId ? <option value={selectedTerritory.agencyId}>{selectedTerritory.agencyName ?? "Assigned sales agency"}</option> : null}</select></label>
+                <label>Sales Agency<select disabled={!commissionSelection.territoryId} onChange={(event) => { setCommissionSelection((current) => ({ ...current, agencyId: event.target.value, salesRepId: "" })); setHasCommissionOverride(true); }} value={commissionSelection.agencyId}><option value="">Not assigned</option>{selectedTerritory?.agencies.map((agency) => <option key={agency.id} value={agency.id}>{agency.name}</option>)}</select></label>
                 <label>Sales Rep<select disabled={!commissionSelection.agencyId} onChange={(event) => { setCommissionSelection((current) => ({ ...current, salesRepId: event.target.value })); setHasCommissionOverride(true); }} value={commissionSelection.salesRepId}><option value="">Not assigned</option>{selectedAgencyReps.map((rep) => <option key={rep.id} value={rep.id}>{rep.name}</option>)}</select></label>
                 <label className="inline-checkbox">Pay Commission<input checked={payCommission} onChange={(event) => setPayCommission(event.target.checked)} type="checkbox" /></label>
                 {payCommission ? <label>Commission Rate (%)<input disabled={!commissionSelection.agencyId} max="100" min="0" onChange={(event) => setCommissionRate(event.target.value)} step="0.01" type="number" value={commissionRate} /></label> : null}
               </div>
             ) : (
-              <div className="detail-grid detail-grid--inside"><article className="info-panel"><dl><div><dt>Territory</dt><dd>{selectedTerritory?.name ?? "Not assigned"}</dd></div><div><dt>Sales Agency</dt><dd>{selectedTerritory?.agencyName ?? "Not assigned"}</dd></div><div><dt>Sales Rep</dt><dd>{selectedSalesRep?.name ?? "Not assigned"}</dd></div><div><dt>Pay Commission</dt><dd>{payCommission ? "Yes" : "No"}</dd></div>{payCommission ? <div><dt>Commission Rate</dt><dd>{commissionRate ? `${commissionRate}%` : "Not assigned"}</dd></div> : null}</dl></article></div>
+              <div className="detail-grid detail-grid--inside"><article className="info-panel"><dl><div><dt>Territory</dt><dd>{selectedTerritory?.name ?? "Not assigned"}</dd></div><div><dt>Sales Agency</dt><dd>{selectedAgency?.name ?? "Not assigned"}</dd></div><div><dt>Sales Rep</dt><dd>{selectedSalesRep?.name ?? "Not assigned"}</dd></div><div><dt>Pay Commission</dt><dd>{payCommission ? "Yes" : "No"}</dd></div>{payCommission ? <div><dt>Commission Rate</dt><dd>{commissionRate ? `${commissionRate}%` : "Not assigned"}</dd></div> : null}</dl></article></div>
             )}
           </article>
 

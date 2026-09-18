@@ -2915,23 +2915,25 @@ async function createSalesOrderAction(formData: FormData) {
       resolvedSalesRepId = null;
     } else {
       const coverageOptions = await getLocationCoverageOptions(territoryOverrideId);
-      const selectedAgencyId =
-        salesRepAgencyId ??
-        salesRepAgencyOverrideId ??
-        (coverageOptions.agencies.length === 1
-          ? coverageOptions.agencies[0].id
-          : null);
+      const selectedAgencyId = salesRepAgencyId ?? salesRepAgencyOverrideId;
       const selectedAgency = selectedAgencyId
         ? coverageOptions.agencies.find((agency) => agency.id === selectedAgencyId)
         : null;
-      if (!selectedAgency) {
+      if (selectedAgencyId && !selectedAgency) {
         redirect(
           `${fallbackUrl}&error=${encodeURIComponent("Choose a sales agency that covers the selected territory.")}`,
         );
       }
-      const agencyReps = coverageOptions.reps.filter(
-        (rep) => rep.agencyId === selectedAgency.id,
-      );
+      if (!selectedAgency && salesRepOverrideId) {
+        redirect(
+          `${fallbackUrl}&error=${encodeURIComponent("Choose a sales agency before selecting a sales rep.")}`,
+        );
+      }
+      const agencyReps = selectedAgency
+        ? coverageOptions.reps.filter(
+            (rep) => rep.agencyId === selectedAgency.id,
+          )
+        : [];
       const selectedRep = salesRepOverrideId
         ? agencyReps.find((rep) => rep.id === salesRepOverrideId)
         : null;
@@ -2941,7 +2943,7 @@ async function createSalesOrderAction(formData: FormData) {
         );
       }
       resolvedTerritoryId = territoryOverrideId;
-      resolvedSalesRepAgencyId = selectedAgency.id;
+      resolvedSalesRepAgencyId = selectedAgency?.id ?? null;
       resolvedSalesRepId = salesRepAgencyId ? null : selectedRep?.id ?? null;
     }
   }
@@ -3031,6 +3033,8 @@ async function createSalesOrderAction(formData: FormData) {
           textValue(formData, "dropship_email") ||
           account.purchase_email ||
           null,
+        is_residential_address:
+          formData.get("dropship_residential_address") === "on",
       }
     : {
         ship_to_display_name: savedLocation!.location_name,
@@ -11193,6 +11197,15 @@ async function getOrderEntryData(customerId: string) {
   const agencyById = new Map(
     (agenciesResult.data ?? []).map((agency) => [agency.id, agency]),
   );
+  const agenciesByTerritory = new Map<string, { id: string; name: string }[]>();
+  for (const assignment of territoryAssignmentsResult.data ?? []) {
+    const agency = agencyById.get(assignment.sales_rep_agency_id);
+    if (!agency) continue;
+    agenciesByTerritory.set(assignment.territory_id, [
+      ...(agenciesByTerritory.get(assignment.territory_id) ?? []),
+      { id: agency.id, name: agency.name },
+    ]);
+  }
   const territories: OrderTerritoryOption[] = (territoriesResult.data ?? [])
     .map((territory) => {
       const locationAssignment = (locationAssignments ?? []).find(
@@ -11203,6 +11216,7 @@ async function getOrderEntryData(customerId: string) {
         territoryAgencyByTerritory.get(territory.id) ??
         null;
       return {
+        agencies: agenciesByTerritory.get(territory.id) ?? [],
         agencyId,
         agencyCommissionRate: agencyId
           ? Number(agencyById.get(agencyId)?.commission_default_percent ?? 0)

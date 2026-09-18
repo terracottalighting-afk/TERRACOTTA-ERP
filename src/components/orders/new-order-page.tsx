@@ -17,6 +17,7 @@ type OrderEntryData = {
     } | null;
     name: string;
     dropshipSettings: {
+      freightTerms: "prepaid" | "collect";
       isActive: boolean;
       ratePercent: number;
       residentialSurchargeActive: boolean;

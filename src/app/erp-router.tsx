@@ -374,6 +374,7 @@ type SalesOrderDetail = SalesOrder & {
   subtotal_amount: number;
   tax_amount: number;
   freight_amount: number;
+  ground_freight_terms_snapshot: string;
   notes: string | null;
   lines: {
     brand_name_snapshot: string;
@@ -2522,13 +2523,14 @@ function defaultFreightCharge(
 }
 
 type DropshipSettings = {
+  freightTerms: "prepaid" | "collect";
   isActive: boolean;
   ratePercent: number;
   residentialSurchargeActive: boolean;
   residentialSurchargeRatePercent: number;
 };
 
-async function getDropshipSettings(): Promise<DropshipSettings> {
+async function getDropshipSettings(): Promise<Omit<DropshipSettings, "freightTerms">> {
   const { data, error } = await createSupabaseUntypedAdminClient()
     .from("system_setting")
     .select("setting_value")
@@ -2555,7 +2557,7 @@ async function resolveDropshipSettingsForCustomer(
     getDropshipSettings(),
     supabase
       .from("customer_freight_policy")
-      .select("dropship_freight_level_id, dropship_freight_allowance_amount, dropship_freight_rate_percent, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent")
+      .select("freight_terms, dropship_freight_terms, dropship_freight_level_id, dropship_freight_allowance_amount, dropship_freight_rate_percent, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent")
       .eq("customer_account_id", customerId)
       .is("customer_location_id", null)
       .eq("is_active", true)
@@ -2608,6 +2610,12 @@ async function resolveDropshipSettingsForCustomer(
 
   return {
     freightLevel,
+    freightTerms:
+      policy?.dropship_freight_terms === "collect" || policy?.dropship_freight_terms === "prepaid"
+        ? policy.dropship_freight_terms
+        : policy?.freight_terms === "collect" || policy?.freight_terms === "prepaid"
+          ? policy.freight_terms
+          : "prepaid",
     isActive: policy?.dropship_is_active ?? systemSettings.isActive,
     ratePercent: policy?.dropship_rate_percent === null || policy?.dropship_rate_percent === undefined
       ? systemSettings.ratePercent
@@ -2623,13 +2631,13 @@ async function resolveDropshipSettingsForCustomer(
 function dropshipFee(
   amount: number,
   isDropship: boolean,
-  settings: DropshipSettings,
+  settings: Omit<DropshipSettings, "freightTerms">,
 ) {
   if (!isDropship || !settings.isActive) return 0;
   return Math.round(amount * (settings.ratePercent / 100) * 100) / 100;
 }
 
-function residentialSurcharge(amount: number, isResidentialDropship: boolean, settings: DropshipSettings) {
+function residentialSurcharge(amount: number, isResidentialDropship: boolean, settings: Omit<DropshipSettings, "freightTerms">) {
   if (!isResidentialDropship || !settings.residentialSurchargeActive) return 0;
   return Math.round(amount * (settings.residentialSurchargeRatePercent / 100) * 100) / 100;
 }
@@ -2985,7 +2993,9 @@ async function createSalesOrderAction(formData: FormData) {
         accountResult.data.account_type_id,
         locationId,
       );
-  const defaultFreightAmount = defaultFreightCharge(
+  const dropshipFreightTerms = dropshipSettings?.freightTerms ?? "prepaid";
+  const shouldChargeCustomerFreight = !isDropship || dropshipFreightTerms === "prepaid";
+  const defaultFreightAmount = shouldChargeCustomerFreight ? defaultFreightCharge(
     pricedLines.reduce(
       (sum, line) =>
         sum +
@@ -2995,7 +3005,7 @@ async function createSalesOrderAction(formData: FormData) {
       0,
     ),
     defaultFreightLevel,
-  );
+  ) : 0;
   let defaultDropshipFee = 0;
   let residentialSurchargeAmount = 0;
   let residentialSurchargeRatePercent = 0;
@@ -3005,7 +3015,7 @@ async function createSalesOrderAction(formData: FormData) {
       accountResult.data.account_type_id,
     );
     residentialSurchargeRatePercent = settings.residentialSurchargeRatePercent;
-    defaultDropshipFee = dropshipFee(
+    defaultDropshipFee = shouldChargeCustomerFreight ? dropshipFee(
       pricedLines.reduce(
         (sum, line) =>
           sum +
@@ -3016,12 +3026,12 @@ async function createSalesOrderAction(formData: FormData) {
       ),
       isDropship,
       settings,
-    );
-    residentialSurchargeAmount = residentialSurcharge(
+    ) : 0;
+    residentialSurchargeAmount = shouldChargeCustomerFreight ? residentialSurcharge(
       pricedLines.reduce((sum, line) => sum + Number(line.quantity) * Number(line.unitPrice) * (1 - Number(line.discountPercent) / 100), 0),
       isResidentialDropship,
       settings,
-    );
+    ) : 0;
     defaultDropshipFee += residentialSurchargeAmount;
   } catch (dropshipError) {
     redirect(
@@ -3152,11 +3162,6 @@ async function createSalesOrderAction(formData: FormData) {
       : Number(billingResult.data.credit_limit);
   const onCreditHold = currentBalance > creditLimit;
   const freight = freightResult.data;
-  const dropshipFreightTerms = freight?.dropship_freight_terms === "collect" || freight?.dropship_freight_terms === "prepaid"
-    ? freight.dropship_freight_terms
-    : freight?.freight_terms === "collect" || freight?.freight_terms === "prepaid"
-      ? freight.freight_terms
-      : "prepaid";
   const shipToSnapshot = isDropship
     ? {
         ship_to_display_name: dropshipName,
@@ -11655,6 +11660,7 @@ async function getOrderEntryData(customerId: string) {
     customer: {
       ...customerResult.data,
       dropshipSettings: {
+        freightTerms: resolvedDropshipSettings.freightTerms,
         isActive: resolvedDropshipSettings.isActive,
         ratePercent: resolvedDropshipSettings.ratePercent,
         residentialSurchargeActive: resolvedDropshipSettings.residentialSurchargeActive,
@@ -11807,7 +11813,7 @@ async function getSalesOrderDetail(
     supabase
       .from("sales_order")
       .select(
-        "id, customer_account_id, customer_location_id, sales_order_number, customer_po_number, customer_name_snapshot, order_date, requested_ship_date, order_source, order_type, status, shipping_readiness_status, credit_hold_status, is_dropship, ship_to_type, ship_to_display_name_snapshot, ship_to_snapshot_json, bill_to_snapshot_json, shipping_priority, sales_rep_agency_id_snapshot, sales_rep_id_snapshot, territory_id_snapshot, subtotal_amount, freight_amount, dropship_fee_amount, tax_amount, total_amount, notes",
+        "id, customer_account_id, customer_location_id, sales_order_number, customer_po_number, customer_name_snapshot, order_date, requested_ship_date, order_source, order_type, status, shipping_readiness_status, credit_hold_status, is_dropship, ship_to_type, ship_to_display_name_snapshot, ship_to_snapshot_json, bill_to_snapshot_json, shipping_priority, sales_rep_agency_id_snapshot, sales_rep_id_snapshot, territory_id_snapshot, subtotal_amount, freight_amount, dropship_fee_amount, ground_freight_terms_snapshot, tax_amount, total_amount, notes",
       )
       .eq("id", orderId)
       .maybeSingle(),
@@ -12337,7 +12343,7 @@ async function getInvoiceDocument(invoiceId: string) {
       .maybeSingle(),
     supabase
       .from("sales_order")
-      .select("id, customer_po_number")
+      .select("id, customer_po_number, ground_freight_terms_snapshot")
       .eq("id", invoice.sales_order_id)
       .maybeSingle(),
   ]);

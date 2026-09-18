@@ -15,6 +15,7 @@ type OrderAcknowledgement = {
   customer_po_number: string | null;
   dropship_fee_amount: number;
   freight_amount: number;
+  ground_freight_terms_snapshot: string;
   id: string;
   lines: {
     brand_name_snapshot: string;
@@ -65,6 +66,7 @@ export async function OrderAcknowledgementPage({
   }
   const residentialSurcharge = Number(order.ship_to_snapshot_json?.residential_surcharge_amount ?? 0);
   const baseDropshipFee = Math.max(0, Number(order.dropship_fee_amount ?? 0) - residentialSurcharge);
+  const isCollect = order.ground_freight_terms_snapshot === "collect";
 
   const recipientEmail =
     snapshotEmail(order.ship_to_snapshot_json) ??
@@ -231,12 +233,12 @@ export async function OrderAcknowledgementPage({
             })}
           </tbody>
         </table>
-        <div className="quote-document-total">
+        {!isCollect ? <div className="quote-document-total">
           <span>Estimated Freight Charge</span>
           <strong>{money(Number(order.freight_amount ?? 0))}</strong>
-        </div>
-        {residentialSurcharge > 0 ? <div className="quote-document-total"><span>Residential Surcharge</span><strong>{money(residentialSurcharge)}</strong></div> : null}
-        {baseDropshipFee > 0 ? (
+        </div> : null}
+        {!isCollect && residentialSurcharge > 0 ? <div className="quote-document-total"><span>Residential Surcharge</span><strong>{money(residentialSurcharge)}</strong></div> : null}
+        {!isCollect && baseDropshipFee > 0 ? (
           <div className="quote-document-total">
             <span>Dropship Fee</span>
             <strong>{money(baseDropshipFee)}</strong>

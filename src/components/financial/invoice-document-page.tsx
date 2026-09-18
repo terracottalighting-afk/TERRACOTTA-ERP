@@ -40,6 +40,7 @@ type InvoiceDocumentDetail = {
   }[];
   salesOrder: {
     customer_po_number: string;
+    ground_freight_terms_snapshot: string;
     id: string;
   } | null;
 };
@@ -71,6 +72,7 @@ export async function InvoiceDocumentPage({
   const { customer, invoice, lines, salesOrder } = detail;
   const residentialSurcharge = Number(snapshotRecord(invoice.ship_to_snapshot_json)?.residential_surcharge_amount ?? 0);
   const baseDropshipFee = Math.max(0, Number(invoice.dropship_fee_amount ?? 0) - residentialSurcharge);
+  const isCollect = salesOrder?.ground_freight_terms_snapshot === "collect";
 
   return (
     <section className="quote-document-page">
@@ -173,12 +175,12 @@ export async function InvoiceDocumentPage({
             <dt>Product Total</dt>
             <dd>{money(Number(invoice.subtotal_amount))}</dd>
           </div>
-          <div>
+          {!isCollect ? <div>
             <dt>Freight</dt>
             <dd>{money(Number(invoice.freight_amount))}</dd>
-          </div>
-          {residentialSurcharge > 0 ? <div><dt>Residential Surcharge</dt><dd>{money(residentialSurcharge)}</dd></div> : null}
-          {baseDropshipFee > 0 ? (
+          </div> : null}
+          {!isCollect && residentialSurcharge > 0 ? <div><dt>Residential Surcharge</dt><dd>{money(residentialSurcharge)}</dd></div> : null}
+          {!isCollect && baseDropshipFee > 0 ? (
             <div>
               <dt>Drop-ship Fee</dt>
               <dd>{money(baseDropshipFee)}</dd>

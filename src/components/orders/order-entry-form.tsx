@@ -52,6 +52,7 @@ type DefaultFreightLevel = {
 };
 
 type DropshipSettings = {
+  freightTerms: "prepaid" | "collect";
   isActive: boolean;
   ratePercent: number;
   residentialSurchargeActive: boolean;
@@ -219,6 +220,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
   const defaultFreightCharge = selectedFreightLevel && subtotal < selectedFreightLevel.freeFreightAllowance
     ? Math.round(subtotal * (selectedFreightLevel.freightRatePercent / 100))
     : 0;
+  const chargesCustomerFreight = !isDropship || dropshipSettings.freightTerms === "prepaid";
   const estimatedDropshipFee = isDropship && dropshipSettings.isActive
     ? Math.round(subtotal * (dropshipSettings.ratePercent / 100) * 100) / 100
     : 0;
@@ -676,10 +678,10 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
             <div className="section-title"><h3>Order Lines</h3><button className="text-action text-action--button" onClick={() => returnToEditor("order-products")} type="button">Edit</button></div>
             <div className="table-wrap"><table className="data-table"><thead><tr><th>SKU</th><th>Product</th><th>Brand</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Line Total</th></tr></thead><tbody>{lines.map((line) => <tr key={line.id}><td>{line.sku}</td><td>{line.name}</td><td>{line.brandName}</td><td>{line.quantity}</td><td>{money.format(line.unitPrice)}</td><td>{line.discountPercent}%</td><td>{money.format(line.quantity * line.unitPrice * (1 - line.discountPercent / 100))}</td></tr>)}</tbody></table></div>
             <div className="order-total"><span>Order Subtotal</span><strong>{money.format(subtotal)}</strong></div>
-            {selectedFreightLevel ? <div className="order-total"><span>Default Freight Charge ({selectedFreightLevel.levelName}: FFA {money.format(selectedFreightLevel.freeFreightAllowance)}, {selectedFreightLevel.freightRatePercent}%)</span><strong>{defaultFreightCharge === 0 ? "Free Freight" : wholeMoney.format(defaultFreightCharge)}</strong></div> : null}
-            {isDropship && isResidentialAddress && dropshipSettings.residentialSurchargeActive ? <div className="order-total"><span>Residential Surcharge ({dropshipSettings.residentialSurchargeRatePercent}%)</span><strong>{money.format(estimatedResidentialSurcharge)}</strong></div> : null}
-            {isDropship && dropshipSettings.isActive ? <div className="order-total"><span>Dropship Fee ({dropshipSettings.ratePercent}%)</span><strong>{money.format(estimatedDropshipFee)}</strong></div> : null}
-            <div className="order-total"><span>Estimated Order Total</span><strong>{money.format(subtotal + defaultFreightCharge + estimatedDropshipFee + estimatedResidentialSurcharge)}</strong></div>
+            {chargesCustomerFreight && selectedFreightLevel ? <div className="order-total"><span>Default Freight Charge ({selectedFreightLevel.levelName}: FFA {money.format(selectedFreightLevel.freeFreightAllowance)}, {selectedFreightLevel.freightRatePercent}%)</span><strong>{defaultFreightCharge === 0 ? "Free Freight" : wholeMoney.format(defaultFreightCharge)}</strong></div> : null}
+            {chargesCustomerFreight && isDropship && isResidentialAddress && dropshipSettings.residentialSurchargeActive ? <div className="order-total"><span>Residential Surcharge ({dropshipSettings.residentialSurchargeRatePercent}%)</span><strong>{money.format(estimatedResidentialSurcharge)}</strong></div> : null}
+            {chargesCustomerFreight && isDropship && dropshipSettings.isActive ? <div className="order-total"><span>Dropship Fee ({dropshipSettings.ratePercent}%)</span><strong>{money.format(estimatedDropshipFee)}</strong></div> : null}
+            <div className="order-total"><span>Estimated Order Total</span><strong>{money.format(subtotal + (chargesCustomerFreight ? defaultFreightCharge + estimatedDropshipFee + estimatedResidentialSurcharge : 0))}</strong></div>
           </article>
 
           <article className="data-section">

@@ -447,14 +447,24 @@ export async function ShipmentCreatePage({
                   <dt>Actual Freight Cost</dt>
                   <dd>{money(shipment.freight_cost)}</dd>
                 </div>
-                <div>
-                  <dt>Customer Freight Charge</dt>
-                  <dd>
-                    {Number(packingList?.shipping_fee ?? 0) === 0
-                      ? "Free Freight"
-                      : money(packingList?.shipping_fee)}
-                  </dd>
-                </div>
+                {shipment.carrier_account_number_snapshot ? (
+                  <div>
+                    <dt>Carrier Billing</dt>
+                    <dd>
+                      Customer carrier account: {shipment.carrier_account_number_snapshot}
+                    </dd>
+                  </div>
+                ) : null}
+                {order.ground_freight_terms_snapshot === "prepaid" ? (
+                  <div>
+                    <dt>Customer Freight Charge</dt>
+                    <dd>
+                      {Number(packingList?.shipping_fee ?? 0) === 0
+                        ? "Free Freight"
+                        : money(packingList?.shipping_fee)}
+                    </dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt>Master Tracking No.</dt>
                   <dd>{shipment.master_tracking_number || "Not set"}</dd>

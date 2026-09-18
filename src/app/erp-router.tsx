@@ -2666,6 +2666,7 @@ async function shipmentFreightCharge(
   order: {
     customer_account_id: string;
     customer_location_id: string | null;
+    ground_freight_terms_snapshot?: string | null;
     is_dropship: boolean;
     subtotal_amount: number | string | null;
   },
@@ -2675,6 +2676,9 @@ async function shipmentFreightCharge(
     unitPrice: number | string;
   }[],
 ) {
+  if (order.ground_freight_terms_snapshot !== undefined && order.ground_freight_terms_snapshot !== "prepaid") {
+    return 0;
+  }
   const supabase = createSupabaseUntypedAdminClient();
   const { data: account, error } = await supabase
     .from("customer_account")
@@ -2720,7 +2724,7 @@ async function refreshPackingListFreightCharge(
     await Promise.all([
       supabase
         .from("sales_order")
-        .select("customer_account_id, customer_location_id, is_dropship, ship_to_snapshot_json, subtotal_amount")
+        .select("customer_account_id, customer_location_id, ground_freight_terms_snapshot, is_dropship, ship_to_snapshot_json, subtotal_amount")
         .eq("id", orderId)
         .maybeSingle(),
       supabase
@@ -6053,6 +6057,15 @@ async function updateShipmentDetailsAction(formData: FormData) {
   }
 
   const supabase = createSupabaseAdminClient();
+  const { data: order, error: orderError } = await supabase
+    .from("sales_order")
+    .select("ground_freight_terms_snapshot")
+    .eq("id", orderId)
+    .maybeSingle();
+  if (orderError || !order)
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent(orderError?.message ?? "The order freight terms could not be loaded.")}`,
+    );
   const { error } = await supabase
     .from("freight_shipment")
     .update({
@@ -6078,6 +6091,9 @@ async function updateShipmentDetailsAction(formData: FormData) {
       shipping_type_snapshot: shipmentCarrier!.shippingType as unknown as
         | Database["public"]["Enums"]["shipping_type"]
         | null,
+      ...(order!.ground_freight_terms_snapshot === "prepaid"
+        ? {}
+        : { shipping_fee: 0 }),
       tracking_number: textValue(formData, "master_tracking_number") || null,
     })
     .eq("freight_shipment_id", shipmentId)

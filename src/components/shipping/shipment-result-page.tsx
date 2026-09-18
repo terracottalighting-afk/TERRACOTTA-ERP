@@ -11,6 +11,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type ShipmentResultOrder = {
   customer_name_snapshot: string;
+  ground_freight_terms_snapshot: string;
   id: string;
   ship_to_display_name_snapshot: string;
 };
@@ -34,7 +35,7 @@ export async function ShipmentResultPage({
       supabase
         .from("freight_shipment")
         .select(
-          "id, freight_shipment_number, status, carrier, shipping_type, master_tracking_number, freight_cost, notes, ship_to_snapshot_json",
+          "id, freight_shipment_number, status, carrier, carrier_account_number_snapshot, shipping_type, master_tracking_number, freight_cost, notes, ship_to_snapshot_json",
         )
         .eq("id", shipmentId)
         .maybeSingle(),
@@ -143,12 +144,19 @@ export async function ShipmentResultPage({
           <p>
             <strong>Actual Freight Cost:</strong> {money(shipment.freight_cost)}
           </p>
-          <p>
-            <strong>Customer Freight Charge:</strong>{" "}
-            {Number(packingList.shipping_fee ?? 0) === 0
-              ? "Free Freight"
-              : money(packingList.shipping_fee)}
-          </p>
+          {shipment.carrier_account_number_snapshot ? (
+            <p>
+              <strong>Carrier Billing:</strong> Customer carrier account {shipment.carrier_account_number_snapshot}
+            </p>
+          ) : null}
+          {order?.ground_freight_terms_snapshot === "prepaid" ? (
+            <p>
+              <strong>Customer Freight Charge:</strong>{" "}
+              {Number(packingList.shipping_fee ?? 0) === 0
+                ? "Free Freight"
+                : money(packingList.shipping_fee)}
+            </p>
+          ) : null}
           <p>
             <strong>Master Tracking No.:</strong>{" "}
             {shipment.master_tracking_number || "Not set"}

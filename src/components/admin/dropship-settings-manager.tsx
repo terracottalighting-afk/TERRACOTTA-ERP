@@ -1,3 +1,8 @@
+"use client";
+
+import { useState } from "react";
+import { StatusBadge } from "@/components/ui";
+
 export function DropshipSettingsManager({
   error,
   isActive,
@@ -9,6 +14,8 @@ export function DropshipSettingsManager({
   ratePercent: number;
   saveAction: (formData: FormData) => void | Promise<void>;
 }) {
+  const [isEditing, setIsEditing] = useState(Boolean(error));
+
   return (
     <section className="product-settings-manager">
       <div className="section-title product-settings-title">
@@ -20,36 +27,57 @@ export function DropshipSettingsManager({
         </div>
       </div>
       {error ? <p className="form-error">{decodeURIComponent(error)}</p> : null}
-      <form action={saveAction} className="product-setting-editor">
-        <fieldset>
-          <legend>Dropship Fee</legend>
-          <div className="form-grid">
-            <label>
-              Dropship Rate (%)
-              <input
-                defaultValue={ratePercent}
-                min="0"
-                name="dropship_rate_percent"
-                required
-                step="0.01"
-                type="number"
-              />
-            </label>
-            <label className="checkbox-label">
-              <input defaultChecked={isActive} name="is_active_dropship" type="checkbox" />
-              Active Dropship
-            </label>
+      {isEditing ? (
+        <form action={saveAction} className="product-setting-editor">
+          <fieldset>
+            <legend>Edit Dropship Fee</legend>
+            <div className="form-grid">
+              <label>
+                Dropship Rate (%)
+                <input
+                  defaultValue={ratePercent}
+                  min="0"
+                  name="dropship_rate_percent"
+                  required
+                  step="0.01"
+                  type="number"
+                />
+              </label>
+              <label className="checkbox-label">
+                <input defaultChecked={isActive} name="is_active_dropship" type="checkbox" />
+                Active Dropship
+              </label>
+            </div>
+            <p className="fieldset-note">
+              When active, the fee is calculated from the order subtotal and from each shipment subtotal. Inactive settings do not add a Dropship Fee to new order acknowledgements or invoices.
+            </p>
+          </fieldset>
+          <div className="form-actions">
+            <button className="primary-action" type="submit">
+              Save Dropship Settings
+            </button>
+            <button className="secondary-action secondary-action--light" onClick={() => setIsEditing(false)} type="button">
+              Cancel
+            </button>
           </div>
-          <p className="fieldset-note">
-            When active, the fee is calculated from the order subtotal and from each shipment subtotal. Inactive settings do not add a Dropship Fee to new order acknowledgements or invoices.
-          </p>
-        </fieldset>
-        <div className="form-actions">
-          <button className="primary-action" type="submit">
-            Save Dropship Settings
-          </button>
+        </form>
+      ) : (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr><th>Setting</th><th>Value</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Dropship Rate</strong></td>
+                <td>{ratePercent}%</td>
+                <td><StatusBadge tone={isActive ? "good" : "warn"} value={isActive ? "Active" : "Inactive"} /></td>
+                <td><button className="text-action text-action--button" onClick={() => setIsEditing(true)} type="button">Edit</button></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-      </form>
+      )}
     </section>
   );
 }

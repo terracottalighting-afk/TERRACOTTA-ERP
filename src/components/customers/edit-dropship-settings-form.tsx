@@ -14,10 +14,12 @@ type FreightPolicy = {
   dropship_freight_level_id?: string | null;
   dropship_freight_allowance_amount?: number | null;
   dropship_freight_rate_percent?: number | null;
+  dropship_freight_terms?: string | null;
   dropship_is_active?: boolean | null;
   dropship_rate_percent?: number | null;
   residential_surcharge_is_active?: boolean | null;
   residential_surcharge_rate_percent?: number | null;
+  freight_terms?: string | null;
 };
 
 export function EditDropshipSettingsForm({
@@ -51,6 +53,10 @@ export function EditDropshipSettingsForm({
       ? "custom"
       : "");
   const [dropshipFreightLevel, setDropshipFreightLevel] = useState(initialFreightLevel);
+  const defaultDropshipFreightTerms = freightPolicy?.dropship_freight_terms ??
+    (freightPolicy?.freight_terms === "collect" || freightPolicy?.freight_terms === "prepaid"
+      ? freightPolicy.freight_terms
+      : "prepaid");
 
   return (
     <section className="dashboard-panel">
@@ -101,6 +107,20 @@ export function EditDropshipSettingsForm({
               Residential Surcharge Rate (%)
               <input defaultValue={freightPolicy?.residential_surcharge_rate_percent?.toString() ?? ""} disabled={!overrideResidential} min="0" name="residential_surcharge_rate_percent" required={overrideResidential} step="0.01" type="number" />
             </label>
+          </div>
+        </fieldset>
+
+        <fieldset className="dropship-override-panel">
+          <legend>Dropship Freight Terms</legend>
+          <div className="dropship-level-field">
+            <label>
+              Freight Terms
+              <select defaultValue={defaultDropshipFreightTerms} name="dropship_freight_terms">
+                <option value="prepaid">Prepay</option>
+                <option value="collect">Collect</option>
+              </select>
+            </label>
+            <p>Defaults from the account Freight Terms when it is Prepay or Collect. Customer Pickup is not available for Drop Ship orders.</p>
           </div>
         </fieldset>
 

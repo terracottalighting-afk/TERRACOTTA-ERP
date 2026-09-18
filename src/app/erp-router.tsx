@@ -506,6 +506,7 @@ type FreightPolicy = {
   dropship_freight_level_id?: string | null;
   dropship_freight_allowance_amount?: number | null;
   dropship_freight_rate_percent?: number | null;
+  dropship_freight_terms?: string | null;
   dropship_is_active?: boolean | null;
   dropship_rate_percent?: number | null;
   policy_name: string;
@@ -2849,7 +2850,7 @@ async function createSalesOrderAction(formData: FormData) {
     supabase
       .from("customer_freight_policy")
       .select(
-        "ltl_freight_terms, ground_freight_terms, default_ltl_carrier, default_ltl_carrier_account_number, default_ground_carrier, default_ground_carrier_account_number",
+        "freight_terms, ltl_freight_terms, ground_freight_terms, dropship_freight_terms, default_ltl_carrier, default_ltl_carrier_account_number, default_ground_carrier, default_ground_carrier_account_number",
       )
       .eq("customer_account_id", customerId)
       .eq("is_active", true)
@@ -3147,6 +3148,11 @@ async function createSalesOrderAction(formData: FormData) {
       : Number(billingResult.data.credit_limit);
   const onCreditHold = currentBalance > creditLimit;
   const freight = freightResult.data;
+  const dropshipFreightTerms = freight?.dropship_freight_terms === "collect" || freight?.dropship_freight_terms === "prepaid"
+    ? freight.dropship_freight_terms
+    : freight?.freight_terms === "collect" || freight?.freight_terms === "prepaid"
+      ? freight.freight_terms
+      : "prepaid";
   const shipToSnapshot = isDropship
     ? {
         ship_to_display_name: dropshipName,
@@ -3240,14 +3246,14 @@ async function createSalesOrderAction(formData: FormData) {
       ground_carrier_account_number_snapshot:
         freight?.default_ground_carrier_account_number ?? null,
       ground_carrier_snapshot: freight?.default_ground_carrier ?? null,
-      ground_freight_terms_snapshot: freight?.ground_freight_terms ?? "prepaid",
+      ground_freight_terms_snapshot: isDropship ? dropshipFreightTerms : freight?.ground_freight_terms ?? "prepaid",
       freight_amount: defaultFreightAmount,
       is_dropship: isDropship,
       legacy_account_id_snapshot: account.legacy_account_id,
       ltl_carrier_account_number_snapshot:
         freight?.default_ltl_carrier_account_number ?? null,
       ltl_carrier_snapshot: freight?.default_ltl_carrier ?? null,
-      ltl_freight_terms_snapshot: freight?.ltl_freight_terms ?? "prepaid",
+      ltl_freight_terms_snapshot: isDropship ? dropshipFreightTerms : freight?.ltl_freight_terms ?? "prepaid",
       notes,
       order_date: orderDate,
       order_source: orderSource as "manual",
@@ -9449,10 +9455,14 @@ async function updateCustomerDropshipSettingsAction(formData: FormData) {
   const dropshipRatePercent = Number(String(formData.get("dropship_rate_percent") ?? "").trim());
   const residentialRatePercent = Number(String(formData.get("residential_surcharge_rate_percent") ?? "").trim());
   const selectedDropshipFreightLevel = String(formData.get("dropship_freight_level_id") ?? "").trim();
+  const dropshipFreightTerms = String(formData.get("dropship_freight_terms") ?? "prepaid").trim();
   const dropshipFreightLevelId = selectedDropshipFreightLevel === "custom" ? null : selectedDropshipFreightLevel || null;
   const customDropshipFreightAllowance = Number(String(formData.get("custom_dropship_freight_allowance_amount") ?? "").trim());
   const customDropshipFreightRate = Number(String(formData.get("custom_dropship_freight_rate_percent") ?? "").trim());
   const isCustomDropshipFreightLevel = selectedDropshipFreightLevel === "custom";
+  if (!["prepaid", "collect"].includes(dropshipFreightTerms)) {
+    redirect(`${returnUrl}&error=${encodeURIComponent("Select Prepay or Collect for Dropship Freight Terms.")}`);
+  }
   if (overridesDropship && (!Number.isFinite(dropshipRatePercent) || dropshipRatePercent < 0)) {
     redirect(`${returnUrl}&error=${encodeURIComponent("Enter a valid Dropship Rate.")}`);
   }
@@ -9495,6 +9505,7 @@ async function updateCustomerDropshipSettingsAction(formData: FormData) {
       dropship_freight_level_id: dropshipFreightLevelId,
       dropship_freight_allowance_amount: isCustomDropshipFreightLevel ? customDropshipFreightAllowance : null,
       dropship_freight_rate_percent: isCustomDropshipFreightLevel ? customDropshipFreightRate : null,
+      dropship_freight_terms: dropshipFreightTerms as "prepaid" | "collect",
       dropship_is_active: overridesDropship ? true : null,
       dropship_rate_percent: overridesDropship ? dropshipRatePercent : null,
       residential_surcharge_is_active: overridesResidential ? true : null,
@@ -12409,7 +12420,7 @@ async function getDefaultFreightPolicy(customerId: string) {
   const { data, error } = await supabase
     .from("customer_freight_policy")
     .select(
-      "id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, freight_level_id, flat_rate_percent, default_ltl_carrier, default_ltl_carrier_account_number, default_ground_carrier, default_ground_carrier_account_number, dropship_freight_level_id, dropship_freight_allowance_amount, dropship_freight_rate_percent, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent",
+      "id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, freight_level_id, flat_rate_percent, default_ltl_carrier, default_ltl_carrier_account_number, default_ground_carrier, default_ground_carrier_account_number, dropship_freight_terms, dropship_freight_level_id, dropship_freight_allowance_amount, dropship_freight_rate_percent, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent",
     )
     .eq("customer_account_id", customerId)
     .is("customer_location_id", null)

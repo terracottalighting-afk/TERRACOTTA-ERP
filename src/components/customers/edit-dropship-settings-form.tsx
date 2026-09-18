@@ -12,6 +12,8 @@ type FreightLevelOption = {
 
 type FreightPolicy = {
   dropship_freight_level_id?: string | null;
+  dropship_freight_allowance_amount?: number | null;
+  dropship_freight_rate_percent?: number | null;
   dropship_is_active?: boolean | null;
   dropship_rate_percent?: number | null;
   residential_surcharge_is_active?: boolean | null;
@@ -41,6 +43,14 @@ export function EditDropshipSettingsForm({
     freightPolicy?.residential_surcharge_rate_percent !== null &&
       freightPolicy?.residential_surcharge_rate_percent !== undefined,
   );
+  const initialFreightLevel = freightPolicy?.dropship_freight_level_id ??
+    (freightPolicy?.dropship_freight_allowance_amount !== null &&
+    freightPolicy?.dropship_freight_allowance_amount !== undefined &&
+    freightPolicy?.dropship_freight_rate_percent !== null &&
+    freightPolicy?.dropship_freight_rate_percent !== undefined
+      ? "custom"
+      : "");
+  const [dropshipFreightLevel, setDropshipFreightLevel] = useState(initialFreightLevel);
 
   return (
     <section className="dashboard-panel">
@@ -107,17 +117,30 @@ export function EditDropshipSettingsForm({
           <div className="dropship-level-field">
             <label>
               Freight Level
-              <select defaultValue={freightPolicy?.dropship_freight_level_id ?? ""} name="dropship_freight_level_id">
+              <select name="dropship_freight_level_id" onChange={(event) => setDropshipFreightLevel(event.target.value)} value={dropshipFreightLevel}>
                 <option value="">Use Account Freight Level</option>
                 {freightLevels.map((level) => (
                   <option key={level.id} value={level.id}>
                     {level.levelName} - FFA ${level.freeFreightAllowance.toFixed(2)} / {level.freightRatePercent}%
                   </option>
                 ))}
+                <option value="custom">Custom</option>
               </select>
             </label>
             <p>Use a different level only when Dropship orders need a separate freight allowance or rate.</p>
           </div>
+          {dropshipFreightLevel === "custom" ? (
+            <div className="dropship-override-fields">
+              <label>
+                Custom FFA Amount
+                <input defaultValue={freightPolicy?.dropship_freight_allowance_amount?.toString() ?? ""} min="0" name="custom_dropship_freight_allowance_amount" required step="0.01" type="number" />
+              </label>
+              <label>
+                Custom Freight Rate (%)
+                <input defaultValue={freightPolicy?.dropship_freight_rate_percent?.toString() ?? ""} min="0" name="custom_dropship_freight_rate_percent" required step="0.01" type="number" />
+              </label>
+            </div>
+          ) : null}
         </fieldset>
 
         <div className="form-actions">

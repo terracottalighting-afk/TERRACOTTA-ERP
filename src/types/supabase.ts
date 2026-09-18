@@ -1811,6 +1811,8 @@ export type Database = {
           default_ltl_carrier: string | null
           default_ltl_carrier_account_number: string | null
           dropship_freight_level_id: string | null
+          dropship_freight_allowance_amount: number | null
+          dropship_freight_rate_percent: number | null
           dropship_is_active: boolean | null
           dropship_rate_percent: number | null
           flat_rate_percent: number | null
@@ -1841,6 +1843,8 @@ export type Database = {
           default_ltl_carrier?: string | null
           default_ltl_carrier_account_number?: string | null
           dropship_freight_level_id?: string | null
+          dropship_freight_allowance_amount?: number | null
+          dropship_freight_rate_percent?: number | null
           dropship_is_active?: boolean | null
           dropship_rate_percent?: number | null
           flat_rate_percent?: number | null
@@ -1871,6 +1875,8 @@ export type Database = {
           default_ltl_carrier?: string | null
           default_ltl_carrier_account_number?: string | null
           dropship_freight_level_id?: string | null
+          dropship_freight_allowance_amount?: number | null
+          dropship_freight_rate_percent?: number | null
           dropship_is_active?: boolean | null
           dropship_rate_percent?: number | null
           flat_rate_percent?: number | null

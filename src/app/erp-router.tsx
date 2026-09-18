@@ -504,6 +504,8 @@ type FreightPolicy = {
   customer_location_id?: string | null;
   freight_level_id?: string | null;
   dropship_freight_level_id?: string | null;
+  dropship_freight_allowance_amount?: number | null;
+  dropship_freight_rate_percent?: number | null;
   dropship_is_active?: boolean | null;
   dropship_rate_percent?: number | null;
   policy_name: string;
@@ -2548,7 +2550,7 @@ async function resolveDropshipSettingsForCustomer(
     getDropshipSettings(),
     supabase
       .from("customer_freight_policy")
-      .select("dropship_freight_level_id, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent")
+      .select("dropship_freight_level_id, dropship_freight_allowance_amount, dropship_freight_rate_percent, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent")
       .eq("customer_account_id", customerId)
       .is("customer_location_id", null)
       .eq("is_active", true)
@@ -2582,9 +2584,22 @@ async function resolveDropshipSettingsForCustomer(
         }
       : null;
   };
+  const hasCustomFreightLevel =
+    !policy?.dropship_freight_level_id &&
+    policy?.dropship_freight_allowance_amount !== null &&
+    policy?.dropship_freight_allowance_amount !== undefined &&
+    policy?.dropship_freight_rate_percent !== null &&
+    policy?.dropship_freight_rate_percent !== undefined;
   const freightLevel = policy?.dropship_freight_level_id
     ? await loadLevel(policy.dropship_freight_level_id)
-    : await resolveFreightLevelForCustomer(customerId, accountResult.data.account_type_id);
+    : hasCustomFreightLevel
+      ? {
+          id: `custom-dropship-${customerId}`,
+          level_name: "Custom",
+          free_freight_allowance: Number(policy.dropship_freight_allowance_amount),
+          freight_rate_percent: Number(policy.dropship_freight_rate_percent),
+        }
+      : await resolveFreightLevelForCustomer(customerId, accountResult.data.account_type_id);
 
   return {
     freightLevel,
@@ -9350,11 +9365,6 @@ async function updateFreightPolicyAction(formData: FormData) {
   };
   const freightTerms = freightTerm(formData.get("freight_terms"));
   const freightLevelId = optionalText("freight_level_id");
-  const overridesDropship = formData.get("override_dropship_settings") === "on";
-  const overridesResidential = formData.get("override_residential_surcharge") === "on";
-  const dropshipFreightLevelId = optionalText("dropship_freight_level_id");
-  const dropshipRatePercent = Number(optionalText("dropship_rate_percent"));
-  const residentialSurchargeRatePercent = Number(optionalText("residential_surcharge_rate_percent"));
   const isCustomFreightLevel = freightLevelId === "custom";
   const customFreightAllowance = Number(
     optionalText("custom_freight_allowance_amount"),
@@ -9370,23 +9380,6 @@ async function updateFreightPolicyAction(formData: FormData) {
     redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent("Enter a valid custom FFA amount and freight rate.")}`);
   }
   const freightAdmin = createSupabaseUntypedAdminClient();
-  if (overridesDropship && (!Number.isFinite(dropshipRatePercent) || dropshipRatePercent < 0)) {
-    redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent("Enter a valid Dropship Rate.")}`);
-  }
-  if (overridesResidential && (!Number.isFinite(residentialSurchargeRatePercent) || residentialSurchargeRatePercent < 0)) {
-    redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent("Enter a valid Residential Surcharge Rate.")}`);
-  }
-  if (dropshipFreightLevelId) {
-    const { data: dropshipLevel, error: dropshipLevelError } = await freightAdmin
-      .from("freight_level")
-      .select("id")
-      .eq("id", dropshipFreightLevelId)
-      .eq("is_active", true)
-      .maybeSingle();
-    if (dropshipLevelError || !dropshipLevel) {
-      redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent(dropshipLevelError?.message ?? "The selected Dropship Freight Level is no longer active.")}`);
-    }
-  }
   const selectedFreightLevelResult = freightTerms === "customer_pickup"
     ? await freightAdmin.from("freight_level").select("id, free_freight_allowance").eq("level_name", "Level 0").eq("is_active", true).maybeSingle()
     : freightLevelId && !isCustomFreightLevel
@@ -9417,11 +9410,6 @@ async function updateFreightPolicyAction(formData: FormData) {
       freightTerms === "collect"
         ? optionalText("ltl_customer_collect_account_number")
         : null,
-    dropship_freight_level_id: dropshipFreightLevelId,
-    dropship_is_active: overridesDropship
-      ? formData.get("dropship_is_active") === "on"
-      : null,
-    dropship_rate_percent: overridesDropship ? dropshipRatePercent : null,
     flat_rate_percent: isCustomFreightLevel ? customFreightRate : null,
     freight_allowance_amount: Number(selectedFreightLevel.free_freight_allowance),
     freight_level_id: isCustomFreightLevel ? null : selectedFreightLevel.id,
@@ -9431,12 +9419,6 @@ async function updateFreightPolicyAction(formData: FormData) {
     ltl_freight_terms: freightTerms,
     policy_name: "Default Freight Policy",
     preferred_shipping_type: null,
-    residential_surcharge_is_active: overridesResidential
-      ? formData.get("residential_surcharge_is_active") === "on"
-      : null,
-    residential_surcharge_rate_percent: overridesResidential
-      ? residentialSurchargeRatePercent
-      : null,
   };
 
   const result = policyId
@@ -9466,12 +9448,19 @@ async function updateCustomerDropshipSettingsAction(formData: FormData) {
   const overridesResidential = formData.get("override_residential_surcharge") === "on";
   const dropshipRatePercent = Number(String(formData.get("dropship_rate_percent") ?? "").trim());
   const residentialRatePercent = Number(String(formData.get("residential_surcharge_rate_percent") ?? "").trim());
-  const dropshipFreightLevelId = String(formData.get("dropship_freight_level_id") ?? "").trim() || null;
+  const selectedDropshipFreightLevel = String(formData.get("dropship_freight_level_id") ?? "").trim();
+  const dropshipFreightLevelId = selectedDropshipFreightLevel === "custom" ? null : selectedDropshipFreightLevel || null;
+  const customDropshipFreightAllowance = Number(String(formData.get("custom_dropship_freight_allowance_amount") ?? "").trim());
+  const customDropshipFreightRate = Number(String(formData.get("custom_dropship_freight_rate_percent") ?? "").trim());
+  const isCustomDropshipFreightLevel = selectedDropshipFreightLevel === "custom";
   if (overridesDropship && (!Number.isFinite(dropshipRatePercent) || dropshipRatePercent < 0)) {
     redirect(`${returnUrl}&error=${encodeURIComponent("Enter a valid Dropship Rate.")}`);
   }
   if (overridesResidential && (!Number.isFinite(residentialRatePercent) || residentialRatePercent < 0)) {
     redirect(`${returnUrl}&error=${encodeURIComponent("Enter a valid Residential Surcharge Rate.")}`);
+  }
+  if (isCustomDropshipFreightLevel && (!Number.isFinite(customDropshipFreightAllowance) || customDropshipFreightAllowance < 0 || !Number.isFinite(customDropshipFreightRate) || customDropshipFreightRate < 0)) {
+    redirect(`${returnUrl}&error=${encodeURIComponent("Enter a valid custom Dropship FFA amount and freight rate.")}`);
   }
 
   const supabase = createSupabaseAdminClient();
@@ -9504,6 +9493,8 @@ async function updateCustomerDropshipSettingsAction(formData: FormData) {
     .from("customer_freight_policy")
     .update({
       dropship_freight_level_id: dropshipFreightLevelId,
+      dropship_freight_allowance_amount: isCustomDropshipFreightLevel ? customDropshipFreightAllowance : null,
+      dropship_freight_rate_percent: isCustomDropshipFreightLevel ? customDropshipFreightRate : null,
       dropship_is_active: overridesDropship ? formData.get("dropship_is_active") === "on" : null,
       dropship_rate_percent: overridesDropship ? dropshipRatePercent : null,
       residential_surcharge_is_active: overridesResidential ? formData.get("residential_surcharge_is_active") === "on" : null,
@@ -10877,7 +10868,7 @@ async function getCustomerDashboard(customerId: string) {
     supabase
       .from("customer_freight_policy")
       .select(
-        "customer_location_id, freight_level_id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, flat_rate_percent, dropship_freight_level_id, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent, updated_at",
+        "customer_location_id, freight_level_id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, flat_rate_percent, dropship_freight_level_id, dropship_freight_allowance_amount, dropship_freight_rate_percent, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent, updated_at",
       )
       .eq("customer_account_id", customerId)
       .eq("is_active", true)
@@ -10984,7 +10975,7 @@ async function getCustomerDashboard(customerId: string) {
     customerId,
     customer.account_type_id,
   );
-  const accountDropshipFreightLevel = accountFreightPolicy?.dropship_freight_level_id
+  const accountDropshipFreightLevel = accountFreightPolicy?.dropship_freight_level_id || (accountFreightPolicy?.dropship_freight_allowance_amount !== null && accountFreightPolicy?.dropship_freight_allowance_amount !== undefined)
     ? resolvedDropshipSettings.freightLevel?.level_name ?? "Not configured"
     : "Account Freight Level";
 
@@ -12418,7 +12409,7 @@ async function getDefaultFreightPolicy(customerId: string) {
   const { data, error } = await supabase
     .from("customer_freight_policy")
     .select(
-      "id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, freight_level_id, flat_rate_percent, default_ltl_carrier, default_ltl_carrier_account_number, default_ground_carrier, default_ground_carrier_account_number, dropship_freight_level_id, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent",
+      "id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, freight_level_id, flat_rate_percent, default_ltl_carrier, default_ltl_carrier_account_number, default_ground_carrier, default_ground_carrier_account_number, dropship_freight_level_id, dropship_freight_allowance_amount, dropship_freight_rate_percent, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent",
     )
     .eq("customer_account_id", customerId)
     .is("customer_location_id", null)

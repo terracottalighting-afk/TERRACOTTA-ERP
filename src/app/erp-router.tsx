@@ -3015,7 +3015,7 @@ async function createSalesOrderAction(formData: FormData) {
       accountResult.data.account_type_id,
     );
     residentialSurchargeRatePercent = settings.residentialSurchargeRatePercent;
-    defaultDropshipFee = shouldChargeCustomerFreight ? dropshipFee(
+    defaultDropshipFee = dropshipFee(
       pricedLines.reduce(
         (sum, line) =>
           sum +
@@ -3026,7 +3026,7 @@ async function createSalesOrderAction(formData: FormData) {
       ),
       isDropship,
       settings,
-    ) : 0;
+    );
     residentialSurchargeAmount = shouldChargeCustomerFreight ? residentialSurcharge(
       pricedLines.reduce((sum, line) => sum + Number(line.quantity) * Number(line.unitPrice) * (1 - Number(line.discountPercent) / 100), 0),
       isResidentialDropship,
@@ -12343,7 +12343,7 @@ async function getInvoiceDocument(invoiceId: string) {
       .maybeSingle(),
     supabase
       .from("sales_order")
-      .select("id, customer_po_number, ground_freight_terms_snapshot")
+      .select("id, customer_po_number, ground_freight_terms_snapshot, is_dropship")
       .eq("id", invoice.sales_order_id)
       .maybeSingle(),
   ]);

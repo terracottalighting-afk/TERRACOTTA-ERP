@@ -17,6 +17,7 @@ type OrderAcknowledgement = {
   freight_amount: number;
   ground_freight_terms_snapshot: string;
   id: string;
+  is_dropship: boolean;
   lines: {
     brand_name_snapshot: string;
     discount_percent: number;
@@ -238,10 +239,10 @@ export async function OrderAcknowledgementPage({
           <strong>{money(Number(order.freight_amount ?? 0))}</strong>
         </div> : null}
         {!isCollect && residentialSurcharge > 0 ? <div className="quote-document-total"><span>Residential Surcharge</span><strong>{money(residentialSurcharge)}</strong></div> : null}
-        {!isCollect && baseDropshipFee > 0 ? (
+        {order.is_dropship ? (
           <div className="quote-document-total">
             <span>Dropship Fee</span>
-            <strong>{money(baseDropshipFee)}</strong>
+            <strong>{money(isCollect ? Number(order.dropship_fee_amount ?? 0) : baseDropshipFee)}</strong>
           </div>
         ) : null}
         <div className="quote-document-total">

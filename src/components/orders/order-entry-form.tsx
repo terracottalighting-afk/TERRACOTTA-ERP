@@ -680,8 +680,8 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
             <div className="order-total"><span>Order Subtotal</span><strong>{money.format(subtotal)}</strong></div>
             {chargesCustomerFreight && selectedFreightLevel ? <div className="order-total"><span>Default Freight Charge ({selectedFreightLevel.levelName}: FFA {money.format(selectedFreightLevel.freeFreightAllowance)}, {selectedFreightLevel.freightRatePercent}%)</span><strong>{defaultFreightCharge === 0 ? "Free Freight" : wholeMoney.format(defaultFreightCharge)}</strong></div> : null}
             {chargesCustomerFreight && isDropship && isResidentialAddress && dropshipSettings.residentialSurchargeActive ? <div className="order-total"><span>Residential Surcharge ({dropshipSettings.residentialSurchargeRatePercent}%)</span><strong>{money.format(estimatedResidentialSurcharge)}</strong></div> : null}
-            {chargesCustomerFreight && isDropship && dropshipSettings.isActive ? <div className="order-total"><span>Dropship Fee ({dropshipSettings.ratePercent}%)</span><strong>{money.format(estimatedDropshipFee)}</strong></div> : null}
-            <div className="order-total"><span>Estimated Order Total</span><strong>{money.format(subtotal + (chargesCustomerFreight ? defaultFreightCharge + estimatedDropshipFee + estimatedResidentialSurcharge : 0))}</strong></div>
+            {isDropship ? <div className="order-total"><span>Dropship Fee ({dropshipSettings.isActive ? `${dropshipSettings.ratePercent}%` : "inactive"})</span><strong>{money.format(estimatedDropshipFee)}</strong></div> : null}
+            <div className="order-total"><span>Estimated Order Total</span><strong>{money.format(subtotal + estimatedDropshipFee + (chargesCustomerFreight ? defaultFreightCharge + estimatedResidentialSurcharge : 0))}</strong></div>
           </article>
 
           <article className="data-section">

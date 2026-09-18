@@ -42,6 +42,7 @@ type InvoiceDocumentDetail = {
     customer_po_number: string;
     ground_freight_terms_snapshot: string;
     id: string;
+    is_dropship: boolean;
   } | null;
 };
 
@@ -180,10 +181,10 @@ export async function InvoiceDocumentPage({
             <dd>{money(Number(invoice.freight_amount))}</dd>
           </div> : null}
           {!isCollect && residentialSurcharge > 0 ? <div><dt>Residential Surcharge</dt><dd>{money(residentialSurcharge)}</dd></div> : null}
-          {!isCollect && baseDropshipFee > 0 ? (
+          {salesOrder?.is_dropship ? (
             <div>
               <dt>Drop-ship Fee</dt>
-              <dd>{money(baseDropshipFee)}</dd>
+              <dd>{money(isCollect ? Number(invoice.dropship_fee_amount ?? 0) : baseDropshipFee)}</dd>
             </div>
           ) : null}
           <div>

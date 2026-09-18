@@ -374,7 +374,11 @@ type SalesOrderDetail = SalesOrder & {
   subtotal_amount: number;
   tax_amount: number;
   freight_amount: number;
+  ground_carrier_account_number_snapshot: string | null;
+  ground_carrier_snapshot: string | null;
   ground_freight_terms_snapshot: string;
+  ltl_carrier_account_number_snapshot: string | null;
+  ltl_carrier_snapshot: string | null;
   notes: string | null;
   lines: {
     brand_name_snapshot: string;
@@ -2062,10 +2066,26 @@ async function saveDropshipSettingsAction(formData: FormData) {
 }
 
 async function resolveShipmentCarrier(formData: FormData) {
+  if (formData.get("use_customer_carriers") === "on") {
+    const selection = textValue(formData, "customer_carrier_selection");
+    if (!selection) throw new Error("Select a customer carrier and account number.");
+    try {
+      const customerCarrier = JSON.parse(selection) as {
+        accountNumber: string | null;
+        carrier: string;
+        shippingType: string | null;
+      };
+      if (!customerCarrier.carrier) throw new Error();
+      return customerCarrier;
+    } catch {
+      throw new Error("The selected customer carrier could not be read.");
+    }
+  }
   const carrierId = textValue(formData, "freight_carrier_id");
   if (!carrierId) {
     return {
       carrier: textValue(formData, "existing_carrier") || null,
+      accountNumber: textValue(formData, "existing_carrier_account_number") || null,
       shippingType: textValue(formData, "existing_shipping_type") || null,
     };
   }
@@ -2078,7 +2098,7 @@ async function resolveShipmentCarrier(formData: FormData) {
   if (error) throw new Error(error.message);
   if (!data) throw new Error("The selected freight carrier is no longer active.");
   const shippingTypeByFreightType: Record<string, string> = { small_parcel_ground: "parcel", ltl: "ltl", sea_freight: "sea_freight" };
-  return { carrier: data.carrier_name, shippingType: shippingTypeByFreightType[data.freight_type] ?? null };
+  return { accountNumber: null, carrier: data.carrier_name, shippingType: shippingTypeByFreightType[data.freight_type] ?? null };
 }
 
 async function assignStyleToSignatureSuiteAction(formData: FormData) {
@@ -4228,7 +4248,7 @@ async function createPendingShipmentAction(formData: FormData) {
       `${fallbackUrl}&error=${encodeURIComponent(`Check the box/location quantities for ${invalidLine.product_sku_snapshot}. Every required box must have the same shipment quantity.`)}`,
     );
 
-  let shipmentCarrier: { carrier: string | null; shippingType: string | null };
+  let shipmentCarrier: { accountNumber: string | null; carrier: string | null; shippingType: string | null };
   try {
     shipmentCarrier = await resolveShipmentCarrier(formData);
   } catch (carrierError) {
@@ -4285,6 +4305,7 @@ async function createPendingShipmentAction(formData: FormData) {
     .from("freight_shipment")
     .insert({
       carrier: shipmentCarrier!.carrier,
+      carrier_account_number_snapshot: shipmentCarrier!.accountNumber,
       customer_account_id: order.customer_account_id,
       freight_cost: freightCost,
       is_dropship: order.is_dropship,
@@ -4309,9 +4330,11 @@ async function createPendingShipmentAction(formData: FormData) {
   const { data: packingList, error: packingListError } = await supabase
     .from("packing_list")
     .insert({
+      carrier_snapshot: shipmentCarrier!.carrier,
       customer_account_id: order.customer_account_id,
       customer_location_id: order.customer_location_id,
       customer_po_number_snapshot: order.customer_po_number,
+      carrier_account_number_snapshot: shipmentCarrier!.accountNumber,
       dropship_fee_amount: shipmentDropshipFee,
       allocated_freight_cost: freightCost,
       freight_shipment_id: shipment.id,
@@ -4327,6 +4350,7 @@ async function createPendingShipmentAction(formData: FormData) {
         : null,
       shipping_fee: shippingFee,
       status: "draft",
+      tracking_number: masterTrackingNumber,
     })
     .select("id, packing_list_number")
     .single();
@@ -6017,7 +6041,11 @@ async function updateShipmentDetailsAction(formData: FormData) {
     );
   }
 
-  let shipmentCarrier: { carrier: string | null; shippingType: string | null };
+  let shipmentCarrier: {
+    accountNumber: string | null;
+    carrier: string | null;
+    shippingType: string | null;
+  };
   try {
     shipmentCarrier = await resolveShipmentCarrier(formData);
   } catch (carrierError) {
@@ -6029,6 +6057,7 @@ async function updateShipmentDetailsAction(formData: FormData) {
     .from("freight_shipment")
     .update({
       carrier: shipmentCarrier!.carrier,
+      carrier_account_number_snapshot: shipmentCarrier!.accountNumber,
       freight_cost: freightCost,
       master_tracking_number:
         textValue(formData, "master_tracking_number") || null,
@@ -6042,7 +6071,15 @@ async function updateShipmentDetailsAction(formData: FormData) {
     redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
   const { error: packingListError } = await supabase
     .from("packing_list")
-    .update({ allocated_freight_cost: freightCost })
+    .update({
+      allocated_freight_cost: freightCost,
+      carrier_account_number_snapshot: shipmentCarrier!.accountNumber,
+      carrier_snapshot: shipmentCarrier!.carrier,
+      shipping_type_snapshot: shipmentCarrier!.shippingType as unknown as
+        | Database["public"]["Enums"]["shipping_type"]
+        | null,
+      tracking_number: textValue(formData, "master_tracking_number") || null,
+    })
     .eq("freight_shipment_id", shipmentId)
     .eq("status", "draft")
     .eq("invoice_generation_status_snapshot", "not_invoiced");
@@ -11813,7 +11850,7 @@ async function getSalesOrderDetail(
     supabase
       .from("sales_order")
       .select(
-        "id, customer_account_id, customer_location_id, sales_order_number, customer_po_number, customer_name_snapshot, order_date, requested_ship_date, order_source, order_type, status, shipping_readiness_status, credit_hold_status, is_dropship, ship_to_type, ship_to_display_name_snapshot, ship_to_snapshot_json, bill_to_snapshot_json, shipping_priority, sales_rep_agency_id_snapshot, sales_rep_id_snapshot, territory_id_snapshot, subtotal_amount, freight_amount, dropship_fee_amount, ground_freight_terms_snapshot, tax_amount, total_amount, notes",
+        "id, customer_account_id, customer_location_id, sales_order_number, customer_po_number, customer_name_snapshot, order_date, requested_ship_date, order_source, order_type, status, shipping_readiness_status, credit_hold_status, is_dropship, ship_to_type, ship_to_display_name_snapshot, ship_to_snapshot_json, bill_to_snapshot_json, shipping_priority, sales_rep_agency_id_snapshot, sales_rep_id_snapshot, territory_id_snapshot, subtotal_amount, freight_amount, dropship_fee_amount, ground_carrier_account_number_snapshot, ground_carrier_snapshot, ground_freight_terms_snapshot, ltl_carrier_account_number_snapshot, ltl_carrier_snapshot, tax_amount, total_amount, notes",
       )
       .eq("id", orderId)
       .maybeSingle(),

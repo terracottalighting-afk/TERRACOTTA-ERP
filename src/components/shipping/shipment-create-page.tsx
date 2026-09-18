@@ -17,6 +17,9 @@ type ShipmentOrder = {
   customer_account_id: string;
   customer_name_snapshot: string;
   customer_po_number: string;
+  ground_carrier_account_number_snapshot: string | null;
+  ground_carrier_snapshot: string | null;
+  ground_freight_terms_snapshot: string;
   id: string;
   lines: {
     id: string;
@@ -28,6 +31,8 @@ type ShipmentOrder = {
     quantity_shipped: number;
   }[];
   order_type: string;
+  ltl_carrier_account_number_snapshot: string | null;
+  ltl_carrier_snapshot: string | null;
   sales_order_number: string;
   ship_to_display_name_snapshot: string;
   ship_to_snapshot_json: Record<string, unknown>;
@@ -79,7 +84,7 @@ export async function ShipmentCreatePage({
         supabase
           .from("freight_shipment")
           .select(
-            "id, freight_shipment_number, status, carrier, shipping_type, master_tracking_number, freight_cost, notes",
+            "id, freight_shipment_number, status, carrier, carrier_account_number_snapshot, shipping_type, master_tracking_number, freight_cost, notes",
           )
           .eq("id", shipmentId)
           .eq("customer_account_id", order.customer_account_id)
@@ -109,6 +114,12 @@ export async function ShipmentCreatePage({
   ].find((result) => result.error);
   if (shipmentFailure?.error) throw new Error(shipmentFailure.error.message);
   const shipment = shipmentResult.data;
+  const customerCarriers = order.ground_freight_terms_snapshot === "collect"
+    ? [
+        order.ground_carrier_snapshot ? { accountNumber: order.ground_carrier_account_number_snapshot, carrier: order.ground_carrier_snapshot, shippingType: "parcel" as const } : null,
+        order.ltl_carrier_snapshot ? { accountNumber: order.ltl_carrier_account_number_snapshot, carrier: order.ltl_carrier_snapshot, shippingType: "ltl" as const } : null,
+      ].filter((carrier): carrier is { accountNumber: string | null; carrier: string; shippingType: "parcel" | "ltl" } => Boolean(carrier))
+    : [];
   const packingList = packingListResult.data;
   const { data: packingLines, error: packingLinesError } = packingList
     ? await supabase
@@ -395,7 +406,7 @@ export async function ShipmentCreatePage({
                 <input name="order_id" type="hidden" value={order.id} />
                 <input name="shipment_id" type="hidden" value={shipment.id} />
                 <div className="form-grid">
-                  <ShipmentCarrierFields carriers={carriers ?? []} currentCarrier={shipment.carrier ?? ""} currentShippingType={shipment.shipping_type ?? ""} />
+                  <ShipmentCarrierFields carriers={carriers ?? []} currentCarrier={shipment.carrier ?? ""} currentCarrierAccountNumber={shipment.carrier_account_number_snapshot ?? ""} currentShippingType={shipment.shipping_type ?? ""} customerCarriers={customerCarriers} />
                   <ShipmentFreightFields
                     actualCost={shipment.freight_cost ?? 0}
                     masterTrackingNumber={shipment.master_tracking_number ?? ""}
@@ -888,7 +899,7 @@ export async function ShipmentCreatePage({
           <fieldset>
             <legend>Shipment Header</legend>
             <div className="form-grid">
-              <ShipmentCarrierFields carriers={carriers ?? []} />
+              <ShipmentCarrierFields carriers={carriers ?? []} customerCarriers={customerCarriers} />
               <ShipmentFreightFields />
               <label className="full-width-field">
                 Internal Shipment Notes

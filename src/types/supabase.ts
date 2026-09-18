@@ -5876,6 +5876,7 @@ export type Database = {
         Row: {
           allocated_freight_cost: number
           carrier_snapshot: string | null
+          carrier_account_number_snapshot: string | null
           created_at: string
           created_by_user_id: string | null
           customer_account_id: string
@@ -5908,6 +5909,7 @@ export type Database = {
         Insert: {
           allocated_freight_cost?: number
           carrier_snapshot?: string | null
+          carrier_account_number_snapshot?: string | null
           created_at?: string
           created_by_user_id?: string | null
           customer_account_id: string
@@ -5940,6 +5942,7 @@ export type Database = {
         Update: {
           allocated_freight_cost?: number
           carrier_snapshot?: string | null
+          carrier_account_number_snapshot?: string | null
           created_at?: string
           created_by_user_id?: string | null
           customer_account_id?: string

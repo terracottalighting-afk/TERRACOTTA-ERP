@@ -173,7 +173,7 @@ export async function InvoiceDocumentPage({
         </table>
         <dl className="invoice-document-totals">
           <div>
-            <dt>Product Total</dt>
+            <dt>Subtotal</dt>
             <dd>{money(Number(invoice.subtotal_amount))}</dd>
           </div>
           {!isCollect ? <div>

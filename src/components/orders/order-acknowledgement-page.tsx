@@ -68,6 +68,7 @@ export async function OrderAcknowledgementPage({
   const residentialSurcharge = Number(order.ship_to_snapshot_json?.residential_surcharge_amount ?? 0);
   const baseDropshipFee = Math.max(0, Number(order.dropship_fee_amount ?? 0) - residentialSurcharge);
   const isCollect = order.ground_freight_terms_snapshot === "collect";
+  const orderSubtotal = order.lines.reduce((total, line) => total + Number(line.line_total), 0);
 
   const recipientEmail =
     snapshotEmail(order.ship_to_snapshot_json) ??
@@ -234,6 +235,10 @@ export async function OrderAcknowledgementPage({
             })}
           </tbody>
         </table>
+        <div className="quote-document-total">
+          <span>Subtotal</span>
+          <strong>{money(orderSubtotal)}</strong>
+        </div>
         {!isCollect ? <div className="quote-document-total">
           <span>Estimated Freight Charge</span>
           <strong>{money(Number(order.freight_amount ?? 0))}</strong>

@@ -109,6 +109,10 @@ export async function QuoteDocumentPage({
           </tbody>
         </table>
         <div className="quote-document-total">
+          <span>Subtotal</span>
+          <strong>{money(quote.lines.reduce((total, line) => total + Number(line.line_total), 0))}</strong>
+        </div>
+        <div className="quote-document-total">
           <span>Quote Total</span>
           <strong>{money(Number(quote.total_amount ?? 0))}</strong>
         </div>

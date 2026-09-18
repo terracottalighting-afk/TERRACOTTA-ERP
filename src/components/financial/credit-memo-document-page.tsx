@@ -35,6 +35,7 @@ export async function CreditMemoDocumentPage({ creditMemoId, loadCreditMemo }: {
       <section className="quote-document-addresses"><div><span>Customer</span><strong>{detail.memo.customer_name_snapshot}</strong></div><div><span>Reason</span><strong>{detail.memo.reason_code}</strong></div></section>
       <table className="quote-document-table"><thead><tr><th>Item</th><th>Qty</th><th>Unit Amount</th><th>Credit Amount</th></tr></thead><tbody>{detail.lines.map((line) => <tr key={line.id}><td>{line.description}</td><td>{numberFormatter.format(Number(line.quantity))}</td><td>{money(Number(line.unit_amount))}</td><td>{money(Number(line.line_total))}</td></tr>)}</tbody></table>
       <dl className="invoice-document-totals">
+        <div><dt>Credit Subtotal</dt><dd>{money(detail.lines.reduce((total, line) => total + Number(line.line_total), 0))}</dd></div>
         <div><dt>Credit Total</dt><dd>{money(detail.memo.total_credit_amount)}</dd></div>
         <div><dt>Credit Used</dt><dd>{money(detail.memo.amount_applied)}</dd></div>
         <div><dt>Remaining Balance</dt><dd>{money(detail.memo.amount_remaining)}</dd></div>

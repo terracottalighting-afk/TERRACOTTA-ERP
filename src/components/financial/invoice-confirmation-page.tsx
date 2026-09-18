@@ -29,6 +29,7 @@ type InvoiceQueuePackingList = {
 export async function InvoiceConfirmationPage({
   customerFreightCharge,
   commissionOverrides: rawCommissionOverrides,
+  commissionOverrideReasons,
   dropshipAllocations: rawDropshipAllocations,
   freightAllocations: rawFreightAllocations,
   invoiceDate,
@@ -43,6 +44,7 @@ export async function InvoiceConfirmationPage({
 }: {
   customerFreightCharge?: string;
   commissionOverrides?: string;
+  commissionOverrideReasons?: string;
   dropshipAllocations?: string;
   freightAllocations?: string;
   invoiceDate?: string;
@@ -225,6 +227,11 @@ export async function InvoiceConfirmationPage({
           name="commission_overrides"
           type="hidden"
           value={JSON.stringify(commissionOverrides)}
+        />
+        <input
+          name="commission_override_reasons"
+          type="hidden"
+          value={commissionOverrideReasons || "{}"}
         />
         {packingList.brandSummaries.map((brand) => (
           <Fragment key={brand.brand_id}>

@@ -152,6 +152,18 @@ export async function InvoiceCreatePage({
                   </tbody>
                 </table>
               </div>
+              <div className="form-grid">
+                {packingList.brandSummaries.map((brand) => (
+                  <label className="full-width-field" key={brand.brand_id}>
+                    {brand.brand_name} commission decision-change note
+                    <textarea
+                      name={`commission_change_reason_${brand.brand_id}`}
+                      placeholder="Required only when changing the Pay commission decision from the original order"
+                      rows={2}
+                    />
+                  </label>
+                ))}
+              </div>
             </>
           ) : (
             <p className="fieldset-note">

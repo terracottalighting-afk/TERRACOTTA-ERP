@@ -194,6 +194,7 @@ export type SearchParams = Promise<{
   invoice_dropship_allocations?: string;
   invoice_tax_allocations?: string;
   invoice_commission_overrides?: string;
+  invoice_commission_override_reasons?: string;
   financial_tab?: string;
   financial_section?: string;
   financial_commission_tab?: string;
@@ -4101,7 +4102,7 @@ async function createPendingShipmentAction(formData: FormData) {
     supabase
       .from("sales_order")
       .select(
-        "id, customer_account_id, customer_location_id, sales_order_number, customer_po_number, order_type, status, credit_hold_status, is_dropship, ship_to_type, ship_to_snapshot_json, subtotal_amount",
+        "id, customer_account_id, customer_location_id, sales_order_number, customer_po_number, commission_payable, commission_rate_percent, order_type, status, credit_hold_status, is_dropship, ship_to_type, ship_to_snapshot_json, subtotal_amount",
       )
       .eq("id", orderId)
       .maybeSingle(),
@@ -4335,6 +4336,8 @@ async function createPendingShipmentAction(formData: FormData) {
     .from("packing_list")
     .insert({
       carrier_snapshot: shipmentCarrier!.carrier,
+      commission_payable_snapshot: order.commission_payable,
+      commission_rate_percent_snapshot: order.commission_rate_percent,
       customer_account_id: order.customer_account_id,
       customer_location_id: order.customer_location_id,
       customer_po_number_snapshot: order.customer_po_number,
@@ -4740,6 +4743,20 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
       `${fallbackUrl}&error=${encodeURIComponent(commissionError instanceof Error ? commissionError.message : "Commission settings are invalid.")}`,
     );
   }
+  let commissionOverrideReasons: Record<string, string>;
+  try {
+    const parsed = JSON.parse(textValue(formData, "commission_override_reasons") || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Commission decision-change notes must be an object.");
+    }
+    commissionOverrideReasons = Object.fromEntries(
+      Object.entries(parsed).map(([brandId, reason]) => [brandId, String(reason ?? "").trim()]),
+    );
+  } catch (commissionReasonError) {
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent(commissionReasonError instanceof Error ? commissionReasonError.message : "Commission decision-change notes are invalid.")}`,
+    );
+  }
 
   const { data, error } = await createSupabaseAdminClient().rpc(
     "create_invoices_from_packing_list_with_terms",
@@ -4753,6 +4770,7 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
       p_payment_days: paymentDays,
       p_customer_freight_charge: customerFreightCharge,
       p_commission_overrides: commissionOverrides!,
+      p_commission_override_reasons: commissionOverrideReasons!,
     },
   );
   if (error)
@@ -5289,7 +5307,7 @@ async function prepareInvoiceConfirmationAction(formData: FormData) {
   const { data: invoicePackingList, error: invoicePackingListError } =
     await invoiceSupabase
       .from("packing_list")
-      .select("sales_order_id, shipping_fee, dropship_fee_amount")
+      .select("sales_order_id, shipping_fee, dropship_fee_amount, commission_payable_snapshot")
       .eq("id", packingListId)
       .maybeSingle();
   const { data: invoiceOrder, error: invoiceOrderError } = invoicePackingList
@@ -5373,12 +5391,34 @@ async function prepareInvoiceConfirmationAction(formData: FormData) {
       return [
         brandId,
         {
-          payable: formData.get(`commission_payable_${brandId}`) === "on",
+          payable: formData.has(`commission_payable_${brandId}`)
+            ? formData.get(`commission_payable_${brandId}`) === "on"
+            : invoicePackingList.commission_payable_snapshot,
           percent: Number.isFinite(percent) ? percent : null,
         },
       ];
     }),
   );
+  const commissionOverrideReasons = Object.fromEntries(
+    brandIds.map((brandId) => [
+      brandId,
+      textValue(formData, `commission_change_reason_${brandId}`).trim(),
+    ]),
+  );
+  if (
+    Object.values(commissionOverrides).some(
+      (override) => override.payable !== invoicePackingList.commission_payable_snapshot,
+    ) &&
+    brandIds.some(
+      (brandId) =>
+        commissionOverrides[brandId].payable !== invoicePackingList.commission_payable_snapshot &&
+        !commissionOverrideReasons[brandId],
+    )
+  ) {
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent("Add a decision-change note for each commission payment change.")}`,
+    );
+  }
   if (
     Object.values(commissionOverrides).some(
       (override) =>
@@ -5402,6 +5442,7 @@ async function prepareInvoiceConfirmationAction(formData: FormData) {
     invoice_dropship_allocations: JSON.stringify(dropshipAllocations),
     invoice_tax_allocations: JSON.stringify(taxAllocations),
     invoice_commission_overrides: JSON.stringify(commissionOverrides),
+    invoice_commission_override_reasons: JSON.stringify(commissionOverrideReasons),
   });
   redirect(`/?${params.toString()}`);
 }
@@ -12037,7 +12078,7 @@ async function getInvoiceQueuePackingLists() {
   const { data: packingLists, error: packingListsError } = await supabase
     .from("packing_list")
     .select(
-      "id, packing_list_number, customer_account_id, customer_po_number_snapshot, sales_order_id, sales_order_number_snapshot, status, invoice_generation_status_snapshot, is_dropship, shipping_fee, allocated_freight_cost, dropship_fee_amount, ship_date, created_at",
+      "id, packing_list_number, customer_account_id, customer_po_number_snapshot, sales_order_id, sales_order_number_snapshot, status, invoice_generation_status_snapshot, is_dropship, shipping_fee, allocated_freight_cost, dropship_fee_amount, commission_payable_snapshot, commission_rate_percent_snapshot, ship_date, created_at",
     )
     .eq("invoice_required", true)
     .eq("invoice_generation_status_snapshot", "not_invoiced")
@@ -12084,7 +12125,7 @@ async function getInvoiceQueuePackingLists() {
       orderIds.length
         ? supabase
             .from("sales_order")
-            .select("id, commission_payable, commission_rate_percent, order_type, territory_id_snapshot, ground_freight_terms_snapshot")
+            .select("id, order_type, territory_id_snapshot, ground_freight_terms_snapshot")
             .in("id", orderIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
@@ -12172,7 +12213,10 @@ async function getInvoiceQueuePackingLists() {
     assignmentsByTerritory.set(assignment.territory_id, assigned);
   }
   const agencyById = new Map((agencies ?? []).map((agency) => [agency.id, agency]));
-  const commissionForOrder = (salesOrderId: string) => {
+  const commissionForOrder = (
+    salesOrderId: string,
+    packingList: { commission_payable_snapshot: boolean; commission_rate_percent_snapshot: number | null },
+  ) => {
     const order = orderById.get(salesOrderId);
     if (order?.order_type === "rga_replacement") {
       return { agencyName: null, defaultPayable: false, defaultPercent: null, eligible: false, territoryLabel: null, unavailableReason: "RGA replacement invoices do not earn commission." };
@@ -12186,7 +12230,7 @@ async function getInvoiceQueuePackingLists() {
       return { agencyName: null, defaultPayable: false, defaultPercent: null, eligible: false, territoryLabel: territory ? `${territory.territory_code} - ${territory.name}` : "Territory assigned", unavailableReason: assignedAgencyIds.length ? "More than one active agency is assigned to this territory." : "No active sales agency is assigned to this territory." };
     }
     const agency = agencyById.get(assignedAgencyIds[0])!;
-    return { agencyName: agency.name, defaultPayable: order.commission_payable, defaultPercent: order.commission_rate_percent ?? Number(agency.commission_default_percent ?? 0), eligible: true, territoryLabel: territory ? `${territory.territory_code} - ${territory.name}` : "Territory assigned", unavailableReason: null };
+    return { agencyName: agency.name, defaultPayable: packingList.commission_payable_snapshot, defaultPercent: packingList.commission_rate_percent_snapshot ?? Number(agency.commission_default_percent ?? 0), eligible: true, territoryLabel: territory ? `${territory.territory_code} - ${territory.name}` : "Territory assigned", unavailableReason: null };
   };
   const brandSummariesByPackingList = new Map<string, InvoiceBrandSummary[]>();
   for (const line of linesResult.data ?? []) {
@@ -12216,7 +12260,7 @@ async function getInvoiceQueuePackingLists() {
       billingProfilesByCustomerId.get(packingList.customer_account_id)
         ?.payment_terms ?? "Prepaid / No Credit",
     brandSummaries: brandSummariesByPackingList.get(packingList.id) ?? [],
-    commission: commissionForOrder(packingList.sales_order_id),
+    commission: commissionForOrder(packingList.sales_order_id, packingList),
     freightTerm:
       orderById.get(packingList.sales_order_id)
         ?.ground_freight_terms_snapshot ?? "prepaid",
@@ -13702,6 +13746,7 @@ export async function ErpRouter({
           <InvoiceConfirmationPage
             customerFreightCharge={params.invoice_customer_freight}
             commissionOverrides={params.invoice_commission_overrides}
+            commissionOverrideReasons={params.invoice_commission_override_reasons}
             dropshipAllocations={params.invoice_dropship_allocations}
             freightAllocations={params.invoice_freight_allocations}
             invoiceDate={params.invoice_date}

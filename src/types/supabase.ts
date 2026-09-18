@@ -5877,6 +5877,8 @@ export type Database = {
           allocated_freight_cost: number
           carrier_snapshot: string | null
           carrier_account_number_snapshot: string | null
+          commission_payable_snapshot: boolean
+          commission_rate_percent_snapshot: number | null
           created_at: string
           created_by_user_id: string | null
           customer_account_id: string
@@ -5910,6 +5912,8 @@ export type Database = {
           allocated_freight_cost?: number
           carrier_snapshot?: string | null
           carrier_account_number_snapshot?: string | null
+          commission_payable_snapshot?: boolean
+          commission_rate_percent_snapshot?: number | null
           created_at?: string
           created_by_user_id?: string | null
           customer_account_id: string
@@ -5943,6 +5947,8 @@ export type Database = {
           allocated_freight_cost?: number
           carrier_snapshot?: string | null
           carrier_account_number_snapshot?: string | null
+          commission_payable_snapshot?: boolean
+          commission_rate_percent_snapshot?: number | null
           created_at?: string
           created_by_user_id?: string | null
           customer_account_id?: string
@@ -13657,6 +13663,8 @@ export type Database = {
           p_brand_dropship_allocations: Json
           p_brand_freight_allocations: Json
           p_brand_tax_allocations: Json
+          p_commission_override_reasons?: Json
+          p_commission_overrides?: Json
           p_customer_freight_charge: number
           p_invoice_date: string
           p_packing_list_id: string

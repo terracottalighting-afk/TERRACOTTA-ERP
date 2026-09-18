@@ -502,10 +502,15 @@ type FreightPolicy = {
   id?: string;
   customer_location_id?: string | null;
   freight_level_id?: string | null;
+  dropship_freight_level_id?: string | null;
+  dropship_is_active?: boolean | null;
+  dropship_rate_percent?: number | null;
   policy_name: string;
   ltl_freight_terms: string;
   ground_freight_terms: string;
   preferred_shipping_type: string | null;
+  residential_surcharge_is_active?: boolean | null;
+  residential_surcharge_rate_percent?: number | null;
   updated_at?: string;
 };
 
@@ -2533,6 +2538,67 @@ async function getDropshipSettings(): Promise<DropshipSettings> {
   };
 }
 
+async function resolveDropshipSettingsForCustomer(
+  customerId: string,
+  accountTypeId?: string,
+): Promise<DropshipSettings & { freightLevel: FreightLevelConfig | null }> {
+  const supabase = createSupabaseUntypedAdminClient();
+  const [systemSettings, policyResult, accountResult] = await Promise.all([
+    getDropshipSettings(),
+    supabase
+      .from("customer_freight_policy")
+      .select("dropship_freight_level_id, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent")
+      .eq("customer_account_id", customerId)
+      .is("customer_location_id", null)
+      .eq("is_active", true)
+      .order("is_default", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    accountTypeId
+      ? Promise.resolve({ data: { account_type_id: accountTypeId }, error: null })
+      : supabase.from("customer_account").select("account_type_id").eq("id", customerId).maybeSingle(),
+  ]);
+  if (policyResult.error) throw new Error(policyResult.error.message);
+  if (accountResult.error || !accountResult.data) {
+    throw new Error(accountResult.error?.message ?? "Customer account was not found.");
+  }
+
+  const policy = policyResult.data;
+  const loadLevel = async (id: string) => {
+    const { data, error } = await supabase
+      .from("freight_level")
+      .select("id, level_name, free_freight_allowance, freight_rate_percent")
+      .eq("id", id)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return data
+      ? {
+          id: data.id,
+          level_name: data.level_name,
+          free_freight_allowance: Number(data.free_freight_allowance),
+          freight_rate_percent: Number(data.freight_rate_percent),
+        }
+      : null;
+  };
+  const freightLevel = policy?.dropship_freight_level_id
+    ? await loadLevel(policy.dropship_freight_level_id)
+    : await resolveFreightLevelForCustomer(customerId, accountResult.data.account_type_id);
+
+  return {
+    freightLevel,
+    isActive: policy?.dropship_is_active ?? systemSettings.isActive,
+    ratePercent: policy?.dropship_rate_percent === null || policy?.dropship_rate_percent === undefined
+      ? systemSettings.ratePercent
+      : Number(policy.dropship_rate_percent),
+    residentialSurchargeActive: policy?.residential_surcharge_is_active ?? systemSettings.residentialSurchargeActive,
+    residentialSurchargeRatePercent:
+      policy?.residential_surcharge_rate_percent === null || policy?.residential_surcharge_rate_percent === undefined
+        ? systemSettings.residentialSurchargeRatePercent
+        : Number(policy.residential_surcharge_rate_percent),
+  };
+}
+
 function dropshipFee(
   amount: number,
   isDropship: boolean,
@@ -2551,6 +2617,7 @@ async function shipmentFreightCharge(
   order: {
     customer_account_id: string;
     customer_location_id: string | null;
+    is_dropship: boolean;
     subtotal_amount: number | string | null;
   },
   shipmentLines: {
@@ -2568,11 +2635,16 @@ async function shipmentFreightCharge(
   if (error || !account) {
     throw new Error(error?.message ?? "Customer account was not found.");
   }
-  const freightLevel = await resolveFreightLevelForCustomer(
-    order.customer_account_id,
-    account.account_type_id,
-    order.customer_location_id,
-  );
+  const freightLevel = order.is_dropship
+    ? (await resolveDropshipSettingsForCustomer(
+        order.customer_account_id,
+        account.account_type_id,
+      )).freightLevel
+    : await resolveFreightLevelForCustomer(
+        order.customer_account_id,
+        account.account_type_id,
+        order.customer_location_id,
+      );
   if (
     !freightLevel ||
     Number(order.subtotal_amount ?? 0) >= freightLevel.free_freight_allowance
@@ -2599,7 +2671,7 @@ async function refreshPackingListFreightCharge(
     await Promise.all([
       supabase
         .from("sales_order")
-        .select("customer_account_id, customer_location_id, is_dropship, subtotal_amount")
+        .select("customer_account_id, customer_location_id, is_dropship, ship_to_snapshot_json, subtotal_amount")
         .eq("id", orderId)
         .maybeSingle(),
       supabase
@@ -2626,10 +2698,18 @@ async function refreshPackingListFreightCharge(
         (1 - Number(line.discount_percent_snapshot ?? 0) / 100),
     0,
   );
-  const shipmentDropshipFee = dropshipFee(
+  const dropshipSettings = await resolveDropshipSettingsForCustomer(
+    order.customer_account_id,
+  );
+  let shipmentDropshipFee = dropshipFee(
     shipmentSubtotal,
     order.is_dropship,
-    await getDropshipSettings(),
+    dropshipSettings,
+  );
+  shipmentDropshipFee += residentialSurcharge(
+    shipmentSubtotal,
+    order.is_dropship && (order.ship_to_snapshot_json as Record<string, unknown> | null)?.is_residential_address === true,
+    dropshipSettings,
   );
   const { error } = await supabase
     .from("packing_list")
@@ -2871,11 +2951,19 @@ async function createSalesOrderAction(formData: FormData) {
     );
   }
 
-  const defaultFreightLevel = await resolveFreightLevelForCustomer(
-    customerId,
-    accountResult.data.account_type_id,
-    locationId,
-  );
+  const dropshipSettings = isDropship
+    ? await resolveDropshipSettingsForCustomer(
+        customerId,
+        accountResult.data.account_type_id,
+      )
+    : null;
+  const defaultFreightLevel = isDropship
+    ? dropshipSettings?.freightLevel ?? null
+    : await resolveFreightLevelForCustomer(
+        customerId,
+        accountResult.data.account_type_id,
+        locationId,
+      );
   const defaultFreightAmount = defaultFreightCharge(
     pricedLines.reduce(
       (sum, line) =>
@@ -2891,7 +2979,10 @@ async function createSalesOrderAction(formData: FormData) {
   let residentialSurchargeAmount = 0;
   let residentialSurchargeRatePercent = 0;
   try {
-    const settings = await getDropshipSettings();
+    const settings = dropshipSettings ?? await resolveDropshipSettingsForCustomer(
+      customerId,
+      accountResult.data.account_type_id,
+    );
     residentialSurchargeRatePercent = settings.residentialSurchargeRatePercent;
     defaultDropshipFee = dropshipFee(
       pricedLines.reduce(
@@ -4128,7 +4219,9 @@ async function createPendingShipmentAction(formData: FormData) {
   let shipmentDropshipFee = 0;
   let shipmentResidentialSurcharge = 0;
   try {
-    const settings = await getDropshipSettings();
+    const settings = await resolveDropshipSettingsForCustomer(
+      order.customer_account_id,
+    );
     const shipmentSubtotal = selectedLines.reduce(
       (sum, line) => sum + Number(line.requestedQuantity) * Number(line.unit_price) * (1 - Number(line.discount_percent) / 100),
       0,
@@ -9256,6 +9349,11 @@ async function updateFreightPolicyAction(formData: FormData) {
   };
   const freightTerms = freightTerm(formData.get("freight_terms"));
   const freightLevelId = optionalText("freight_level_id");
+  const overridesDropship = formData.get("override_dropship_settings") === "on";
+  const overridesResidential = formData.get("override_residential_surcharge") === "on";
+  const dropshipFreightLevelId = optionalText("dropship_freight_level_id");
+  const dropshipRatePercent = Number(optionalText("dropship_rate_percent"));
+  const residentialSurchargeRatePercent = Number(optionalText("residential_surcharge_rate_percent"));
   const isCustomFreightLevel = freightLevelId === "custom";
   const customFreightAllowance = Number(
     optionalText("custom_freight_allowance_amount"),
@@ -9271,6 +9369,23 @@ async function updateFreightPolicyAction(formData: FormData) {
     redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent("Enter a valid custom FFA amount and freight rate.")}`);
   }
   const freightAdmin = createSupabaseUntypedAdminClient();
+  if (overridesDropship && (!Number.isFinite(dropshipRatePercent) || dropshipRatePercent < 0)) {
+    redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent("Enter a valid Dropship Rate.")}`);
+  }
+  if (overridesResidential && (!Number.isFinite(residentialSurchargeRatePercent) || residentialSurchargeRatePercent < 0)) {
+    redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent("Enter a valid Residential Surcharge Rate.")}`);
+  }
+  if (dropshipFreightLevelId) {
+    const { data: dropshipLevel, error: dropshipLevelError } = await freightAdmin
+      .from("freight_level")
+      .select("id")
+      .eq("id", dropshipFreightLevelId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (dropshipLevelError || !dropshipLevel) {
+      redirect(`/?module=edit-freight&customer=${customerId}&error=${encodeURIComponent(dropshipLevelError?.message ?? "The selected Dropship Freight Level is no longer active.")}`);
+    }
+  }
   const selectedFreightLevelResult = freightTerms === "customer_pickup"
     ? await freightAdmin.from("freight_level").select("id, free_freight_allowance").eq("level_name", "Level 0").eq("is_active", true).maybeSingle()
     : freightLevelId && !isCustomFreightLevel
@@ -9301,6 +9416,11 @@ async function updateFreightPolicyAction(formData: FormData) {
       freightTerms === "collect"
         ? optionalText("ltl_customer_collect_account_number")
         : null,
+    dropship_freight_level_id: dropshipFreightLevelId,
+    dropship_is_active: overridesDropship
+      ? formData.get("dropship_is_active") === "on"
+      : null,
+    dropship_rate_percent: overridesDropship ? dropshipRatePercent : null,
     flat_rate_percent: isCustomFreightLevel ? customFreightRate : null,
     freight_allowance_amount: Number(selectedFreightLevel.free_freight_allowance),
     freight_level_id: isCustomFreightLevel ? null : selectedFreightLevel.id,
@@ -9310,6 +9430,12 @@ async function updateFreightPolicyAction(formData: FormData) {
     ltl_freight_terms: freightTerms,
     policy_name: "Default Freight Policy",
     preferred_shipping_type: null,
+    residential_surcharge_is_active: overridesResidential
+      ? formData.get("residential_surcharge_is_active") === "on"
+      : null,
+    residential_surcharge_rate_percent: overridesResidential
+      ? residentialSurchargeRatePercent
+      : null,
   };
 
   const result = policyId
@@ -10689,7 +10815,7 @@ async function getCustomerDashboard(customerId: string) {
     supabase
       .from("customer_freight_policy")
       .select(
-        "customer_location_id, freight_level_id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, flat_rate_percent, updated_at",
+        "customer_location_id, freight_level_id, policy_name, freight_terms, ltl_freight_terms, ground_freight_terms, preferred_shipping_type, freight_allowance_amount, flat_rate_percent, dropship_freight_level_id, dropship_is_active, dropship_rate_percent, residential_surcharge_is_active, residential_surcharge_rate_percent, updated_at",
       )
       .eq("customer_account_id", customerId)
       .eq("is_active", true)
@@ -10792,6 +10918,13 @@ async function getCustomerDashboard(customerId: string) {
         };
       }),
   );
+  const resolvedDropshipSettings = await resolveDropshipSettingsForCustomer(
+    customerId,
+    customer.account_type_id,
+  );
+  const accountDropshipFreightLevel = accountFreightPolicy?.dropship_freight_level_id
+    ? resolvedDropshipSettings.freightLevel?.level_name ?? "Not configured"
+    : "Account Freight Level";
 
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -11031,6 +11164,14 @@ async function getCustomerDashboard(customerId: string) {
     }) as CreditMemo[],
     customer,
     shippingFreightTerms,
+    dropshipFreightSettings: {
+      dropshipRate: `${resolvedDropshipSettings.ratePercent}%${accountFreightPolicy?.dropship_rate_percent === null || accountFreightPolicy?.dropship_rate_percent === undefined ? " (System default)" : ""}`,
+      dropshipStatus: resolvedDropshipSettings.isActive ? "Active" : "Inactive",
+      freightLevel: accountDropshipFreightLevel,
+      residentialSurchargeRate: `${resolvedDropshipSettings.residentialSurchargeRatePercent}%${accountFreightPolicy?.residential_surcharge_rate_percent === null || accountFreightPolicy?.residential_surcharge_rate_percent === undefined ? " (System default)" : ""}`,
+      residentialSurchargeStatus: resolvedDropshipSettings.residentialSurchargeActive ? "Active" : "Inactive",
+      updatedAt: accountFreightPolicy?.updated_at ?? null,
+    },
     invoices: (invoicesResult.data ?? []) as CustomerInvoice[],
     invoiceSearchSkus: Object.fromEntries(invoiceSearchSkus),
     locations,
@@ -11111,11 +11252,11 @@ async function getOrderEntryData(customerId: string) {
   }
 
   if (!customerResult.data) return null;
-  const dropshipSettingsValue = dropshipSettingsResult.data?.setting_value as { isActive?: unknown; ratePercent?: unknown; residentialSurchargeActive?: unknown; residentialSurchargeRatePercent?: unknown } | null;
-  const dropshipRatePercent = Number(dropshipSettingsValue?.ratePercent ?? 0);
-  const residentialSurchargeRatePercent = Number(dropshipSettingsValue?.residentialSurchargeRatePercent ?? 0);
-
   const defaultFreightLevel = await resolveFreightLevelForCustomer(
+    customerId,
+    customerResult.data.account_type_id,
+  );
+  const resolvedDropshipSettings = await resolveDropshipSettingsForCustomer(
     customerId,
     customerResult.data.account_type_id,
   );
@@ -11409,11 +11550,18 @@ async function getOrderEntryData(customerId: string) {
     customer: {
       ...customerResult.data,
       dropshipSettings: {
-        isActive: dropshipSettingsValue?.isActive !== false,
-        ratePercent: Number.isFinite(dropshipRatePercent) && dropshipRatePercent >= 0 ? dropshipRatePercent : 0,
-        residentialSurchargeActive: dropshipSettingsValue?.residentialSurchargeActive === true,
-        residentialSurchargeRatePercent: Number.isFinite(residentialSurchargeRatePercent) && residentialSurchargeRatePercent >= 0 ? residentialSurchargeRatePercent : 0,
+        isActive: resolvedDropshipSettings.isActive,
+        ratePercent: resolvedDropshipSettings.ratePercent,
+        residentialSurchargeActive: resolvedDropshipSettings.residentialSurchargeActive,
+        residentialSurchargeRatePercent: resolvedDropshipSettings.residentialSurchargeRatePercent,
       },
+      defaultDropshipFreightLevel: resolvedDropshipSettings.freightLevel
+        ? {
+            freeFreightAllowance: resolvedDropshipSettings.freightLevel.free_freight_allowance,
+            freightRatePercent: resolvedDropshipSettings.freightLevel.freight_rate_percent,
+            levelName: resolvedDropshipSettings.freightLevel.level_name,
+          }
+        : null,
       defaultFreightLevel: defaultFreightLevel
         ? {
             freeFreightAllowance: defaultFreightLevel.free_freight_allowance,
@@ -14648,6 +14796,39 @@ export async function ErpRouter({
                         </table>
                       </div>
                     )}
+                    <div className="section-title" style={{ marginTop: "1.5rem" }}>
+                      <h3>Dropship Settings</h3>
+                      <Link
+                        className="text-action"
+                        href={`/?module=edit-freight&customer=${dashboard.customer.id}`}
+                      >
+                        Edit
+                      </Link>
+                    </div>
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Dropship Rate</th>
+                            <th>Dropship Status</th>
+                            <th>Residential Surcharge</th>
+                            <th>Surcharge Status</th>
+                            <th>Dropship Freight Level</th>
+                            <th>Last Updated</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td>{dashboard.dropshipFreightSettings.dropshipRate}</td>
+                            <td>{dashboard.dropshipFreightSettings.dropshipStatus}</td>
+                            <td>{dashboard.dropshipFreightSettings.residentialSurchargeRate}</td>
+                            <td>{dashboard.dropshipFreightSettings.residentialSurchargeStatus}</td>
+                            <td>{dashboard.dropshipFreightSettings.freightLevel}</td>
+                            <td>{dashboard.dropshipFreightSettings.updatedAt ? timestampLabel(dashboard.dropshipFreightSettings.updatedAt) : "Not set"}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </article>
 
                   <article

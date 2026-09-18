@@ -96,6 +96,7 @@ type Props = {
   customerId: string;
   defaultDiscountPercent: number;
   defaultFreightLevel?: DefaultFreightLevel | null;
+  defaultDropshipFreightLevel?: DefaultFreightLevel | null;
   dropshipSettings: DropshipSettings;
   defaultLocationId?: string;
   isAgencyOrder?: boolean;
@@ -127,7 +128,7 @@ const orderTypeLabels: Record<string, string> = {
   regular: "Regular Order",
 };
 
-export function OrderEntryForm({ accountName, agencyId, customerId, defaultDiscountPercent, defaultFreightLevel = null, defaultLocationId, dropshipSettings, isAgencyOrder = false, parts, products, salesReps, saveAction, shipToOptions, territories }: Props) {
+export function OrderEntryForm({ accountName, agencyId, customerId, defaultDiscountPercent, defaultFreightLevel = null, defaultDropshipFreightLevel = null, defaultLocationId, dropshipSettings, isAgencyOrder = false, parts, products, salesReps, saveAction, shipToOptions, territories }: Props) {
   const [productQuery, setProductQuery] = useState("");
   const [searchParts, setSearchParts] = useState(false);
   const [partSearchMode, setPartSearchMode] = useState<"parent" | "generic">("parent");
@@ -212,7 +213,9 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
   }, [activeParentId, partSearchMode, partQuery, parts, searchParts]);
 
   const subtotal = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice * (1 - line.discountPercent / 100), 0);
-  const selectedFreightLevel = shipToOptions.find((location) => location.id === locationId)?.freightLevel ?? defaultFreightLevel;
+  const selectedFreightLevel = isDropship
+    ? defaultDropshipFreightLevel ?? defaultFreightLevel
+    : shipToOptions.find((location) => location.id === locationId)?.freightLevel ?? defaultFreightLevel;
   const defaultFreightCharge = selectedFreightLevel && subtotal < selectedFreightLevel.freeFreightAllowance
     ? Math.round(subtotal * (selectedFreightLevel.freightRatePercent / 100))
     : 0;

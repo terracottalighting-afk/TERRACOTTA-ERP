@@ -10,6 +10,11 @@ type OrderEntryData = {
       freightRatePercent: number;
       levelName: string;
     } | null;
+    defaultDropshipFreightLevel?: {
+      freeFreightAllowance: number;
+      freightRatePercent: number;
+      levelName: string;
+    } | null;
     name: string;
     dropshipSettings: {
       isActive: boolean;
@@ -68,6 +73,7 @@ export async function NewOrderPage({
         defaultDiscountPercent={Number(data.customer.default_discount_percent ?? 0)}
         dropshipSettings={data.customer.dropshipSettings}
         defaultFreightLevel={data.customer.defaultFreightLevel}
+        defaultDropshipFreightLevel={data.customer.defaultDropshipFreightLevel}
         defaultLocationId={locationId}
         isAgencyOrder={isAgencyOrder}
         parts={data.partOptions}

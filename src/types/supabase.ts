@@ -1810,6 +1810,9 @@ export type Database = {
           default_ground_carrier_account_number: string | null
           default_ltl_carrier: string | null
           default_ltl_carrier_account_number: string | null
+          dropship_freight_level_id: string | null
+          dropship_is_active: boolean | null
+          dropship_rate_percent: number | null
           flat_rate_percent: number | null
           free_freight_threshold: number | null
           freight_allowance_amount: number | null
@@ -1822,6 +1825,8 @@ export type Database = {
           ltl_freight_terms: Database["public"]["Enums"]["freight_terms"]
           policy_name: string
           preferred_shipping_type: string | null
+          residential_surcharge_is_active: boolean | null
+          residential_surcharge_rate_percent: number | null
           special_instructions: string | null
           updated_at: string
           updated_by_user_id: string | null
@@ -1835,6 +1840,9 @@ export type Database = {
           default_ground_carrier_account_number?: string | null
           default_ltl_carrier?: string | null
           default_ltl_carrier_account_number?: string | null
+          dropship_freight_level_id?: string | null
+          dropship_is_active?: boolean | null
+          dropship_rate_percent?: number | null
           flat_rate_percent?: number | null
           free_freight_threshold?: number | null
           freight_allowance_amount?: number | null
@@ -1847,6 +1855,8 @@ export type Database = {
           ltl_freight_terms?: Database["public"]["Enums"]["freight_terms"]
           policy_name: string
           preferred_shipping_type?: string | null
+          residential_surcharge_is_active?: boolean | null
+          residential_surcharge_rate_percent?: number | null
           special_instructions?: string | null
           updated_at?: string
           updated_by_user_id?: string | null
@@ -1860,6 +1870,9 @@ export type Database = {
           default_ground_carrier_account_number?: string | null
           default_ltl_carrier?: string | null
           default_ltl_carrier_account_number?: string | null
+          dropship_freight_level_id?: string | null
+          dropship_is_active?: boolean | null
+          dropship_rate_percent?: number | null
           flat_rate_percent?: number | null
           free_freight_threshold?: number | null
           freight_allowance_amount?: number | null
@@ -1872,6 +1885,8 @@ export type Database = {
           ltl_freight_terms?: Database["public"]["Enums"]["freight_terms"]
           policy_name?: string
           preferred_shipping_type?: string | null
+          residential_surcharge_is_active?: boolean | null
+          residential_surcharge_rate_percent?: number | null
           special_instructions?: string | null
           updated_at?: string
           updated_by_user_id?: string | null

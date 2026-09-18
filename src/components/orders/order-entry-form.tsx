@@ -50,6 +50,11 @@ type DefaultFreightLevel = {
   levelName: string;
 };
 
+type DropshipSettings = {
+  isActive: boolean;
+  ratePercent: number;
+};
+
 type OrderLine = OrderProductOption & {
   discountPercent: number;
   quantity: number;
@@ -87,6 +92,7 @@ type Props = {
   customerId: string;
   defaultDiscountPercent: number;
   defaultFreightLevel?: DefaultFreightLevel | null;
+  dropshipSettings: DropshipSettings;
   defaultLocationId?: string;
   isAgencyOrder?: boolean;
   parts: OrderPartOption[];
@@ -117,7 +123,7 @@ const orderTypeLabels: Record<string, string> = {
   regular: "Regular Order",
 };
 
-export function OrderEntryForm({ accountName, agencyId, customerId, defaultDiscountPercent, defaultFreightLevel = null, defaultLocationId, isAgencyOrder = false, parts, products, salesReps, saveAction, shipToOptions, territories }: Props) {
+export function OrderEntryForm({ accountName, agencyId, customerId, defaultDiscountPercent, defaultFreightLevel = null, defaultLocationId, dropshipSettings, isAgencyOrder = false, parts, products, salesReps, saveAction, shipToOptions, territories }: Props) {
   const [productQuery, setProductQuery] = useState("");
   const [searchParts, setSearchParts] = useState(false);
   const [partSearchMode, setPartSearchMode] = useState<"parent" | "generic">("parent");
@@ -204,6 +210,9 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
   const selectedFreightLevel = shipToOptions.find((location) => location.id === locationId)?.freightLevel ?? defaultFreightLevel;
   const defaultFreightCharge = selectedFreightLevel && subtotal < selectedFreightLevel.freeFreightAllowance
     ? Math.round(subtotal * (selectedFreightLevel.freightRatePercent / 100))
+    : 0;
+  const estimatedDropshipFee = isDropship && dropshipSettings.isActive
+    ? Math.round(subtotal * (dropshipSettings.ratePercent / 100) * 100) / 100
     : 0;
   const selectedTerritory = territories.find((territory) => territory.id === commissionSelection.territoryId);
   const selectedAgencyReps = salesReps.filter((rep) => rep.agencyId === commissionSelection.agencyId);
@@ -629,6 +638,8 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
             <div className="table-wrap"><table className="data-table"><thead><tr><th>SKU</th><th>Product</th><th>Brand</th><th>Qty</th><th>Unit Price</th><th>Discount</th><th>Line Total</th></tr></thead><tbody>{lines.map((line) => <tr key={line.id}><td>{line.sku}</td><td>{line.name}</td><td>{line.brandName}</td><td>{line.quantity}</td><td>{money.format(line.unitPrice)}</td><td>{line.discountPercent}%</td><td>{money.format(line.quantity * line.unitPrice * (1 - line.discountPercent / 100))}</td></tr>)}</tbody></table></div>
             <div className="order-total"><span>Order Subtotal</span><strong>{money.format(subtotal)}</strong></div>
             {selectedFreightLevel ? <div className="order-total"><span>Default Freight Charge ({selectedFreightLevel.levelName}: FFA {money.format(selectedFreightLevel.freeFreightAllowance)}, {selectedFreightLevel.freightRatePercent}%)</span><strong>{defaultFreightCharge === 0 ? "Free Freight" : wholeMoney.format(defaultFreightCharge)}</strong></div> : null}
+            {isDropship && estimatedDropshipFee > 0 ? <div className="order-total"><span>Dropship Fee ({dropshipSettings.ratePercent}%)</span><strong>{money.format(estimatedDropshipFee)}</strong></div> : null}
+            <div className="order-total"><span>Estimated Order Total</span><strong>{money.format(subtotal + defaultFreightCharge + estimatedDropshipFee)}</strong></div>
           </article>
 
           <article className="data-section">

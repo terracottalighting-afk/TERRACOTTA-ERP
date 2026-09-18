@@ -175,10 +175,12 @@ export async function InvoiceDocumentPage({
             <dt>Freight</dt>
             <dd>{money(Number(invoice.freight_amount))}</dd>
           </div>
-          <div>
-            <dt>Drop-ship Fee</dt>
-            <dd>{money(Number(invoice.dropship_fee_amount))}</dd>
-          </div>
+          {Number(invoice.dropship_fee_amount ?? 0) > 0 ? (
+            <div>
+              <dt>Drop-ship Fee</dt>
+              <dd>{money(Number(invoice.dropship_fee_amount))}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Tax</dt>
             <dd>{money(Number(invoice.tax_amount))}</dd>

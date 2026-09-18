@@ -357,6 +357,7 @@ type SalesOrderDetail = SalesOrder & {
   customer_account_id: string;
   customer_location_id: string | null;
   customer_name_snapshot: string;
+  dropship_fee_amount: number;
   bill_to_snapshot_json: Record<string, unknown> | null;
   is_dropship: boolean;
   order_source: string;
@@ -461,6 +462,7 @@ type InvoiceQueuePackingList = PackingList & {
   customer_name: string;
   created_at: string;
   dropship_fee_amount: number;
+  is_dropship: boolean;
   sales_order_number_snapshot: string | null;
 };
 
@@ -2005,6 +2007,42 @@ async function saveFreightCarrierAction(formData: FormData) {
   redirect("/?module=admin&admin_tab=freight&freight_tab=carriers");
 }
 
+async function saveDropshipSettingsAction(formData: FormData) {
+  "use server";
+
+  const rateText = textValue(formData, "dropship_rate_percent");
+  const ratePercent = Number(rateText);
+  const errorUrl = (message: string) =>
+    `/?module=admin&admin_tab=freight&freight_tab=dropship&error=${encodeURIComponent(message)}`;
+  if (!rateText || !Number.isFinite(ratePercent) || ratePercent < 0) {
+    redirect(errorUrl("Enter a non-negative Dropship Rate."));
+  }
+
+  const { error } = await createSupabaseUntypedAdminClient()
+    .from("system_setting")
+    .upsert(
+      {
+        category: "shipping",
+        default_value_json: { isActive: true, ratePercent: 0 },
+        description:
+          "Controls the percentage fee applied to manual Ship-to / Drop Ship orders.",
+        setting_key: "dropship_settings",
+        setting_label: "Dropship Settings",
+        setting_value: {
+          isActive: formData.get("is_active_dropship") === "on",
+          ratePercent,
+        },
+        validation_json: { type: "object" },
+        value_type: "json",
+      },
+      { onConflict: "setting_key" },
+    );
+  if (error) redirect(errorUrl(error.message));
+
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=freight&freight_tab=dropship");
+}
+
 async function resolveShipmentCarrier(formData: FormData) {
   const carrierId = textValue(formData, "freight_carrier_id");
   if (!carrierId) {
@@ -2466,6 +2504,35 @@ function defaultFreightCharge(
   return Math.round(subtotal * (freightLevel.freight_rate_percent / 100));
 }
 
+type DropshipSettings = {
+  isActive: boolean;
+  ratePercent: number;
+};
+
+async function getDropshipSettings(): Promise<DropshipSettings> {
+  const { data, error } = await createSupabaseUntypedAdminClient()
+    .from("system_setting")
+    .select("setting_value")
+    .eq("setting_key", "dropship_settings")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const value = data?.setting_value as { isActive?: unknown; ratePercent?: unknown } | null;
+  const ratePercent = Number(value?.ratePercent ?? 0);
+  return {
+    isActive: value?.isActive !== false,
+    ratePercent: Number.isFinite(ratePercent) && ratePercent >= 0 ? ratePercent : 0,
+  };
+}
+
+function dropshipFee(
+  amount: number,
+  isDropship: boolean,
+  settings: DropshipSettings,
+) {
+  if (!isDropship || !settings.isActive) return 0;
+  return Math.round(amount * (settings.ratePercent / 100) * 100) / 100;
+}
+
 async function shipmentFreightCharge(
   order: {
     customer_account_id: string;
@@ -2518,7 +2585,7 @@ async function refreshPackingListFreightCharge(
     await Promise.all([
       supabase
         .from("sales_order")
-        .select("customer_account_id, customer_location_id, subtotal_amount")
+        .select("customer_account_id, customer_location_id, is_dropship, subtotal_amount")
         .eq("id", orderId)
         .maybeSingle(),
       supabase
@@ -2537,9 +2604,22 @@ async function refreshPackingListFreightCharge(
       unitPrice: line.unit_price_snapshot,
     })),
   );
+  const shipmentSubtotal = (lines ?? []).reduce(
+    (total, line) =>
+      total +
+      Number(line.quantity_shipped) *
+        Number(line.unit_price_snapshot) *
+        (1 - Number(line.discount_percent_snapshot ?? 0) / 100),
+    0,
+  );
+  const shipmentDropshipFee = dropshipFee(
+    shipmentSubtotal,
+    order.is_dropship,
+    await getDropshipSettings(),
+  );
   const { error } = await supabase
     .from("packing_list")
-    .update({ shipping_fee: shippingFee })
+    .update({ dropship_fee_amount: shipmentDropshipFee, shipping_fee: shippingFee })
     .eq("id", packingListId)
     .eq("status", "draft")
     .eq("invoice_generation_status_snapshot", "not_invoiced");
@@ -2792,6 +2872,25 @@ async function createSalesOrderAction(formData: FormData) {
     ),
     defaultFreightLevel,
   );
+  let defaultDropshipFee = 0;
+  try {
+    defaultDropshipFee = dropshipFee(
+      pricedLines.reduce(
+        (sum, line) =>
+          sum +
+          Number(line.quantity) *
+            Number(line.unitPrice) *
+            (1 - Number(line.discountPercent) / 100),
+        0,
+      ),
+      isDropship,
+      await getDropshipSettings(),
+    );
+  } catch (dropshipError) {
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent(dropshipError instanceof Error ? dropshipError.message : "The Dropship Fee could not be calculated.")}`,
+    );
+  }
 
   const account = accountResult.data;
   const savedLocation = locationResult.data;
@@ -2999,6 +3098,7 @@ async function createSalesOrderAction(formData: FormData) {
               | "other_display")
           : null,
       display_tracking_required: orderType === "display",
+      dropship_fee_amount: defaultDropshipFee,
       ground_carrier_account_number_snapshot:
         freight?.default_ground_carrier_account_number ?? null,
       ground_carrier_snapshot: freight?.default_ground_carrier ?? null,
@@ -3556,6 +3656,28 @@ async function updateSalesOrderAction(formData: FormData) {
     shipping_priority: shippingPriority,
     territory_id_snapshot: territoryId,
   };
+  const { data: updatedOrderAmounts, error: updatedOrderAmountsError } =
+    await supabase
+      .from("sales_order")
+      .select("subtotal_amount")
+      .eq("id", orderId)
+      .maybeSingle();
+  if (updatedOrderAmountsError || !updatedOrderAmounts) {
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent(updatedOrderAmountsError?.message ?? "Order totals could not be loaded.")}`,
+    );
+  }
+  try {
+    orderUpdate.dropship_fee_amount = dropshipFee(
+      Number(updatedOrderAmounts.subtotal_amount ?? 0),
+      orderAddressUpdate.is_dropship ?? currentOrder.is_dropship,
+      await getDropshipSettings(),
+    );
+  } catch (dropshipError) {
+    redirect(
+      `${fallbackUrl}&error=${encodeURIComponent(dropshipError instanceof Error ? dropshipError.message : "The Dropship Fee could not be calculated.")}`,
+    );
+  }
 
   const { error: orderUpdateError } = await supabase
     .from("sales_order")
@@ -3972,6 +4094,23 @@ async function createPendingShipmentAction(formData: FormData) {
   } catch (freightError) {
     redirect(`${fallbackUrl}&error=${encodeURIComponent(freightError instanceof Error ? freightError.message : "The shipment freight charge could not be calculated.")}`);
   }
+  let shipmentDropshipFee = 0;
+  try {
+    shipmentDropshipFee = dropshipFee(
+      selectedLines.reduce(
+        (sum, line) =>
+          sum +
+          Number(line.requestedQuantity) *
+            Number(line.unit_price) *
+            (1 - Number(line.discount_percent) / 100),
+        0,
+      ),
+      order.is_dropship,
+      await getDropshipSettings(),
+    );
+  } catch (dropshipError) {
+    redirect(`${fallbackUrl}&error=${encodeURIComponent(dropshipError instanceof Error ? dropshipError.message : "The Dropship Fee could not be calculated.")}`);
+  }
   const { data: shipment, error: shipmentError } = await supabase
     .from("freight_shipment")
     .insert({
@@ -4003,6 +4142,7 @@ async function createPendingShipmentAction(formData: FormData) {
       customer_account_id: order.customer_account_id,
       customer_location_id: order.customer_location_id,
       customer_po_number_snapshot: order.customer_po_number,
+      dropship_fee_amount: shipmentDropshipFee,
       allocated_freight_cost: freightCost,
       freight_shipment_id: shipment.id,
       is_dropship: order.is_dropship,
@@ -4334,7 +4474,7 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
   const supabase = createSupabaseAdminClient();
   const { data: packingList, error: packingListError } = await supabase
     .from("packing_list")
-    .select("sales_order_id, shipping_fee")
+    .select("sales_order_id, shipping_fee, dropship_fee_amount")
     .eq("id", packingListId)
     .maybeSingle();
   const { data: order, error: orderError } = packingList
@@ -4354,8 +4494,14 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
   if (order.ground_freight_terms_snapshot !== "prepaid") {
     for (const brandId of brandIds) freightAllocations[brandId] = 0;
   }
+  if (Number(packingList.dropship_fee_amount ?? 0) === 0) {
+    for (const brandId of brandIds) dropshipAllocations[brandId] = 0;
+  }
   if (brandIds.length === 1) {
     freightAllocations[brandIds[0]] = customerFreightCharge;
+    dropshipAllocations[brandIds[0]] = Number(
+      packingList.dropship_fee_amount ?? 0,
+    );
   }
   if (
     brandIds.length > 1 &&
@@ -4945,7 +5091,7 @@ async function prepareInvoiceConfirmationAction(formData: FormData) {
   const { data: invoicePackingList, error: invoicePackingListError } =
     await invoiceSupabase
       .from("packing_list")
-      .select("sales_order_id, shipping_fee")
+      .select("sales_order_id, shipping_fee, dropship_fee_amount")
       .eq("id", packingListId)
       .maybeSingle();
   const { data: invoiceOrder, error: invoiceOrderError } = invoicePackingList
@@ -4993,8 +5139,15 @@ async function prepareInvoiceConfirmationAction(formData: FormData) {
   if (invoiceOrder.ground_freight_terms_snapshot !== "prepaid") {
     for (const brandId of brandIds) freightAllocations[brandId] = 0;
   }
-  if (brandIds.length === 1)
+  if (Number(invoicePackingList.dropship_fee_amount ?? 0) === 0) {
+    for (const brandId of brandIds) dropshipAllocations[brandId] = 0;
+  }
+  if (brandIds.length === 1) {
     freightAllocations[brandIds[0]] = customerFreightCharge;
+    dropshipAllocations[brandIds[0]] = Number(
+      invoicePackingList.dropship_fee_amount ?? 0,
+    );
+  }
   const allAmounts = [
     ...Object.values(freightAllocations),
     ...Object.values(dropshipAllocations),
@@ -10884,7 +11037,7 @@ async function getCustomerDashboard(customerId: string) {
 
 async function getOrderEntryData(customerId: string) {
   const supabase = createSupabaseAdminClient();
-  const [customerResult, locationsResult, accessoryResult] = await Promise.all([
+  const [customerResult, locationsResult, accessoryResult, dropshipSettingsResult] = await Promise.all([
     supabase
       .from("customer_account")
       .select("id, name, account_type_id, default_discount_percent")
@@ -10904,18 +11057,26 @@ async function getOrderEntryData(customerId: string) {
       .from("product_category")
       .select("id")
       .or("category_code.eq.accessory,name.ilike.Accessory"),
+    createSupabaseUntypedAdminClient()
+      .from("system_setting")
+      .select("setting_value")
+      .eq("setting_key", "dropship_settings")
+      .maybeSingle(),
   ]);
 
   const initialFailure = [
     customerResult,
     locationsResult,
     accessoryResult,
+    dropshipSettingsResult,
   ].find((result) => result.error);
   if (initialFailure?.error) {
     throw new Error(initialFailure.error.message);
   }
 
   if (!customerResult.data) return null;
+  const dropshipSettingsValue = dropshipSettingsResult.data?.setting_value as { isActive?: unknown; ratePercent?: unknown } | null;
+  const dropshipRatePercent = Number(dropshipSettingsValue?.ratePercent ?? 0);
 
   const defaultFreightLevel = await resolveFreightLevelForCustomer(
     customerId,
@@ -11200,6 +11361,10 @@ async function getOrderEntryData(customerId: string) {
   return {
     customer: {
       ...customerResult.data,
+      dropshipSettings: {
+        isActive: dropshipSettingsValue?.isActive !== false,
+        ratePercent: Number.isFinite(dropshipRatePercent) && dropshipRatePercent >= 0 ? dropshipRatePercent : 0,
+      },
       defaultFreightLevel: defaultFreightLevel
         ? {
             freeFreightAllowance: defaultFreightLevel.free_freight_allowance,
@@ -11340,7 +11505,7 @@ async function getSalesOrderDetail(
     supabase
       .from("sales_order")
       .select(
-        "id, customer_account_id, customer_location_id, sales_order_number, customer_po_number, customer_name_snapshot, order_date, requested_ship_date, order_source, order_type, status, shipping_readiness_status, credit_hold_status, is_dropship, ship_to_type, ship_to_display_name_snapshot, ship_to_snapshot_json, bill_to_snapshot_json, shipping_priority, sales_rep_agency_id_snapshot, sales_rep_id_snapshot, territory_id_snapshot, subtotal_amount, freight_amount, tax_amount, total_amount, notes",
+        "id, customer_account_id, customer_location_id, sales_order_number, customer_po_number, customer_name_snapshot, order_date, requested_ship_date, order_source, order_type, status, shipping_readiness_status, credit_hold_status, is_dropship, ship_to_type, ship_to_display_name_snapshot, ship_to_snapshot_json, bill_to_snapshot_json, shipping_priority, sales_rep_agency_id_snapshot, sales_rep_id_snapshot, territory_id_snapshot, subtotal_amount, freight_amount, dropship_fee_amount, tax_amount, total_amount, notes",
       )
       .eq("id", orderId)
       .maybeSingle(),
@@ -11511,7 +11676,7 @@ async function getInvoiceQueuePackingLists() {
   const { data: packingLists, error: packingListsError } = await supabase
     .from("packing_list")
     .select(
-      "id, packing_list_number, customer_account_id, customer_po_number_snapshot, sales_order_id, sales_order_number_snapshot, status, invoice_generation_status_snapshot, shipping_fee, allocated_freight_cost, dropship_fee_amount, ship_date, created_at",
+      "id, packing_list_number, customer_account_id, customer_po_number_snapshot, sales_order_id, sales_order_number_snapshot, status, invoice_generation_status_snapshot, is_dropship, shipping_fee, allocated_freight_cost, dropship_fee_amount, ship_date, created_at",
     )
     .eq("invoice_required", true)
     .eq("invoice_generation_status_snapshot", "not_invoiced")
@@ -13225,7 +13390,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveProductSettingAction={saveProductSettingAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
+          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveProductSettingAction={saveProductSettingAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

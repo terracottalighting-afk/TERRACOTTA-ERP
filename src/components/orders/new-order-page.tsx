@@ -11,6 +11,10 @@ type OrderEntryData = {
       levelName: string;
     } | null;
     name: string;
+    dropshipSettings: {
+      isActive: boolean;
+      ratePercent: number;
+    };
   };
   partOptions: OrderPartOption[];
   products: OrderProductOption[];
@@ -60,6 +64,7 @@ export async function NewOrderPage({
         agencyId={agencyId}
         customerId={customerId}
         defaultDiscountPercent={Number(data.customer.default_discount_percent ?? 0)}
+        dropshipSettings={data.customer.dropshipSettings}
         defaultFreightLevel={data.customer.defaultFreightLevel}
         defaultLocationId={locationId}
         isAgencyOrder={isAgencyOrder}

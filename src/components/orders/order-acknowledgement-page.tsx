@@ -13,6 +13,7 @@ type OrderAcknowledgement = {
   bill_to_snapshot_json: Record<string, unknown> | null;
   customer_name_snapshot: string;
   customer_po_number: string | null;
+  dropship_fee_amount: number;
   freight_amount: number;
   id: string;
   lines: {
@@ -232,6 +233,12 @@ export async function OrderAcknowledgementPage({
           <span>Estimated Freight Charge</span>
           <strong>{money(Number(order.freight_amount ?? 0))}</strong>
         </div>
+        {Number(order.dropship_fee_amount ?? 0) > 0 ? (
+          <div className="quote-document-total">
+            <span>Dropship Fee</span>
+            <strong>{money(Number(order.dropship_fee_amount))}</strong>
+          </div>
+        ) : null}
         <div className="quote-document-total">
           <span>Order Total</span>
           <strong>{money(Number(order.total_amount ?? 0))}</strong>

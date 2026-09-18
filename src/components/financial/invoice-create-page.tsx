@@ -21,6 +21,7 @@ type InvoiceQueuePackingList = {
   ship_date: string | null;
   shipping_fee: number;
   freightTerm: string;
+  is_dropship: boolean;
   commission: {
     agencyName: string | null;
     defaultPayable: boolean;
@@ -57,6 +58,7 @@ export async function InvoiceCreatePage({
     );
   }
   const multipleBrands = packingList.brandSummaries.length > 1;
+  const hasDropshipFee = Number(packingList.dropship_fee_amount ?? 0) > 0;
 
   return (
     <section className="dashboard-panel">
@@ -178,7 +180,7 @@ export async function InvoiceCreatePage({
                   <th>Brand</th>
                   <th>Shipped Product Total</th>
                   <th>Freight</th>
-                  <th>Drop-ship Fee</th>
+                {hasDropshipFee ? <th>Drop-ship Fee</th> : null}
                   <th>Tax</th>
                 </tr>
               </thead>
@@ -194,7 +196,7 @@ export async function InvoiceCreatePage({
                       />
                     </td>
                     <td>{money(brand.subtotal_amount)}</td>
-                    <td>
+                    {hasDropshipFee ? <td>
                       {multipleBrands ? (
                         <input
                           defaultValue={0}
@@ -213,17 +215,26 @@ export async function InvoiceCreatePage({
                           />
                         </>
                       )}
-                    </td>
+                    </td> : <input name={`dropship_${brand.brand_id}`} type="hidden" value={0} />}
                     <td>
-                      <input
-                        defaultValue={
-                          multipleBrands ? 0 : packingList.dropship_fee_amount
-                        }
-                        min={0}
-                        name={`dropship_${brand.brand_id}`}
-                        step="0.01"
-                        type="number"
-                      />
+                      {multipleBrands ? (
+                        <input
+                          defaultValue={0}
+                          min={0}
+                          name={`dropship_${brand.brand_id}`}
+                          step="0.01"
+                          type="number"
+                        />
+                      ) : (
+                        <>
+                          {money(Number(packingList.dropship_fee_amount ?? 0))}
+                          <input
+                            name={`dropship_${brand.brand_id}`}
+                            type="hidden"
+                            value={packingList.dropship_fee_amount ?? 0}
+                          />
+                        </>
+                      )}
                     </td>
                     <td>
                       <input

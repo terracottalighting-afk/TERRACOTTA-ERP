@@ -177,13 +177,13 @@ export async function InvoiceDocumentPage({
             <dt>Freight</dt>
             <dd>{money(Number(invoice.freight_amount))}</dd>
           </div>
+          {residentialSurcharge > 0 ? <div><dt>Residential Surcharge</dt><dd>{money(residentialSurcharge)}</dd></div> : null}
           {baseDropshipFee > 0 ? (
             <div>
               <dt>Drop-ship Fee</dt>
               <dd>{money(baseDropshipFee)}</dd>
             </div>
           ) : null}
-          {residentialSurcharge > 0 ? <div><dt>Residential Surcharge</dt><dd>{money(residentialSurcharge)}</dd></div> : null}
           <div>
             <dt>Tax</dt>
             <dd>{money(Number(invoice.tax_amount))}</dd>

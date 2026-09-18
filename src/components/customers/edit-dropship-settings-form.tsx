@@ -15,11 +15,19 @@ type FreightPolicy = {
   dropship_freight_allowance_amount?: number | null;
   dropship_freight_rate_percent?: number | null;
   dropship_freight_terms?: string | null;
+  dropship_default_ground_carrier?: string | null;
+  dropship_default_ground_carrier_account_number?: string | null;
+  dropship_default_ltl_carrier?: string | null;
+  dropship_default_ltl_carrier_account_number?: string | null;
   dropship_is_active?: boolean | null;
   dropship_rate_percent?: number | null;
   residential_surcharge_is_active?: boolean | null;
   residential_surcharge_rate_percent?: number | null;
   freight_terms?: string | null;
+  default_ground_carrier?: string | null;
+  default_ground_carrier_account_number?: string | null;
+  default_ltl_carrier?: string | null;
+  default_ltl_carrier_account_number?: string | null;
 };
 
 export function EditDropshipSettingsForm({
@@ -57,6 +65,14 @@ export function EditDropshipSettingsForm({
     (freightPolicy?.freight_terms === "collect" || freightPolicy?.freight_terms === "prepaid"
       ? freightPolicy.freight_terms
       : "prepaid");
+  const [dropshipFreightTerms, setDropshipFreightTerms] = useState(defaultDropshipFreightTerms);
+  const hasAccountCollectSettings = Boolean(
+    freightPolicy?.freight_terms === "collect" &&
+      (freightPolicy?.default_ground_carrier ||
+        freightPolicy?.default_ground_carrier_account_number ||
+        freightPolicy?.default_ltl_carrier ||
+        freightPolicy?.default_ltl_carrier_account_number),
+  );
 
   return (
     <section className="dashboard-panel">
@@ -115,13 +131,41 @@ export function EditDropshipSettingsForm({
           <div className="dropship-level-field">
             <label>
               Freight Terms
-              <select defaultValue={defaultDropshipFreightTerms} name="dropship_freight_terms">
+              <select name="dropship_freight_terms" onChange={(event) => setDropshipFreightTerms(event.target.value)} value={dropshipFreightTerms}>
                 <option value="prepaid">Prepay</option>
                 <option value="collect">Collect</option>
               </select>
             </label>
             <p>Defaults from the account Freight Terms when it is Prepay or Collect. Customer Pickup is not available for Drop Ship orders.</p>
           </div>
+          {dropshipFreightTerms === "collect" ? (
+            hasAccountCollectSettings ? (
+              <div className="collect-account-summary">
+                <strong>Account Collect Carrier Details</strong>
+                <span>Ground: {freightPolicy?.default_ground_carrier ?? "Not set"}{freightPolicy?.default_ground_carrier_account_number ? ` | Account ${freightPolicy.default_ground_carrier_account_number}` : ""}</span>
+                <span>LTL: {freightPolicy?.default_ltl_carrier ?? "Not set"}{freightPolicy?.default_ltl_carrier_account_number ? ` | Account ${freightPolicy.default_ltl_carrier_account_number}` : ""}</span>
+              </div>
+            ) : (
+              <div className="dropship-override-fields">
+                <label>
+                  Ground Carrier
+                  <input defaultValue={freightPolicy?.dropship_default_ground_carrier ?? ""} name="dropship_ground_collect_carrier" placeholder="Customer-provided ground carrier" />
+                </label>
+                <label>
+                  Ground Carrier Account No.
+                  <input defaultValue={freightPolicy?.dropship_default_ground_carrier_account_number ?? ""} name="dropship_ground_collect_account_number" />
+                </label>
+                <label>
+                  LTL Carrier
+                  <input defaultValue={freightPolicy?.dropship_default_ltl_carrier ?? ""} name="dropship_ltl_collect_carrier" placeholder="Customer-provided LTL carrier" />
+                </label>
+                <label>
+                  LTL Carrier Account No.
+                  <input defaultValue={freightPolicy?.dropship_default_ltl_carrier_account_number ?? ""} name="dropship_ltl_collect_account_number" />
+                </label>
+              </div>
+            )
+          ) : null}
         </fieldset>
 
         <fieldset className="dropship-override-panel">

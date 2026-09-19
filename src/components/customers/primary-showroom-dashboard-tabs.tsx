@@ -170,9 +170,11 @@ export function PrimaryShowroomDashboardTabs({
         <article className="data-section">
           <div className="section-title">
             <h3>Display Items</h3>
-            <div className="form-actions">
-              <Link className="secondary-action secondary-action--light" href={addDisplayHref}>Add a Display</Link>
-              <Link className="small-action" href={importFromPoHref}>Import from PO</Link>
+            <div className="section-actions">
+              <div className="primary-showroom-display-actions">
+                <Link className="small-action" href={addDisplayHref}>Add a Display</Link>
+                <Link className="small-action" href={importFromPoHref}>Import from PO</Link>
+              </div>
               <span>{filteredDisplays.length}</span>
             </div>
           </div>

@@ -27,6 +27,7 @@ export type FinancialDashboardPackingList = {
   customer_name: string;
   customer_po_number_snapshot: string | null;
   id: string;
+  invoiceFreightCharge: number;
   packing_list_number: string;
   ship_date: string | null;
   shipping_fee: number | null;
@@ -434,7 +435,7 @@ export async function FinancialDashboardTabs({
                           ),
                         )}
                       </td>
-                      <td>{money(packingList.shipping_fee)}</td>
+                      <td>{money(packingList.invoiceFreightCharge)}</td>
                       <td>
                         <Link
                           className="small-action"

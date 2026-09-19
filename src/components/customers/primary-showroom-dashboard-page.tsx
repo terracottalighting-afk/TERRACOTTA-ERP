@@ -141,6 +141,11 @@ export async function PrimaryShowroomDashboardPage({
         }}
         profileEditHref={`/?module=edit-primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_section=profile`}
         measuresEditHref={`/?module=edit-primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_section=measures`}
+        primaryShowroomContactEditHref={
+          dashboard.primaryShowroomContact
+            ? `/?module=edit-contact&customer=${customerId}&contact=${dashboard.primaryShowroomContact.id}`
+            : `/?module=view-location&customer=${customerId}&location=${dashboard.location.id}&location_tab=contacts`
+        }
         snapshots={dashboard.snapshots}
       />
     </section>

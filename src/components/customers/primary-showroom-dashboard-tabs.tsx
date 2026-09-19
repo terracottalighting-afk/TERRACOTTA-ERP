@@ -31,6 +31,7 @@ export function PrimaryShowroomDashboardTabs({
   createSnapshotAction,
   customerId,
   profileEditHref,
+  primaryShowroomContactEditHref,
   measuresEditHref,
   displays,
   enrollmentId,
@@ -40,6 +41,7 @@ export function PrimaryShowroomDashboardTabs({
   createSnapshotAction: (formData: FormData) => void | Promise<void>;
   customerId: string;
   profileEditHref: string;
+  primaryShowroomContactEditHref: string;
   measuresEditHref: string;
   displays: Display[];
   enrollmentId: string;
@@ -136,7 +138,7 @@ export function PrimaryShowroomDashboardTabs({
             </dl>
           </article>
           <article className="info-panel">
-            <h3>Primary Showroom Contact</h3>
+            <div className="panel-title-row"><h3>Primary Showroom Contact</h3><Link className="text-action" href={primaryShowroomContactEditHref}>Edit</Link></div>
             {profile.primaryShowroomContact ? (
               <dl>
                 <div><dt>Name</dt><dd>{profile.primaryShowroomContact.name}</dd></div>

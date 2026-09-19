@@ -32,6 +32,7 @@ type PrimaryShowroomDashboard = {
     address_line_1: string | null;
     address_line_2: string | null;
     city: string | null;
+    id: string;
     location_name: string;
     postal_code: string | null;
     state_province: string | null;
@@ -90,10 +91,21 @@ export async function PrimaryShowroomDashboardPage({
         <div>
           <span className="eyebrow">Primary Showroom</span>
           <div className="header-line">
-            <h2>{dashboard.location.location_name}</h2>
+            <h2>
+              <Link
+                className="record-link"
+                href={`/?module=view-location&customer=${customerId}&location=${dashboard.location.id}&location_tab=profile`}
+              >
+                {dashboard.location.location_name}
+              </Link>
+            </h2>
             <StatusBadge tone={dashboard.enrollment.program_status === "active" ? "good" : "warn"} value={dashboard.enrollment.program_status} />
           </div>
-          <p>{customer.name}</p>
+          <p>
+            <Link className="text-action" href={`/?customer=${customerId}`}>
+              {customer.name}
+            </Link>
+          </p>
         </div>
         <Link className="secondary-action" href={`/?customer=${customerId}&tab=primary-showrooms`}>
           Back to Primary Showrooms

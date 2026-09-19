@@ -12909,7 +12909,7 @@ async function getPrimaryShowroomDashboard(
     supabase
       .from("customer_location")
       .select(
-        "location_name, address_line_1, address_line_2, city, state_province, postal_code",
+        "id, location_name, address_line_1, address_line_2, city, state_province, postal_code",
       )
       .eq("id", enrollment.customer_location_id)
       .eq("customer_account_id", customerId)

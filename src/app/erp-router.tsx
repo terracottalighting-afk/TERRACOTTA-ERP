@@ -2091,6 +2091,29 @@ async function saveDropshipSettingsAction(formData: FormData) {
   redirect("/?module=admin&admin_tab=freight&freight_tab=dropship");
 }
 
+async function savePrimaryShowroomSettingsAction(formData: FormData) {
+  "use server";
+  const periodText = textValue(formData, "backtrack_display_po_period_months");
+  const periodMonths = Number(periodText);
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=customers&error=${encodeURIComponent(message)}`;
+  if (!Number.isInteger(periodMonths) || periodMonths < 1 || periodMonths > 120) {
+    redirect(errorUrl("Enter a whole number of months between 1 and 120."));
+  }
+  const { error } = await createSupabaseUntypedAdminClient().from("system_setting").upsert({
+    category: "customer",
+    default_value_json: 12,
+    description: "Number of prior months of shipped POs available for Primary Showroom display imports.",
+    setting_key: "BackTrack_Display_PO_Period",
+    setting_label: "BackTrack_Display_PO_Period",
+    setting_value: periodMonths,
+    validation_json: { maximum: 120, minimum: 1, type: "integer" },
+    value_type: "number",
+  }, { onConflict: "setting_key" });
+  if (error) redirect(errorUrl(error.message));
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=customers");
+}
+
 async function resolveShipmentCarrier(formData: FormData) {
   if (formData.get("use_customer_carriers") === "on") {
     const selection = textValue(formData, "customer_carrier_selection");
@@ -13241,6 +13264,54 @@ async function getPrimaryShowroomImportOrder(customerId: string, enrollmentId: s
   };
 }
 
+async function getPrimaryShowroomImportOptions(customerId: string, enrollmentId: string) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const [{ data: setting, error: settingError }, { data: enrollment, error: enrollmentError }] = await Promise.all([
+    supabase.from("system_setting").select("setting_value").eq("setting_key", "BackTrack_Display_PO_Period").maybeSingle(),
+    supabase.from("primary_showroom_enrollment").select("customer_location_id").eq("id", enrollmentId).eq("customer_account_id", customerId).maybeSingle(),
+  ]);
+  if (settingError) throw new Error(settingError.message);
+  if (enrollmentError || !enrollment) throw new Error(enrollmentError?.message ?? "Primary Showroom enrollment was not found.");
+  const configuredMonths = Number(setting?.setting_value ?? 12);
+  const periodMonths = Number.isInteger(configuredMonths) && configuredMonths > 0 ? configuredMonths : 12;
+  const startDate = new Date();
+  startDate.setMonth(startDate.getMonth() - periodMonths);
+  const { data: orders, error: ordersError } = await supabase
+    .from("sales_order")
+    .select("id, customer_location_id, customer_po_number, order_date, sales_order_number")
+    .eq("customer_account_id", customerId)
+    .gte("order_date", startDate.toISOString().slice(0, 10))
+    .not("customer_po_number", "is", null)
+    .order("order_date", { ascending: false });
+  if (ordersError) throw new Error(ordersError.message);
+  const orderIds = (orders ?? []).map((order) => order.id);
+  if (!orderIds.length) return { periodMonths, pos: [] };
+  const [linesResult, locationsResult, shipmentsResult] = await Promise.all([
+    supabase.from("sales_order_line").select("sales_order_id").in("sales_order_id", orderIds).gt("quantity_shipped", 0),
+    supabase.from("customer_location").select("id, location_name").eq("customer_account_id", customerId),
+    supabase.from("packing_list").select("sales_order_id, ship_date").in("sales_order_id", orderIds).not("ship_date", "is", null),
+  ]);
+  if (linesResult.error) throw new Error(linesResult.error.message);
+  if (locationsResult.error) throw new Error(locationsResult.error.message);
+  if (shipmentsResult.error) throw new Error(shipmentsResult.error.message);
+  const shippedOrderIds = new Set((linesResult.data ?? []).map((line) => line.sales_order_id));
+  const locations = new Map((locationsResult.data ?? []).map((location) => [location.id, location.location_name]));
+  const latestShipDates = new Map<string, string>();
+  for (const shipment of shipmentsResult.data ?? []) {
+    if (!shipment.ship_date || (latestShipDates.get(shipment.sales_order_id) ?? "") >= shipment.ship_date) continue;
+    latestShipDates.set(shipment.sales_order_id, shipment.ship_date);
+  }
+  return {
+    periodMonths,
+    pos: (orders ?? []).filter((order) => shippedOrderIds.has(order.id)).map((order) => ({
+      isShowroomLocation: order.customer_location_id === enrollment.customer_location_id,
+      locationName: locations.get(order.customer_location_id) ?? "Unknown location",
+      poNumber: order.customer_po_number,
+      shipDate: latestShipDates.get(order.id) ?? null,
+    })),
+  };
+}
+
 async function importPrimaryShowroomDisplaysAction(formData: FormData) {
   "use server";
   const customerId = textValue(formData, "customer_id");
@@ -14037,6 +14108,7 @@ export async function ErpRouter({
             enrollmentId={params.primary_showroom}
             error={params.error}
             importAction={importPrimaryShowroomDisplaysAction}
+            loadImportOptions={getPrimaryShowroomImportOptions}
             loadImportOrder={getPrimaryShowroomImportOrder}
             poNumber={params.primary_showroom_po}
           />
@@ -14457,7 +14529,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveProductSettingAction={saveProductSettingAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
+          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

@@ -27,6 +27,13 @@ type ImportOrder = {
   lines: ImportLine[];
 };
 
+type ImportPoOption = {
+  isShowroomLocation: boolean;
+  locationName: string;
+  poNumber: string;
+  shipDate: string | null;
+};
+
 function DashboardLink({ customerId, enrollmentId }: { customerId: string; enrollmentId: string }) {
   return <Link className="secondary-action secondary-action--light" href={`/?module=primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}`}>Back to Primary Showroom</Link>;
 }
@@ -84,6 +91,7 @@ export async function ImportPrimaryShowroomDisplaysForm({
   error,
   poNumber,
   importAction,
+  loadImportOptions,
   loadImportOrder,
 }: {
   customerId?: string;
@@ -91,10 +99,14 @@ export async function ImportPrimaryShowroomDisplaysForm({
   error?: string;
   poNumber?: string;
   importAction: (formData: FormData) => void | Promise<void>;
+  loadImportOptions: (customerId: string, enrollmentId: string) => Promise<{ periodMonths: number; pos: ImportPoOption[] }>;
   loadImportOrder: (customerId: string, enrollmentId: string, poNumber: string) => Promise<{ error?: string; order: ImportOrder | null }>;
 }) {
   if (!customerId || !enrollmentId) return <ModulePlaceholder moduleName="Importing displays requires a selected primary showroom" />;
-  const result = poNumber ? await loadImportOrder(customerId, enrollmentId, poNumber) : { order: null };
+  const [options, result] = await Promise.all([
+    loadImportOptions(customerId, enrollmentId),
+    poNumber ? loadImportOrder(customerId, enrollmentId, poNumber) : Promise.resolve({ error: undefined, order: null }),
+  ]);
   const formUrl = `/?module=primary-showroom-display-import&customer=${customerId}&primary_showroom=${enrollmentId}`;
 
   return <section className="dashboard-panel">
@@ -104,7 +116,7 @@ export async function ImportPrimaryShowroomDisplaysForm({
     </section>
     {error || result.error ? <div className="form-alert">{decodeURIComponent(error ?? result.error ?? "")}</div> : null}
     <form action={formUrl} className="customer-form">
-      <fieldset><legend>Find a Shipped PO</legend><div className="form-grid"><label>Customer PO #<input defaultValue={poNumber ?? ""} name="primary_showroom_po" placeholder="Enter PO number" required /></label></div><div className="form-actions"><button className="primary-action" type="submit">Find Shipped Items</button></div></fieldset>
+      <fieldset><legend>Find a Shipped PO</legend><div className="form-grid"><label>Customer PO #<select defaultValue={poNumber ?? ""} name="primary_showroom_po" required><option value="">Select a shipped PO from the last {options.periodMonths} months</option>{options.pos.map((po) => <option disabled={!po.isShowroomLocation} key={`${po.poNumber}:${po.locationName}`} value={po.poNumber}>{po.poNumber} · {dateLabel(po.shipDate)} · {po.locationName}{po.isShowroomLocation ? "" : " (different ship-to)"}</option>)}</select></label></div><p className="fieldset-note">POs for other showroom locations are listed for account history but cannot be imported here.</p><div className="form-actions"><button className="primary-action" type="submit">Find Shipped Items</button></div></fieldset>
     </form>
     {result.order ? <form action={importAction} className="customer-form">
       <input name="customer_id" type="hidden" value={customerId} /><input name="enrollment_id" type="hidden" value={enrollmentId} /><input name="customer_po_number" type="hidden" value={result.order.customerPoNumber} />

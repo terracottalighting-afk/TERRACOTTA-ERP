@@ -7,13 +7,14 @@ import { WarehouseDirectory } from "./warehouse-directory";
 import { FreightLevelManager } from "./freight-level-manager";
 import { FreightCarrierManager } from "./freight-carrier-manager";
 import { DropshipSettingsManager } from "./dropship-settings-manager";
+import { PrimaryShowroomSettingsManager } from "./primary-showroom-settings-manager";
 
 type AdminTab = "users" | "products" | "warehouse" | "territory" | "customers" | "freight";
 
-export async function AdminDashboard({ assignStyleAction, deactivateCustomerSettingAction, deactivateProductSettingAction, deactivateWarehousesAction, error, saveCustomerSettingAction, saveDropshipSettingsAction, saveFreightCarrierAction, saveFreightLevelAction, saveProductSettingAction, selectedFreightTab, selectedTab }: { assignStyleAction: (formData: FormData) => Promise<void>; deactivateCustomerSettingAction: (formData: FormData) => Promise<void>; deactivateProductSettingAction: (formData: FormData) => Promise<void>; deactivateWarehousesAction: (formData: FormData) => Promise<void>; error?: string; saveCustomerSettingAction: (formData: FormData) => Promise<void>; saveDropshipSettingsAction: (formData: FormData) => Promise<void>; saveFreightCarrierAction: (formData: FormData) => Promise<void>; saveFreightLevelAction: (formData: FormData) => Promise<void>; saveProductSettingAction: (formData: FormData) => Promise<void>; selectedFreightTab?: string; selectedTab?: string }) {
+export async function AdminDashboard({ assignStyleAction, deactivateCustomerSettingAction, deactivateProductSettingAction, deactivateWarehousesAction, error, saveCustomerSettingAction, saveDropshipSettingsAction, saveFreightCarrierAction, saveFreightLevelAction, savePrimaryShowroomSettingsAction, saveProductSettingAction, selectedFreightTab, selectedTab }: { assignStyleAction: (formData: FormData) => Promise<void>; deactivateCustomerSettingAction: (formData: FormData) => Promise<void>; deactivateProductSettingAction: (formData: FormData) => Promise<void>; deactivateWarehousesAction: (formData: FormData) => Promise<void>; error?: string; saveCustomerSettingAction: (formData: FormData) => Promise<void>; saveDropshipSettingsAction: (formData: FormData) => Promise<void>; saveFreightCarrierAction: (formData: FormData) => Promise<void>; saveFreightLevelAction: (formData: FormData) => Promise<void>; savePrimaryShowroomSettingsAction: (formData: FormData) => Promise<void>; saveProductSettingAction: (formData: FormData) => Promise<void>; selectedFreightTab?: string; selectedTab?: string }) {
   const supabase = createSupabaseAdminClient();
   const untypedSupabase = createSupabaseUntypedAdminClient();
-  const [warehousesResult, deactivatedWarehousesResult, territoriesResult, brandsResult, suitesResult, stylesResult, categoriesResult, materialsResult, finishesResult, partRolesResult, customerAccountTypesResult, customerBusinessTypesResult, customerStatusesResult, freightLevelsResult, freightLevelGroupsResult, freightCarriersResult, dropshipSettingsResult] = await Promise.all([
+  const [warehousesResult, deactivatedWarehousesResult, territoriesResult, brandsResult, suitesResult, stylesResult, categoriesResult, materialsResult, finishesResult, partRolesResult, customerAccountTypesResult, customerBusinessTypesResult, customerStatusesResult, freightLevelsResult, freightLevelGroupsResult, freightCarriersResult, dropshipSettingsResult, primaryShowroomSettingsResult] = await Promise.all([
     supabase.from("warehouse").select("id, warehouse_code, name, is_active").eq("is_active", true).order("name", { ascending: true }),
     supabase.from("warehouse").select("id, warehouse_code, name, is_active").eq("is_active", false).order("name", { ascending: true }),
     supabase.from("territory").select("id, territory_code, name, description, state_codes_json, status").order("name", { ascending: true }),
@@ -31,8 +32,9 @@ export async function AdminDashboard({ assignStyleAction, deactivateCustomerSett
     untypedSupabase.from("freight_level_customer_group").select("id, freight_level_id, account_type_id, primary_showroom_requirement"),
     untypedSupabase.from("freight_carrier").select("id, carrier_name, freight_type, contact_name, contact_email, website, is_active").order("carrier_name", { ascending: true }),
     untypedSupabase.from("system_setting").select("setting_value").eq("setting_key", "dropship_settings").maybeSingle(),
+    untypedSupabase.from("system_setting").select("setting_value").eq("setting_key", "BackTrack_Display_PO_Period").maybeSingle(),
   ]);
-  const failedResult = [warehousesResult, deactivatedWarehousesResult, territoriesResult, brandsResult, suitesResult, stylesResult, categoriesResult, materialsResult, finishesResult, partRolesResult, customerAccountTypesResult, customerBusinessTypesResult, customerStatusesResult, freightLevelsResult, freightLevelGroupsResult, freightCarriersResult, dropshipSettingsResult].find((result) => result.error);
+  const failedResult = [warehousesResult, deactivatedWarehousesResult, territoriesResult, brandsResult, suitesResult, stylesResult, categoriesResult, materialsResult, finishesResult, partRolesResult, customerAccountTypesResult, customerBusinessTypesResult, customerStatusesResult, freightLevelsResult, freightLevelGroupsResult, freightCarriersResult, dropshipSettingsResult, primaryShowroomSettingsResult].find((result) => result.error);
   if (failedResult?.error) throw new Error(failedResult.error.message);
 
   const warehouses = warehousesResult.data ?? [];
@@ -41,6 +43,7 @@ export async function AdminDashboard({ assignStyleAction, deactivateCustomerSett
   const dropshipSettings = dropshipSettingsResult.data?.setting_value as { isActive?: unknown; ratePercent?: unknown; residentialSurchargeActive?: unknown; residentialSurchargeRatePercent?: unknown } | null;
   const dropshipRatePercent = Number(dropshipSettings?.ratePercent ?? 0);
   const residentialSurchargeRatePercent = Number(dropshipSettings?.residentialSurchargeRatePercent ?? 0);
+  const primaryShowroomBacktrackPeriod = Number(primaryShowroomSettingsResult.data?.setting_value ?? 12);
 
   const activeTab: AdminTab = selectedTab === "products" || selectedTab === "warehouse" || selectedTab === "territory" || selectedTab === "customers" || selectedTab === "freight" ? selectedTab : "users";
 
@@ -59,7 +62,7 @@ export async function AdminDashboard({ assignStyleAction, deactivateCustomerSett
         <WarehouseDirectory deactivateAction={deactivateWarehousesAction} deactivatedWarehouses={deactivatedWarehouses} warehouses={warehouses} />
       </article>
       <article className={activeTab === "territory" ? "data-section" : "data-section tab-panel-hidden"}><TerritoryDirectory territories={territories} /></article>
-      <article className={activeTab === "customers" ? "data-section tab-panel--flush" : "data-section tab-panel-hidden"}><CustomerSettingsManager accountTypes={customerAccountTypesResult.data ?? []} businessTypes={customerBusinessTypesResult.data ?? []} deactivateAction={deactivateCustomerSettingAction} error={error} saveAction={saveCustomerSettingAction} statuses={(customerStatusesResult.data ?? []).map((status) => ({ ...status, type_code: status.status_code }))} /></article>
+      <article className={activeTab === "customers" ? "data-section tab-panel--flush" : "data-section tab-panel-hidden"}><CustomerSettingsManager accountTypes={customerAccountTypesResult.data ?? []} businessTypes={customerBusinessTypesResult.data ?? []} deactivateAction={deactivateCustomerSettingAction} error={error} saveAction={saveCustomerSettingAction} statuses={(customerStatusesResult.data ?? []).map((status) => ({ ...status, type_code: status.status_code }))} /><PrimaryShowroomSettingsManager error={error} periodMonths={Number.isInteger(primaryShowroomBacktrackPeriod) && primaryShowroomBacktrackPeriod > 0 ? primaryShowroomBacktrackPeriod : 12} saveAction={savePrimaryShowroomSettingsAction} /></article>
       <article className={activeTab === "freight" ? "data-section tab-panel--flush" : "data-section tab-panel-hidden"}>
         <section className="tab-strip" aria-label="Freight settings">
           <Link aria-current={selectedFreightTab !== "carriers" ? "page" : undefined} href="/?module=admin&admin_tab=freight&freight_tab=levels">Freight Levels</Link>

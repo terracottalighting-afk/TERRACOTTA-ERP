@@ -1996,9 +1996,13 @@ dd {
   overflow-x: auto;
 }
 
-.tab-strip a {
+.tab-strip a,
+.tab-strip button {
+  background: transparent;
+  border: 0;
   border-bottom: 3px solid transparent;
   color: var(--muted);
+  cursor: pointer;
   font-size: 13px;
   font-weight: 700;
   padding: 10px 12px;
@@ -2006,9 +2010,28 @@ dd {
 }
 
 .tab-strip a[aria-current="page"],
-.tab-strip a:hover {
+.tab-strip a:hover,
+.tab-strip button[aria-current="page"],
+.tab-strip button:hover {
   border-bottom-color: var(--accent);
   color: var(--foreground);
+}
+
+.tab-strip--nested {
+  margin-top: 16px;
+}
+
+.filter-grid {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 14px;
+}
+
+.filter-grid label {
+  display: grid;
+  gap: 6px;
 }
 
 .dashboard-tabs {
@@ -3275,6 +3298,10 @@ tr:last-child td {
 
   .advanced-filter-grid {
     align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .filter-grid {
     grid-template-columns: 1fr;
   }
 

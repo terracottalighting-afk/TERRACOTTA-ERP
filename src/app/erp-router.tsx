@@ -297,6 +297,20 @@ type ShowroomDisplay = {
   counts_toward_primary_showroom: boolean;
 };
 
+type PrimaryShowroomSnapshotItem = {
+  counts_toward_primary_showroom: boolean;
+  customer_po_number_snapshot: string | null;
+  display_discount_percent_snapshot: number | null;
+  display_shipped_date_snapshot: string | null;
+  display_status: string;
+  id: string;
+  minimum_floor_through_date: string | null;
+  off_floor_date: string | null;
+  product_name_snapshot: string | null;
+  replacement_required: boolean;
+  sku_snapshot: string;
+};
+
 type LocationEditRecord = CustomerLocation & {
   address_line_1: string | null;
   address_line_2: string | null;
@@ -12879,11 +12893,11 @@ async function getPrimaryShowroomDashboard(
   customerId: string,
   enrollmentId: string,
 ) {
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseUntypedAdminClient();
   const { data: enrollment, error: enrollmentError } = await supabase
     .from("primary_showroom_enrollment")
     .select(
-      "id, customer_location_id, program_status, enrollment_date, last_review_date, expiration_date, required_display_count, current_display_count",
+      "id, customer_location_id, program_status, enrollment_date, last_review_date, expiration_date, required_display_count, current_display_count, minimum_annual_sales_target",
     )
     .eq("id", enrollmentId)
     .eq("customer_account_id", customerId)
@@ -12891,7 +12905,7 @@ async function getPrimaryShowroomDashboard(
 
   if (enrollmentError) throw new Error(enrollmentError.message);
 
-  const [locationResult, displaysResult] = await Promise.all([
+  const [locationResult, displaysResult, snapshotsResult] = await Promise.all([
     supabase
       .from("customer_location")
       .select(
@@ -12903,14 +12917,56 @@ async function getPrimaryShowroomDashboard(
     supabase
       .from("showroom_display")
       .select(
-        "id, sku_snapshot, product_name_snapshot, customer_po_number_snapshot, display_shipped_date_snapshot, minimum_floor_through_date, display_status, counts_toward_primary_showroom",
+        "id, sku_snapshot, product_name_snapshot, customer_po_number_snapshot, display_discount_percent_snapshot, display_shipped_date_snapshot, minimum_floor_through_date, off_floor_date, replacement_required, display_status, counts_toward_primary_showroom",
       )
       .eq("primary_showroom_enrollment_id", enrollmentId)
       .order("display_shipped_date_snapshot", { ascending: false }),
+    supabase
+      .from("primary_showroom_display_snapshot")
+      .select("id, snapshot_date, display_count")
+      .eq("primary_showroom_enrollment_id", enrollmentId)
+      .order("snapshot_date", { ascending: false })
+      .order("created_at", { ascending: false }),
   ]);
 
   if (locationResult.error) throw new Error(locationResult.error.message);
   if (displaysResult.error) throw new Error(displaysResult.error.message);
+  if (snapshotsResult.error) throw new Error(snapshotsResult.error.message);
+
+  const snapshotIds = (snapshotsResult.data ?? []).map((snapshot) => snapshot.id);
+  const snapshotItemsResult = snapshotIds.length
+    ? await supabase
+        .from("primary_showroom_display_snapshot_item")
+        .select(
+          "id, primary_showroom_display_snapshot_id, sku_snapshot, product_name_snapshot, customer_po_number_snapshot, display_discount_percent_snapshot, display_shipped_date_snapshot, minimum_floor_through_date, off_floor_date, replacement_required, display_status_snapshot",
+        )
+        .in("primary_showroom_display_snapshot_id", snapshotIds)
+    : { data: [], error: null };
+  if (snapshotItemsResult.error) throw new Error(snapshotItemsResult.error.message);
+  const snapshotItemsBySnapshotId = new Map<
+    string,
+    PrimaryShowroomSnapshotItem[]
+  >();
+  for (const item of snapshotItemsResult.data ?? []) {
+    const items = snapshotItemsBySnapshotId.get(item.primary_showroom_display_snapshot_id) ?? [];
+    items.push({
+      counts_toward_primary_showroom: false,
+      customer_po_number_snapshot: item.customer_po_number_snapshot,
+      display_discount_percent_snapshot:
+        item.display_discount_percent_snapshot === null
+          ? null
+          : Number(item.display_discount_percent_snapshot),
+      display_shipped_date_snapshot: item.display_shipped_date_snapshot,
+      display_status: item.display_status_snapshot,
+      id: item.id,
+      minimum_floor_through_date: item.minimum_floor_through_date,
+      off_floor_date: item.off_floor_date,
+      product_name_snapshot: item.product_name_snapshot,
+      replacement_required: Boolean(item.replacement_required),
+      sku_snapshot: item.sku_snapshot,
+    });
+    snapshotItemsBySnapshotId.set(item.primary_showroom_display_snapshot_id, items);
+  }
 
   return {
     displays: displaysResult.data ?? [],
@@ -12919,11 +12975,87 @@ async function getPrimaryShowroomDashboard(
       enrollment_date: enrollment.enrollment_date,
       expiration_date: enrollment.expiration_date,
       last_review_date: enrollment.last_review_date,
+      minimum_annual_sales_target:
+        enrollment.minimum_annual_sales_target === null
+          ? null
+          : Number(enrollment.minimum_annual_sales_target),
       program_status: enrollment.program_status,
       required_display_count: Number(enrollment.required_display_count ?? 0),
     },
     location: locationResult.data,
+    snapshots: (snapshotsResult.data ?? []).map((snapshot) => ({
+      ...snapshot,
+      display_count: Number(snapshot.display_count ?? 0),
+      items: snapshotItemsBySnapshotId.get(snapshot.id) ?? [],
+    })),
   };
+}
+
+async function createPrimaryShowroomDisplaySnapshotAction(formData: FormData) {
+  "use server";
+
+  const enrollmentId = textValue(formData, "enrollment_id");
+  const customerId = textValue(formData, "customer_id");
+  const dashboardUrl = `/?module=primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}`;
+  if (!enrollmentId || !customerId) redirect(`${dashboardUrl}&error=missing_required`);
+
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from("primary_showroom_enrollment")
+    .select("id")
+    .eq("id", enrollmentId)
+    .eq("customer_account_id", customerId)
+    .maybeSingle();
+  if (enrollmentError || !enrollment) {
+    redirect(`${dashboardUrl}&error=${encodeURIComponent(enrollmentError?.message ?? "Primary Showroom enrollment was not found.")}`);
+  }
+
+  const { data: displays, error: displaysError } = await supabase
+    .from("showroom_display")
+    .select(
+      "id, sku_snapshot, product_name_snapshot, customer_po_number_snapshot, display_discount_percent_snapshot, display_shipped_date_snapshot, minimum_floor_through_date, off_floor_date, replacement_required, display_status",
+    )
+    .eq("primary_showroom_enrollment_id", enrollmentId)
+    .eq("display_status", "active")
+    .eq("counts_toward_primary_showroom", true);
+  if (displaysError) redirect(`${dashboardUrl}&error=${encodeURIComponent(displaysError.message)}`);
+
+  const { data: snapshot, error: snapshotError } = await supabase
+    .from("primary_showroom_display_snapshot")
+    .insert({
+      display_count: (displays ?? []).length,
+      primary_showroom_enrollment_id: enrollmentId,
+    })
+    .select("id")
+    .single();
+  if (snapshotError) redirect(`${dashboardUrl}&error=${encodeURIComponent(snapshotError.message)}`);
+
+  if (displays?.length) {
+    const { error: itemError } = await supabase
+      .from("primary_showroom_display_snapshot_item")
+      .insert(
+        displays.map((display) => ({
+          customer_po_number_snapshot: display.customer_po_number_snapshot,
+          display_discount_percent_snapshot: display.display_discount_percent_snapshot,
+          display_shipped_date_snapshot: display.display_shipped_date_snapshot,
+          display_status_snapshot: display.display_status,
+          minimum_floor_through_date: display.minimum_floor_through_date,
+          off_floor_date: display.off_floor_date,
+          primary_showroom_display_snapshot_id: snapshot.id,
+          product_name_snapshot: display.product_name_snapshot,
+          replacement_required: display.replacement_required,
+          showroom_display_id: display.id,
+          sku_snapshot: display.sku_snapshot,
+        })),
+      );
+    if (itemError) {
+      await supabase.from("primary_showroom_display_snapshot").delete().eq("id", snapshot.id);
+      redirect(`${dashboardUrl}&error=${encodeURIComponent(itemError.message)}`);
+    }
+  }
+
+  revalidatePath("/");
+  redirect(`${dashboardUrl}&notice=primary_showroom_snapshot_created`);
 }
 
 async function getContactForEdit(contactId: string) {
@@ -13547,6 +13679,7 @@ export async function ErpRouter({
         ) : activeModule === "primary-showroom" ? (
           <PrimaryShowroomDashboardPage
             customerId={params.customer}
+            createSnapshotAction={createPrimaryShowroomDisplaySnapshotAction}
             enrollmentId={params.primary_showroom}
             loadCustomer={getCustomerName}
             loadPrimaryShowroomDashboard={getPrimaryShowroomDashboard}

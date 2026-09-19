@@ -4776,23 +4776,6 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
   if (error)
     redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
 
-  if (Object.values(commissionOverrides!).some((override) => !override.payable)) {
-    const { data: packingList, error: packingListError } = await createSupabaseAdminClient()
-      .from("packing_list")
-      .select("sales_order_id")
-      .eq("id", packingListId)
-      .maybeSingle();
-    if (packingListError || !packingList) {
-      redirect(`${fallbackUrl}&error=${encodeURIComponent(packingListError?.message ?? "The commission order could not be updated.")}`);
-    }
-    const { error: orderError } = await createSupabaseAdminClient()
-      .from("sales_order")
-      .update({ commission_payable: false })
-      .eq("id", packingList.sales_order_id);
-    if (orderError)
-      redirect(`${fallbackUrl}&error=${encodeURIComponent(orderError.message)}`);
-  }
-
   const invoiceIds = Array.isArray(data)
     ? data.map(String).filter(Boolean)
     : [];
@@ -4801,6 +4784,54 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
       `${fallbackUrl}&error=${encodeURIComponent("No invoices were created from this packing list.")}`,
     );
   }
+
+  if (Object.values(commissionOverrides!).some((override) => !override.payable)) {
+    const supabase = createSupabaseAdminClient();
+    const { data: createdInvoices, error: createdInvoicesError } = await supabase
+      .from("customer_invoice")
+      .select("id, brand_id")
+      .in("id", invoiceIds);
+    if (createdInvoicesError)
+      redirect(`${fallbackUrl}&error=${encodeURIComponent(createdInvoicesError.message)}`);
+    const commissionFreeInvoiceIds = (createdInvoices ?? [])
+      .filter((invoice) => commissionOverrides![invoice.brand_id]?.payable === false)
+      .map((invoice) => invoice.id);
+    if (commissionFreeInvoiceIds.length) {
+      const { error: deleteSnapshotsError } = await supabase
+        .from("commission_snapshot")
+        .delete()
+        .in("customer_invoice_id", commissionFreeInvoiceIds);
+      if (deleteSnapshotsError)
+        redirect(`${fallbackUrl}&error=${encodeURIComponent(deleteSnapshotsError.message)}`);
+      const { error: invoiceUpdateError } = await supabase
+        .from("customer_invoice")
+        .update({
+          commission_exclusion_reason: "Commission disabled during invoice creation.",
+          commission_payable: false,
+          commission_status: "no_commission",
+          sales_rep_agency_id_snapshot: null,
+          sales_rep_id_snapshot: null,
+        })
+        .in("id", commissionFreeInvoiceIds);
+      if (invoiceUpdateError)
+        redirect(`${fallbackUrl}&error=${encodeURIComponent(invoiceUpdateError.message)}`);
+    }
+    const { data: packingList, error: packingListError } = await supabase
+      .from("packing_list")
+      .select("sales_order_id")
+      .eq("id", packingListId)
+      .maybeSingle();
+    if (packingListError || !packingList) {
+      redirect(`${fallbackUrl}&error=${encodeURIComponent(packingListError?.message ?? "The commission order could not be updated.")}`);
+    }
+    const { error: orderError } = await supabase
+      .from("sales_order")
+      .update({ commission_payable: false })
+      .eq("id", packingList.sales_order_id);
+    if (orderError)
+      redirect(`${fallbackUrl}&error=${encodeURIComponent(orderError.message)}`);
+  }
+
   redirect(
     `/?module=invoice-created&invoice_ids=${encodeURIComponent(invoiceIds.join(","))}`,
   );

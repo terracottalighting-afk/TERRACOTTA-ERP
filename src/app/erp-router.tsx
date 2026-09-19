@@ -2964,6 +2964,8 @@ async function createSalesOrderAction(formData: FormData) {
     );
   }
 
+  const freight = freightResult.data;
+
   if (
     salesRepAgencyId &&
     (!agencyResult.data || agencyResult.data.customer_account_id !== customerId)
@@ -3019,7 +3021,10 @@ async function createSalesOrderAction(formData: FormData) {
         locationId,
       );
   const dropshipFreightTerms = dropshipSettings?.freightTerms ?? "prepaid";
-  const shouldChargeCustomerFreight = !isDropship || dropshipFreightTerms === "prepaid";
+  const regularFreightTerms = freight?.ground_freight_terms ?? "prepaid";
+  const shouldChargeCustomerFreight = (isDropship
+    ? dropshipFreightTerms
+    : regularFreightTerms) === "prepaid";
   const defaultFreightAmount = shouldChargeCustomerFreight ? defaultFreightCharge(
     pricedLines.reduce(
       (sum, line) =>
@@ -3186,8 +3191,7 @@ async function createSalesOrderAction(formData: FormData) {
       ? 0
       : Number(billingResult.data.credit_limit);
   const onCreditHold = currentBalance > creditLimit;
-  const freight = freightResult.data;
-  const shipToSnapshot = isDropship
+   const shipToSnapshot = isDropship
     ? {
         ship_to_display_name: dropshipName,
         address_line_1: dropshipAddressLine1,
@@ -3285,7 +3289,7 @@ async function createSalesOrderAction(formData: FormData) {
         isDropship && dropshipFreightTerms === "collect"
           ? freight?.dropship_default_ground_carrier ?? freight?.default_ground_carrier ?? null
           : freight?.default_ground_carrier ?? null,
-      ground_freight_terms_snapshot: isDropship ? dropshipFreightTerms : freight?.ground_freight_terms ?? "prepaid",
+      ground_freight_terms_snapshot: isDropship ? dropshipFreightTerms : regularFreightTerms,
       freight_amount: defaultFreightAmount,
       is_dropship: isDropship,
       legacy_account_id_snapshot: account.legacy_account_id,
@@ -11466,7 +11470,7 @@ async function getCustomerDashboard(customerId: string) {
 
 async function getOrderEntryData(customerId: string) {
   const supabase = createSupabaseAdminClient();
-  const [customerResult, locationsResult, accessoryResult, dropshipSettingsResult] = await Promise.all([
+  const [customerResult, locationsResult, accessoryResult, dropshipSettingsResult, freightPolicyResult] = await Promise.all([
     supabase
       .from("customer_account")
       .select("id, name, account_type_id, default_discount_percent")
@@ -11491,6 +11495,15 @@ async function getOrderEntryData(customerId: string) {
       .select("setting_value")
       .eq("setting_key", "dropship_settings")
       .maybeSingle(),
+    supabase
+      .from("customer_freight_policy")
+      .select("ground_freight_terms")
+      .eq("customer_account_id", customerId)
+      .is("customer_location_id", null)
+      .eq("is_active", true)
+      .order("is_default", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const initialFailure = [
@@ -11498,6 +11511,7 @@ async function getOrderEntryData(customerId: string) {
     locationsResult,
     accessoryResult,
     dropshipSettingsResult,
+    freightPolicyResult,
   ].find((result) => result.error);
   if (initialFailure?.error) {
     throw new Error(initialFailure.error.message);
@@ -11801,6 +11815,7 @@ async function getOrderEntryData(customerId: string) {
   return {
     customer: {
       ...customerResult.data,
+      freightTerms: freightPolicyResult.data?.ground_freight_terms ?? "prepaid",
       dropshipSettings: {
         freightTerms: resolvedDropshipSettings.freightTerms,
         isActive: resolvedDropshipSettings.isActive,

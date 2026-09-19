@@ -99,6 +99,7 @@ type Props = {
   defaultFreightLevel?: DefaultFreightLevel | null;
   defaultDropshipFreightLevel?: DefaultFreightLevel | null;
   dropshipSettings: DropshipSettings;
+  freightTerms: string;
   defaultLocationId?: string;
   isAgencyOrder?: boolean;
   parts: OrderPartOption[];
@@ -129,7 +130,7 @@ const orderTypeLabels: Record<string, string> = {
   regular: "Regular Order",
 };
 
-export function OrderEntryForm({ accountName, agencyId, customerId, defaultDiscountPercent, defaultFreightLevel = null, defaultDropshipFreightLevel = null, defaultLocationId, dropshipSettings, isAgencyOrder = false, parts, products, salesReps, saveAction, shipToOptions, territories }: Props) {
+export function OrderEntryForm({ accountName, agencyId, customerId, defaultDiscountPercent, defaultFreightLevel = null, defaultDropshipFreightLevel = null, defaultLocationId, dropshipSettings, freightTerms, isAgencyOrder = false, parts, products, salesReps, saveAction, shipToOptions, territories }: Props) {
   const [productQuery, setProductQuery] = useState("");
   const [searchParts, setSearchParts] = useState(false);
   const [partSearchMode, setPartSearchMode] = useState<"parent" | "generic">("parent");
@@ -220,7 +221,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
   const defaultFreightCharge = selectedFreightLevel && subtotal < selectedFreightLevel.freeFreightAllowance
     ? Math.round(subtotal * (selectedFreightLevel.freightRatePercent / 100))
     : 0;
-  const chargesCustomerFreight = !isDropship || dropshipSettings.freightTerms === "prepaid";
+  const chargesCustomerFreight = (isDropship ? dropshipSettings.freightTerms : freightTerms) === "prepaid";
   const estimatedDropshipFee = isDropship && dropshipSettings.isActive
     ? Math.round(subtotal * (dropshipSettings.ratePercent / 100) * 100) / 100
     : 0;

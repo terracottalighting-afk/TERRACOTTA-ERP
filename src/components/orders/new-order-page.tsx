@@ -15,6 +15,7 @@ type OrderEntryData = {
       freightRatePercent: number;
       levelName: string;
     } | null;
+    freightTerms: string;
     name: string;
     dropshipSettings: {
       freightTerms: "prepaid" | "collect";
@@ -76,6 +77,7 @@ export async function NewOrderPage({
         defaultFreightLevel={data.customer.defaultFreightLevel}
         defaultDropshipFreightLevel={data.customer.defaultDropshipFreightLevel}
         defaultLocationId={locationId}
+        freightTerms={data.customer.freightTerms}
         isAgencyOrder={isAgencyOrder}
         parts={data.partOptions}
         products={data.products}

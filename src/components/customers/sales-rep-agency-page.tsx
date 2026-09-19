@@ -93,6 +93,7 @@ export async function SalesRepAgencyPage({ agencyId, prepareCommissionStatementA
         .from("sales_order")
         .select("id, sales_order_number, customer_po_number, order_date, order_type, status, total_amount, invoice_required")
         .eq("sales_rep_agency_id_snapshot", agency.id)
+        .eq("commission_payable", true)
         .order("order_date", { ascending: false })
         .limit(100)
     : { data: [] as AgencyOrder[], error: null };

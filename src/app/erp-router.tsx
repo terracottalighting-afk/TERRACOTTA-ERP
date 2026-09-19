@@ -4776,6 +4776,23 @@ async function createInvoicesFromPackingListAction(formData: FormData) {
   if (error)
     redirect(`${fallbackUrl}&error=${encodeURIComponent(error.message)}`);
 
+  if (Object.values(commissionOverrides!).some((override) => !override.payable)) {
+    const { data: packingList, error: packingListError } = await createSupabaseAdminClient()
+      .from("packing_list")
+      .select("sales_order_id")
+      .eq("id", packingListId)
+      .maybeSingle();
+    if (packingListError || !packingList) {
+      redirect(`${fallbackUrl}&error=${encodeURIComponent(packingListError?.message ?? "The commission order could not be updated.")}`);
+    }
+    const { error: orderError } = await createSupabaseAdminClient()
+      .from("sales_order")
+      .update({ commission_payable: false })
+      .eq("id", packingList.sales_order_id);
+    if (orderError)
+      redirect(`${fallbackUrl}&error=${encodeURIComponent(orderError.message)}`);
+  }
+
   const invoiceIds = Array.isArray(data)
     ? data.map(String).filter(Boolean)
     : [];

@@ -6,6 +6,7 @@ type ContactRoleFlags = {
   is_purchasing_contact: boolean;
   is_showroom_floor_sales?: boolean;
   is_showroom_manager?: boolean;
+  is_primary_showroom_contact?: boolean;
   is_warehouse_receiver?: boolean;
 };
 
@@ -16,7 +17,8 @@ export function ContactRoleBadges({ contact }: { contact: ContactRoleFlags }) {
     contact.is_purchasing_contact ||
     contact.is_warehouse_receiver ||
     contact.is_showroom_floor_sales ||
-    contact.is_showroom_manager;
+    contact.is_showroom_manager ||
+    contact.is_primary_showroom_contact;
 
   return (
     <div className="badge-row badge-row--left">
@@ -33,6 +35,9 @@ export function ContactRoleBadges({ contact }: { contact: ContactRoleFlags }) {
       ) : null}
       {contact.is_showroom_manager ? (
         <StatusBadge value="Showroom Manager" />
+      ) : null}
+      {contact.is_primary_showroom_contact ? (
+        <StatusBadge tone="primary" value="Primary Showroom Contact" />
       ) : null}
       {!hasRoles ? <EmptyState text="No contact roles are selected." /> : null}
     </div>

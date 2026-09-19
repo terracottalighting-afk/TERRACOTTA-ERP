@@ -50,7 +50,18 @@ export function PrimaryShowroomDashboardTabs({
     expirationDate: string | null;
     lastReviewDate: string | null;
     minimumAnnualSalesTarget: number | null;
+    primaryShowroomContact: {
+      email: string | null;
+      id: string;
+      name: string;
+      phone: string | null;
+      title: string | null;
+    } | null;
     requiredDisplayCount: number;
+    salesCoverage: {
+      agency_name: string | null;
+      sales_rep_name: string | null;
+    } | null;
   };
   snapshots: Snapshot[];
 }) {
@@ -122,6 +133,24 @@ export function PrimaryShowroomDashboardTabs({
               <div><dt>Current Displays on Floor</dt><dd>{numberFormatter.format(profile.currentDisplayCount)}</dd></div>
               <div><dt>Required Displays</dt><dd>{numberFormatter.format(profile.requiredDisplayCount)}</dd></div>
               <div><dt>Minimum Annual Sales Target</dt><dd>{profile.minimumAnnualSalesTarget === null ? "Not set" : money(profile.minimumAnnualSalesTarget)}</dd></div>
+            </dl>
+          </article>
+          <article className="info-panel">
+            <h3>Primary Showroom Contact</h3>
+            {profile.primaryShowroomContact ? (
+              <dl>
+                <div><dt>Name</dt><dd>{profile.primaryShowroomContact.name}</dd></div>
+                <div><dt>Title</dt><dd>{profile.primaryShowroomContact.title ?? "Not set"}</dd></div>
+                <div><dt>Email</dt><dd>{profile.primaryShowroomContact.email ?? "Not set"}</dd></div>
+                <div><dt>Phone</dt><dd>{profile.primaryShowroomContact.phone ?? "Not set"}</dd></div>
+              </dl>
+            ) : <EmptyState text="No location contact is marked Primary Showroom Contact." />}
+          </article>
+          <article className="info-panel">
+            <h3>Sales Coverage</h3>
+            <dl>
+              <div><dt>Sales Agency</dt><dd>{profile.salesCoverage?.agency_name ?? "Not assigned"}</dd></div>
+              <div><dt>Sales Rep</dt><dd>{profile.salesCoverage?.sales_rep_name ?? "Not assigned"}</dd></div>
             </dl>
           </article>
         </section>

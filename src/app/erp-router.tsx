@@ -357,6 +357,7 @@ type CustomerContact = {
   is_purchasing_contact: boolean;
   is_showroom_floor_sales?: boolean;
   is_showroom_manager?: boolean;
+  is_primary_showroom_contact?: boolean;
   is_warehouse_receiver?: boolean;
 };
 
@@ -915,7 +916,7 @@ function orderLifecycleStatus(status: string) {
 async function getCustomerOptions(
   table: "customer_account_type" | "customer_business_type",
 ) {
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseUntypedAdminClient();
   const { data, error } = await supabase
     .from(table)
     .select("id, name")
@@ -9446,7 +9447,7 @@ async function updateLocationFreightTermAction(formData: FormData) {
 async function updateContactAction(formData: FormData) {
   "use server";
 
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseUntypedAdminClient();
   const customerId = String(formData.get("customer_id") ?? "").trim();
   const contactId = String(formData.get("contact_id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
@@ -9461,11 +9462,19 @@ async function updateContactAction(formData: FormData) {
     const value = String(formData.get(key) ?? "").trim();
     return value ? value : null;
   };
+  const contactLocationId = optionalText("customer_location_id");
+  const isPrimaryShowroomContact =
+    formData.get("is_primary_showroom_contact") === "on";
+  if (isPrimaryShowroomContact && !contactLocationId) {
+    redirect(
+      `/?module=edit-contact&customer=${customerId}&contact=${contactId}&error=${encodeURIComponent("Primary Showroom Contact must be assigned to a location.")}`,
+    );
+  }
 
   const { error } = await supabase
     .from("customer_contact")
     .update({
-      customer_location_id: optionalText("customer_location_id"),
+      customer_location_id: contactLocationId,
       department: optionalText("department"),
       email: optionalText("email"),
       fax: optionalText("fax"),
@@ -9475,6 +9484,7 @@ async function updateContactAction(formData: FormData) {
       is_purchasing_contact: formData.get("is_purchasing_contact") === "on",
       is_showroom_floor_sales: formData.get("is_showroom_floor_sales") === "on",
       is_showroom_manager: formData.get("is_showroom_manager") === "on",
+      is_primary_showroom_contact: isPrimaryShowroomContact,
       is_warehouse_receiver: formData.get("is_warehouse_receiver") === "on",
       mobile: optionalText("mobile"),
       name,
@@ -9496,7 +9506,7 @@ async function updateContactAction(formData: FormData) {
 async function addContactAction(formData: FormData) {
   "use server";
 
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseUntypedAdminClient();
   const customerId = String(formData.get("customer_id") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
 
@@ -9510,12 +9520,20 @@ async function addContactAction(formData: FormData) {
     const value = String(formData.get(key) ?? "").trim();
     return value ? value : null;
   };
+  const contactLocationId = optionalText("customer_location_id");
+  const isPrimaryShowroomContact =
+    formData.get("is_primary_showroom_contact") === "on";
+  if (isPrimaryShowroomContact && !contactLocationId) {
+    redirect(
+      `/?module=add-contact&customer=${customerId}&error=${encodeURIComponent("Primary Showroom Contact must be assigned to a location.")}`,
+    );
+  }
 
   const { data, error } = await supabase
     .from("customer_contact")
     .insert({
       customer_account_id: customerId,
-      customer_location_id: optionalText("customer_location_id"),
+      customer_location_id: contactLocationId,
       department: optionalText("department"),
       email: optionalText("email"),
       fax: optionalText("fax"),
@@ -9525,6 +9543,7 @@ async function addContactAction(formData: FormData) {
       is_purchasing_contact: formData.get("is_purchasing_contact") === "on",
       is_showroom_floor_sales: formData.get("is_showroom_floor_sales") === "on",
       is_showroom_manager: formData.get("is_showroom_manager") === "on",
+      is_primary_showroom_contact: isPrimaryShowroomContact,
       is_warehouse_receiver: formData.get("is_warehouse_receiver") === "on",
       mobile: optionalText("mobile"),
       name,
@@ -12907,7 +12926,7 @@ async function getPrimaryShowroomDashboard(
 
   if (enrollmentError) throw new Error(enrollmentError.message);
 
-  const [locationResult, displaysResult, snapshotsResult] = await Promise.all([
+  const [locationResult, displaysResult, snapshotsResult, contactResult, salesCoverageResult] = await Promise.all([
     supabase
       .from("customer_location")
       .select(
@@ -12929,11 +12948,26 @@ async function getPrimaryShowroomDashboard(
       .eq("primary_showroom_enrollment_id", enrollmentId)
       .order("snapshot_date", { ascending: false })
       .order("created_at", { ascending: false }),
+    supabase
+      .from("customer_contact")
+      .select("id, name, title, email, phone")
+      .eq("customer_location_id", enrollment.customer_location_id)
+      .eq("is_active", true)
+      .eq("is_primary_showroom_contact", true)
+      .maybeSingle(),
+    supabase
+      .from("active_customer_rep_assignments")
+      .select("agency_name, sales_rep_name")
+      .eq("customer_location_id", enrollment.customer_location_id)
+      .eq("coverage_role", "primary")
+      .maybeSingle(),
   ]);
 
   if (locationResult.error) throw new Error(locationResult.error.message);
   if (displaysResult.error) throw new Error(displaysResult.error.message);
   if (snapshotsResult.error) throw new Error(snapshotsResult.error.message);
+  if (contactResult.error) throw new Error(contactResult.error.message);
+  if (salesCoverageResult.error) throw new Error(salesCoverageResult.error.message);
 
   const snapshotIds = (snapshotsResult.data ?? []).map((snapshot) => snapshot.id);
   const snapshotItemsResult = snapshotIds.length
@@ -12985,6 +13019,8 @@ async function getPrimaryShowroomDashboard(
       required_display_count: Number(enrollment.required_display_count ?? 0),
     },
     location: locationResult.data,
+    primaryShowroomContact: contactResult.data,
+    salesCoverage: salesCoverageResult.data,
     snapshots: (snapshotsResult.data ?? []).map((snapshot) => ({
       ...snapshot,
       display_count: Number(snapshot.display_count ?? 0),
@@ -13167,11 +13203,11 @@ async function updatePrimaryShowroomAction(formData: FormData) {
 }
 
 async function getContactForEdit(contactId: string) {
-  const supabase = createSupabaseAdminClient();
+  const supabase = createSupabaseUntypedAdminClient();
   const { data, error } = await supabase
     .from("customer_contact")
     .select(
-      "id, customer_account_id, customer_location_id, name, title, department, email, phone, mobile, fax, is_active, is_primary, is_billing_contact, is_purchasing_contact, is_warehouse_receiver, is_showroom_floor_sales, is_showroom_manager",
+      "id, customer_account_id, customer_location_id, name, title, department, email, phone, mobile, fax, is_active, is_primary, is_billing_contact, is_purchasing_contact, is_warehouse_receiver, is_showroom_floor_sales, is_showroom_manager, is_primary_showroom_contact",
     )
     .eq("id", contactId)
     .single();

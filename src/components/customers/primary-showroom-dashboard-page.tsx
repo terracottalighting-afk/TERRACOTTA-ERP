@@ -55,6 +55,17 @@ type PrimaryShowroomDashboard = {
     }[];
     snapshot_date: string;
   }[];
+  primaryShowroomContact: {
+    email: string | null;
+    id: string;
+    name: string;
+    phone: string | null;
+    title: string | null;
+  } | null;
+  salesCoverage: {
+    agency_name: string | null;
+    sales_rep_name: string | null;
+  } | null;
 };
 
 export async function PrimaryShowroomDashboardPage({
@@ -124,7 +135,9 @@ export async function PrimaryShowroomDashboardPage({
           expirationDate: dashboard.enrollment.expiration_date,
           lastReviewDate: dashboard.enrollment.last_review_date,
           minimumAnnualSalesTarget: dashboard.enrollment.minimum_annual_sales_target,
+          primaryShowroomContact: dashboard.primaryShowroomContact,
           requiredDisplayCount: dashboard.enrollment.required_display_count,
+          salesCoverage: dashboard.salesCoverage,
         }}
         profileEditHref={`/?module=edit-primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_section=profile`}
         measuresEditHref={`/?module=edit-primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_section=measures`}

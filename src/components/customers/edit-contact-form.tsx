@@ -17,6 +17,7 @@ type Contact = {
   is_purchasing_contact: boolean;
   is_showroom_floor_sales?: boolean;
   is_showroom_manager?: boolean;
+  is_primary_showroom_contact?: boolean;
   is_warehouse_receiver?: boolean;
   mobile?: string | null;
   name: string;
@@ -197,6 +198,14 @@ export async function EditContactForm({
                   type="checkbox"
                 />
                 Showroom manager
+              </label>
+              <label className="checkbox-label">
+                <input
+                  defaultChecked={contact.is_primary_showroom_contact}
+                  name="is_primary_showroom_contact"
+                  type="checkbox"
+                />
+                Primary Showroom Contact
               </label>
             </div>
           </div>

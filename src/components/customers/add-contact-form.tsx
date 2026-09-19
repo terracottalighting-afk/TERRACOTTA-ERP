@@ -128,6 +128,10 @@ export async function AddContactForm({
                 <input name="is_showroom_manager" type="checkbox" />
                 Showroom manager
               </label>
+              <label className="checkbox-label">
+                <input name="is_primary_showroom_contact" type="checkbox" />
+                Primary Showroom Contact
+              </label>
             </div>
           </div>
         </fieldset>

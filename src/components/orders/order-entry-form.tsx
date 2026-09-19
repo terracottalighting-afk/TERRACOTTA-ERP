@@ -342,8 +342,6 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
       const nextCommissionSelection = commissionDefaultsForLocation(locationId);
       setCommissionSelection(nextCommissionSelection);
       setCommissionRate(defaultCommissionRate(nextCommissionSelection.territoryId));
-      setPayCommission(true);
-      setHasCommissionOverride(false);
       setIsEditingCommission(false);
     }
   }
@@ -540,6 +538,18 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
               Residential Address
             </label>
         </div>
+      </fieldset>
+
+      <fieldset id="order-commission">
+        <legend>Commission</legend>
+        <label className="inline-checkbox">
+          <input
+            checked={payCommission}
+            onChange={(event) => setPayCommission(event.target.checked)}
+            type="checkbox"
+          />
+          Pay Commission
+        </label>
       </fieldset>
 
       <fieldset id="order-products">

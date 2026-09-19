@@ -41,20 +41,8 @@ type PrimaryShowroomDashboard = {
   snapshots: {
     display_count: number;
     id: string;
-    items: {
-      counts_toward_primary_showroom: boolean;
-      customer_po_number_snapshot: string | null;
-      display_discount_percent_snapshot: number | null;
-      display_shipped_date_snapshot: string | null;
-      display_status: string;
-      id: string;
-      minimum_floor_through_date: string | null;
-      off_floor_date: string | null;
-      product_name_snapshot: string | null;
-      replacement_required: boolean;
-      sku_snapshot: string;
-    }[];
     snapshot_date: string;
+    snapshot_name: string;
   }[];
   primaryShowroomContact: {
     email: string | null;
@@ -73,6 +61,7 @@ export async function PrimaryShowroomDashboardPage({
   customerId,
   enrollmentId,
   createSnapshotAction,
+  deleteSnapshotAction,
   initialTab,
   loadCustomer,
   loadPrimaryShowroomDashboard,
@@ -80,6 +69,7 @@ export async function PrimaryShowroomDashboardPage({
   customerId?: string;
   enrollmentId?: string;
   createSnapshotAction: (formData: FormData) => void | Promise<void>;
+  deleteSnapshotAction: (formData: FormData) => void | Promise<void>;
   initialTab?: "profile" | "displays" | "history";
   loadCustomer: (customerId: string) => Promise<CustomerName>;
   loadPrimaryShowroomDashboard: (customerId: string, enrollmentId: string) => Promise<PrimaryShowroomDashboard>;
@@ -129,8 +119,10 @@ export async function PrimaryShowroomDashboardPage({
       <PrimaryShowroomDashboardTabs
         addDisplayHref={`/?module=primary-showroom-display-add&customer=${customerId}&primary_showroom=${enrollmentId}`}
         createSnapshotAction={createSnapshotAction}
+        createSnapshotHref={`/?module=primary-showroom-snapshot-create&customer=${customerId}&primary_showroom=${enrollmentId}`}
         customerId={customerId}
         displays={dashboard.displays}
+        deleteSnapshotAction={deleteSnapshotAction}
         enrollmentId={enrollmentId}
         importFromPoHref={`/?module=primary-showroom-display-import&customer=${customerId}&primary_showroom=${enrollmentId}`}
         initialTab={initialTab}

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 
 import { EmptyState, StatusBadge } from "@/components/ui";
+import { ConfirmRemoveButton } from "@/components/ui/confirm-remove-button";
 import { dateLabel, label, money, numberFormatter } from "@/lib/formatters";
 
 type Display = {
@@ -23,12 +24,14 @@ type Display = {
 type Snapshot = {
   display_count: number;
   id: string;
-  items: Display[];
   snapshot_date: string;
+  snapshot_name: string;
 };
 
 export function PrimaryShowroomDashboardTabs({
   createSnapshotAction,
+  createSnapshotHref,
+  deleteSnapshotAction,
   customerId,
   addDisplayHref,
   importFromPoHref,
@@ -42,6 +45,8 @@ export function PrimaryShowroomDashboardTabs({
   snapshots,
 }: {
   createSnapshotAction: (formData: FormData) => void | Promise<void>;
+  createSnapshotHref: string;
+  deleteSnapshotAction: (formData: FormData) => void | Promise<void>;
   customerId: string;
   addDisplayHref: string;
   importFromPoHref: string;
@@ -207,27 +212,14 @@ export function PrimaryShowroomDashboardTabs({
             <article className="data-section">
               <div className="section-title">
                 <div><h3>Current Floor Displays</h3><p>Active display items that count toward this primary showroom.</p></div>
-                <form action={createSnapshotAction}>
-                  <input name="customer_id" type="hidden" value={customerId} />
-                  <input name="enrollment_id" type="hidden" value={enrollmentId} />
-                  <button className="small-action" type="submit">Create a Snapshot</button>
-                </form>
+                <Link className="small-action" href={createSnapshotHref}>Create a Snapshot</Link>
               </div>
               {displayTable(currentDisplays, true)}
             </article>
           ) : (
             <article className="data-section">
               <div className="section-title"><h3>Snapshots</h3><span>{snapshots.length}</span></div>
-              {snapshots.length === 0 ? <EmptyState text="No display snapshots have been created yet." /> : (
-                <div className="compact-list">
-                  {snapshots.map((snapshot) => (
-                    <details className="compact-row" key={snapshot.id}>
-                      <summary><strong>{dateLabel(snapshot.snapshot_date)}</strong><span>{numberFormatter.format(snapshot.display_count)} displays</span></summary>
-                      <div className="table-wrap">{displayTable(snapshot.items)}</div>
-                    </details>
-                  ))}
-                </div>
-              )}
+              {snapshots.length === 0 ? <EmptyState text="No display snapshots have been created yet." /> : <div className="table-wrap"><table><thead><tr><th>Snapshot Name</th><th>Snapshot Date</th><th>Total Active Items</th><th>Actions</th></tr></thead><tbody>{snapshots.map((snapshot) => <tr key={snapshot.id}><td><Link className="record-link" href={`/?module=primary-showroom-snapshot&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_snapshot=${snapshot.id}`}>{snapshot.snapshot_name}</Link></td><td>{dateLabel(snapshot.snapshot_date)}</td><td>{numberFormatter.format(snapshot.display_count)}</td><td><form action={deleteSnapshotAction}><input name="customer_id" type="hidden" value={customerId} /><input name="enrollment_id" type="hidden" value={enrollmentId} /><input name="snapshot_id" type="hidden" value={snapshot.id} /><ConfirmRemoveButton message={`Remove snapshot “${snapshot.snapshot_name}”? Its saved display list will also be permanently removed.`} /></form></td></tr>)}</tbody></table></div>}
             </article>
           )}
         </>

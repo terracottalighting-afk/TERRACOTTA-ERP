@@ -24,6 +24,7 @@ import { EditPrimaryShowroomForm } from "@/components/customers/edit-primary-sho
 import { EditPrimaryShowroomDisplayForm } from "@/components/customers/edit-primary-showroom-display-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
+import { PrimaryShowroomSnapshotCreatePage, PrimaryShowroomSnapshotDetailPage } from "@/components/customers/primary-showroom-snapshot-pages";
 import { AddPrimaryShowroomDisplayForm, ImportPrimaryShowroomDisplaysForm } from "@/components/customers/primary-showroom-display-forms";
 import { SalesRepAgencyEditor } from "@/components/customers/sales-rep-agency-editor";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
@@ -144,6 +145,7 @@ export type SearchParams = Promise<{
   product?: string;
   primary_showroom?: string;
   primary_showroom_display?: string;
+  primary_showroom_snapshot?: string;
   primary_showroom_tab?: string;
   primary_showroom_po?: string;
   primary_showroom_section?: string;
@@ -3369,7 +3371,7 @@ async function createSalesOrderAction(formData: FormData) {
       shipping_readiness_status: "not_ready",
       territory_id_snapshot: resolvedTerritoryId,
     })
-    .select("id")
+    .select("id, customer_location_id")
     .single();
 
   if (orderError || !order) {
@@ -12972,7 +12974,7 @@ async function getPrimaryShowroomDashboard(
       .order("display_shipped_date_snapshot", { ascending: false }),
     supabase
       .from("primary_showroom_display_snapshot")
-      .select("id, snapshot_date, display_count")
+      .select("id, snapshot_name, snapshot_date, display_count")
       .eq("primary_showroom_enrollment_id", enrollmentId)
       .order("snapshot_date", { ascending: false })
       .order("created_at", { ascending: false }),
@@ -13064,12 +13066,14 @@ async function createPrimaryShowroomDisplaySnapshotAction(formData: FormData) {
   const enrollmentId = textValue(formData, "enrollment_id");
   const customerId = textValue(formData, "customer_id");
   const dashboardUrl = `/?module=primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}`;
+  const snapshotName = textValue(formData, "snapshot_name");
   if (!enrollmentId || !customerId) redirect(`${dashboardUrl}&error=missing_required`);
+  if (!snapshotName) redirect(`/?module=primary-showroom-snapshot-create&customer=${customerId}&primary_showroom=${enrollmentId}&error=${encodeURIComponent("Enter a snapshot name.")}`);
 
   const supabase = createSupabaseUntypedAdminClient();
   const { data: enrollment, error: enrollmentError } = await supabase
     .from("primary_showroom_enrollment")
-    .select("id")
+    .select("id, customer_location_id")
     .eq("id", enrollmentId)
     .eq("customer_account_id", customerId)
     .maybeSingle();
@@ -13087,11 +13091,20 @@ async function createPrimaryShowroomDisplaySnapshotAction(formData: FormData) {
     .eq("counts_toward_primary_showroom", true);
   if (displaysError) redirect(`${dashboardUrl}&error=${encodeURIComponent(displaysError.message)}`);
 
+  const [contactResult, coverageResult] = await Promise.all([
+    supabase.from("customer_contact").select("name").eq("customer_location_id", enrollment.customer_location_id).eq("is_active", true).eq("is_primary_showroom_contact", true).maybeSingle(),
+    supabase.from("active_customer_rep_assignments").select("agency_name, sales_rep_name").eq("customer_location_id", enrollment.customer_location_id).eq("coverage_role", "primary").maybeSingle(),
+  ]);
+  if (contactResult.error || coverageResult.error) redirect(`${dashboardUrl}&error=${encodeURIComponent(contactResult.error?.message ?? coverageResult.error?.message ?? "Could not load snapshot contacts.")}`);
   const { data: snapshot, error: snapshotError } = await supabase
     .from("primary_showroom_display_snapshot")
     .insert({
       display_count: (displays ?? []).length,
+      primary_showroom_contact_name_snapshot: contactResult.data?.name ?? null,
       primary_showroom_enrollment_id: enrollmentId,
+      sales_agency_name_snapshot: coverageResult.data?.agency_name ?? null,
+      sales_rep_name_snapshot: coverageResult.data?.sales_rep_name ?? null,
+      snapshot_name: snapshotName,
     })
     .select("id")
     .single();
@@ -13122,7 +13135,47 @@ async function createPrimaryShowroomDisplaySnapshotAction(formData: FormData) {
   }
 
   revalidatePath("/");
-  redirect(`${dashboardUrl}&notice=primary_showroom_snapshot_created`);
+  redirect(`${dashboardUrl}&primary_showroom_tab=history&notice=primary_showroom_snapshot_created`);
+}
+
+async function getPrimaryShowroomSnapshotPreview(customerId: string, enrollmentId: string) {
+  const dashboard = await getPrimaryShowroomDashboard(customerId, enrollmentId);
+  return {
+    contactName: dashboard.primaryShowroomContact?.name ?? null,
+    displays: dashboard.displays.filter((display) => display.display_status === "active" && display.counts_toward_primary_showroom),
+    salesAgencyName: dashboard.salesCoverage?.agency_name ?? null,
+    salesRepName: dashboard.salesCoverage?.sales_rep_name ?? null,
+    showroomName: dashboard.location.location_name,
+  };
+}
+
+async function getPrimaryShowroomSnapshotDetail(customerId: string, enrollmentId: string, snapshotId: string) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: enrollment, error: enrollmentError } = await supabase.from("primary_showroom_enrollment").select("id").eq("id", enrollmentId).eq("customer_account_id", customerId).maybeSingle();
+  if (enrollmentError || !enrollment) throw new Error(enrollmentError?.message ?? "Primary Showroom enrollment was not found.");
+  const { data: snapshot, error: snapshotError } = await supabase.from("primary_showroom_display_snapshot").select("snapshot_name, snapshot_date, primary_showroom_contact_name_snapshot, sales_agency_name_snapshot, sales_rep_name_snapshot").eq("id", snapshotId).eq("primary_showroom_enrollment_id", enrollmentId).maybeSingle();
+  if (snapshotError || !snapshot) throw new Error(snapshotError?.message ?? "Snapshot was not found.");
+  const { data: items, error: itemsError } = await supabase.from("primary_showroom_display_snapshot_item").select("id, sku_snapshot, product_name_snapshot, customer_po_number_snapshot, display_discount_percent_snapshot, display_shipped_date_snapshot, minimum_floor_through_date, display_status_snapshot").eq("primary_showroom_display_snapshot_id", snapshotId);
+  if (itemsError) throw new Error(itemsError.message);
+  return { contactName: snapshot.primary_showroom_contact_name_snapshot, displays: (items ?? []).map((item) => ({ ...item, display_status: item.display_status_snapshot })), salesAgencyName: snapshot.sales_agency_name_snapshot, salesRepName: snapshot.sales_rep_name_snapshot, showroomName: "", snapshotDate: snapshot.snapshot_date, snapshotName: snapshot.snapshot_name };
+}
+
+async function deletePrimaryShowroomSnapshotAction(formData: FormData) {
+  "use server";
+  const customerId = textValue(formData, "customer_id");
+  const enrollmentId = textValue(formData, "enrollment_id");
+  const snapshotId = textValue(formData, "snapshot_id");
+  const dashboardUrl = `${primaryShowroomDashboardUrl(customerId, enrollmentId)}&primary_showroom_tab=history`;
+  if (!customerId || !enrollmentId || !snapshotId) redirect(`${dashboardUrl}&error=missing_required`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: snapshot, error: snapshotError } = await supabase.from("primary_showroom_display_snapshot").select("id, primary_showroom_enrollment_id").eq("id", snapshotId).eq("primary_showroom_enrollment_id", enrollmentId).maybeSingle();
+  if (snapshotError || !snapshot) redirect(`${dashboardUrl}&error=${encodeURIComponent(snapshotError?.message ?? "Snapshot was not found.")}`);
+  const { data: enrollment, error: enrollmentError } = await supabase.from("primary_showroom_enrollment").select("id").eq("id", enrollmentId).eq("customer_account_id", customerId).maybeSingle();
+  if (enrollmentError || !enrollment) redirect(`${dashboardUrl}&error=${encodeURIComponent(enrollmentError?.message ?? "Primary Showroom enrollment was not found.")}`);
+  const { error } = await supabase.from("primary_showroom_display_snapshot").delete().eq("id", snapshotId);
+  if (error) redirect(`${dashboardUrl}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`${dashboardUrl}&notice=primary_showroom_snapshot_deleted`);
 }
 
 function primaryShowroomDashboardUrl(customerId: string, enrollmentId: string) {
@@ -13723,6 +13776,8 @@ export async function ErpRouter({
     invoices: "Financial",
     "payment-detail": "Payment",
     "primary-showroom": "Primary Showroom Dashboard",
+    "primary-showroom-snapshot": "Primary Showroom Snapshot",
+    "primary-showroom-snapshot-create": "Create Primary Showroom Snapshot",
     "primary-showroom-display-add": "Add Primary Showroom Display",
     "primary-showroom-display-import": "Import Primary Showroom Displays",
     orders: "Orders",
@@ -14153,10 +14208,26 @@ export async function ErpRouter({
           <PrimaryShowroomDashboardPage
             customerId={params.customer}
             createSnapshotAction={createPrimaryShowroomDisplaySnapshotAction}
+            deleteSnapshotAction={deletePrimaryShowroomSnapshotAction}
             enrollmentId={params.primary_showroom}
             initialTab={params.primary_showroom_tab === "displays" || params.primary_showroom_tab === "history" ? params.primary_showroom_tab : "profile"}
             loadCustomer={getCustomerName}
             loadPrimaryShowroomDashboard={getPrimaryShowroomDashboard}
+          />
+        ) : activeModule === "primary-showroom-snapshot-create" ? (
+          <PrimaryShowroomSnapshotCreatePage
+            customerId={params.customer}
+            enrollmentId={params.primary_showroom}
+            error={params.error}
+            loadPreview={getPrimaryShowroomSnapshotPreview}
+            saveAction={createPrimaryShowroomDisplaySnapshotAction}
+          />
+        ) : activeModule === "primary-showroom-snapshot" ? (
+          <PrimaryShowroomSnapshotDetailPage
+            customerId={params.customer}
+            enrollmentId={params.primary_showroom}
+            loadSnapshot={getPrimaryShowroomSnapshotDetail}
+            snapshotId={params.primary_showroom_snapshot}
           />
         ) : activeModule === "primary-showroom-display-add" ? (
           <AddPrimaryShowroomDisplayForm

@@ -21,6 +21,7 @@ import { EditLocationFreightForm } from "@/components/customers/edit-location-fr
 import { EditLocationForm } from "@/components/customers/edit-location-form";
 import { EditSalesRepForm } from "@/components/customers/edit-sales-rep-form";
 import { EditPrimaryShowroomForm } from "@/components/customers/edit-primary-showroom-form";
+import { EditPrimaryShowroomDisplayForm } from "@/components/customers/edit-primary-showroom-display-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
 import { AddPrimaryShowroomDisplayForm, ImportPrimaryShowroomDisplaysForm } from "@/components/customers/primary-showroom-display-forms";
@@ -142,6 +143,7 @@ export type SearchParams = Promise<{
   product_style?: string;
   product?: string;
   primary_showroom?: string;
+  primary_showroom_display?: string;
   primary_showroom_tab?: string;
   primary_showroom_po?: string;
   primary_showroom_section?: string;
@@ -13219,6 +13221,54 @@ async function addPrimaryShowroomDisplayAction(formData: FormData) {
   redirect(`${primaryShowroomDashboardUrl(customerId, enrollmentId)}&notice=primary_showroom_display_added`);
 }
 
+async function getPrimaryShowroomDisplayForEdit(customerId: string, enrollmentId: string, displayId: string) {
+  const { data, error } = await createSupabaseUntypedAdminClient().from("showroom_display")
+    .select("sku_snapshot, product_name_snapshot, customer_po_number_snapshot, display_discount_percent_snapshot, display_shipped_date_snapshot, minimum_floor_through_date, off_floor_date, display_status, counts_toward_primary_showroom, replacement_required")
+    .eq("id", displayId).eq("primary_showroom_enrollment_id", enrollmentId).maybeSingle();
+  if (error || !data) throw new Error(error?.message ?? "Primary Showroom display was not found.");
+  const { data: enrollment, error: enrollmentError } = await createSupabaseUntypedAdminClient().from("primary_showroom_enrollment")
+    .select("id").eq("id", enrollmentId).eq("customer_account_id", customerId).maybeSingle();
+  if (enrollmentError || !enrollment) throw new Error(enrollmentError?.message ?? "Primary Showroom enrollment was not found.");
+  return data;
+}
+
+async function updatePrimaryShowroomDisplayAction(formData: FormData) {
+  "use server";
+  const customerId = textValue(formData, "customer_id");
+  const enrollmentId = textValue(formData, "enrollment_id");
+  const displayId = textValue(formData, "display_id");
+  const editUrl = `/?module=edit-primary-showroom-display&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_display=${displayId}`;
+  if (!customerId || !enrollmentId || !displayId) redirect(`${editUrl}&error=missing_required`);
+  const sku = textValue(formData, "sku");
+  const name = textValue(formData, "name");
+  const status = textValue(formData, "status");
+  const discountText = textValue(formData, "discount_percent");
+  const discount = discountText ? Number(discountText) : null;
+  if (!sku || !name || !["active", "sold", "swapped", "removed", "needs_refresh", "expired"].includes(status) || (discount !== null && (!Number.isFinite(discount) || discount < 0))) {
+    redirect(`${editUrl}&error=${encodeURIComponent("Enter a SKU, name, valid status, and non-negative discount.")}`);
+  }
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: enrollment, error: enrollmentError } = await supabase.from("primary_showroom_enrollment")
+    .select("id").eq("id", enrollmentId).eq("customer_account_id", customerId).maybeSingle();
+  if (enrollmentError || !enrollment) redirect(`${editUrl}&error=${encodeURIComponent(enrollmentError?.message ?? "Primary Showroom enrollment was not found.")}`);
+  const { error } = await supabase.from("showroom_display").update({
+    counts_toward_primary_showroom: formData.get("counts_toward_primary_showroom") === "on",
+    customer_po_number_snapshot: textValue(formData, "customer_po_number") || null,
+    display_discount_percent_snapshot: discount,
+    display_shipped_date_snapshot: textValue(formData, "shipped_date") || null,
+    display_status: status,
+    minimum_floor_through_date: textValue(formData, "mature_date") || null,
+    off_floor_date: textValue(formData, "off_floor_date") || null,
+    product_name_snapshot: name,
+    replacement_required: formData.get("replacement_required") === "on",
+    sku_snapshot: sku,
+  }).eq("id", displayId).eq("primary_showroom_enrollment_id", enrollmentId);
+  if (error) redirect(`${editUrl}&error=${encodeURIComponent(error.message)}`);
+  await syncPrimaryShowroomDisplayCount(enrollmentId);
+  revalidatePath("/");
+  redirect(`${primaryShowroomDashboardUrl(customerId, enrollmentId)}&primary_showroom_tab=displays&notice=primary_showroom_display_updated`);
+}
+
 async function getPrimaryShowroomImportOrder(customerId: string, enrollmentId: string, poNumber: string) {
   const normalizedPo = poNumber.trim();
   if (!normalizedPo) return { error: "Enter a Customer PO number.", order: null };
@@ -13642,6 +13692,7 @@ export async function ErpRouter({
     "edit-freight": "Edit Freight",
     "edit-dropship-settings": "Edit Dropship Settings",
     "edit-primary-showroom": "Edit Primary Showroom",
+    "edit-primary-showroom-display": "Edit Primary Showroom Display",
     "edit-location-freight": "Edit Freight Term",
     "edit-location": "Edit Location",
     "edit-sales-rep": "Edit Sales Rep",
@@ -14114,6 +14165,15 @@ export async function ErpRouter({
             loadImportOptions={getPrimaryShowroomImportOptions}
             loadImportOrder={getPrimaryShowroomImportOrder}
             poNumber={params.primary_showroom_po}
+          />
+        ) : activeModule === "edit-primary-showroom-display" ? (
+          <EditPrimaryShowroomDisplayForm
+            customerId={params.customer}
+            displayId={params.primary_showroom_display}
+            enrollmentId={params.primary_showroom}
+            error={params.error}
+            loadDisplay={getPrimaryShowroomDisplayForEdit}
+            saveAction={updatePrimaryShowroomDisplayAction}
           />
         ) : activeModule === "edit-primary-showroom" ? (
           <EditPrimaryShowroomForm

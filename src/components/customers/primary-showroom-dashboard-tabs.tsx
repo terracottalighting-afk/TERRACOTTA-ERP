@@ -88,7 +88,7 @@ export function PrimaryShowroomDashboardTabs({
   }), [displays, poFilter, skuFilter, statusFilter]);
   const currentDisplays = displays.filter((display) => display.display_status === "active" && display.counts_toward_primary_showroom);
 
-  const displayTable = (rows: Display[]) => rows.length === 0 ? (
+  const displayTable = (rows: Display[], editable = false) => rows.length === 0 ? (
     <EmptyState text="No display items match this view." />
   ) : (
     <div className="table-wrap">
@@ -101,7 +101,7 @@ export function PrimaryShowroomDashboardTabs({
         <tbody>
           {rows.map((display) => (
             <tr key={display.id}>
-              <td>{display.sku_snapshot}</td>
+              <td>{editable ? <Link className="text-action" href={`/?module=edit-primary-showroom-display&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_display=${display.id}`}>{display.sku_snapshot}</Link> : display.sku_snapshot}</td>
               <td>{display.product_name_snapshot ?? "Display item"}</td>
               <td>{display.customer_po_number_snapshot ?? "Not set"}</td>
               <td>{display.display_discount_percent_snapshot === null ? "Not set" : `${display.display_discount_percent_snapshot}%`}</td>
@@ -191,7 +191,7 @@ export function PrimaryShowroomDashboardTabs({
               </select>
             </label>
           </div>
-          {displayTable(filteredDisplays)}
+          {displayTable(filteredDisplays, true)}
         </article>
       ) : null}
 
@@ -211,7 +211,7 @@ export function PrimaryShowroomDashboardTabs({
                   <button className="small-action" type="submit">Create a Snapshot</button>
                 </form>
               </div>
-              {displayTable(currentDisplays)}
+              {displayTable(currentDisplays, true)}
             </article>
           ) : (
             <article className="data-section">

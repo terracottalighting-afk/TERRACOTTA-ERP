@@ -142,6 +142,7 @@ export type SearchParams = Promise<{
   product_style?: string;
   product?: string;
   primary_showroom?: string;
+  primary_showroom_tab?: string;
   primary_showroom_po?: string;
   primary_showroom_section?: string;
   rep?: string;
@@ -13355,7 +13356,7 @@ async function importPrimaryShowroomDisplaysAction(formData: FormData) {
   if (insertError) redirect(`${importUrl}&error=${encodeURIComponent(insertError.message)}`);
   await syncPrimaryShowroomDisplayCount(enrollmentId);
   revalidatePath("/");
-  redirect(`${primaryShowroomDashboardUrl(customerId, enrollmentId)}&notice=primary_showroom_displays_imported`);
+  redirect(`${primaryShowroomDashboardUrl(customerId, enrollmentId)}&primary_showroom_tab=displays&notice=primary_showroom_displays_imported`);
 }
 
 async function getPrimaryShowroomForEdit(
@@ -14092,6 +14093,7 @@ export async function ErpRouter({
             customerId={params.customer}
             createSnapshotAction={createPrimaryShowroomDisplaySnapshotAction}
             enrollmentId={params.primary_showroom}
+            initialTab={params.primary_showroom_tab === "displays" || params.primary_showroom_tab === "history" ? params.primary_showroom_tab : "profile"}
             loadCustomer={getCustomerName}
             loadPrimaryShowroomDashboard={getPrimaryShowroomDashboard}
           />

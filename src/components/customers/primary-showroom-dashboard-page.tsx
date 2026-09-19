@@ -73,12 +73,14 @@ export async function PrimaryShowroomDashboardPage({
   customerId,
   enrollmentId,
   createSnapshotAction,
+  initialTab,
   loadCustomer,
   loadPrimaryShowroomDashboard,
 }: {
   customerId?: string;
   enrollmentId?: string;
   createSnapshotAction: (formData: FormData) => void | Promise<void>;
+  initialTab?: "profile" | "displays" | "history";
   loadCustomer: (customerId: string) => Promise<CustomerName>;
   loadPrimaryShowroomDashboard: (customerId: string, enrollmentId: string) => Promise<PrimaryShowroomDashboard>;
 }) {
@@ -131,6 +133,7 @@ export async function PrimaryShowroomDashboardPage({
         displays={dashboard.displays}
         enrollmentId={enrollmentId}
         importFromPoHref={`/?module=primary-showroom-display-import&customer=${customerId}&primary_showroom=${enrollmentId}`}
+        initialTab={initialTab}
         profile={{
           address,
           currentDisplayCount: dashboard.enrollment.current_display_count,

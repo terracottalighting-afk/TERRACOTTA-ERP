@@ -32,6 +32,7 @@ export function PrimaryShowroomDashboardTabs({
   customerId,
   addDisplayHref,
   importFromPoHref,
+  initialTab,
   profileEditHref,
   primaryShowroomContactEditHref,
   measuresEditHref,
@@ -44,6 +45,7 @@ export function PrimaryShowroomDashboardTabs({
   customerId: string;
   addDisplayHref: string;
   importFromPoHref: string;
+  initialTab?: "profile" | "displays" | "history";
   profileEditHref: string;
   primaryShowroomContactEditHref: string;
   measuresEditHref: string;
@@ -72,7 +74,7 @@ export function PrimaryShowroomDashboardTabs({
   };
   snapshots: Snapshot[];
 }) {
-  const [activeTab, setActiveTab] = useState<"profile" | "displays" | "history">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "displays" | "history">(initialTab ?? "profile");
   const [historyTab, setHistoryTab] = useState<"current" | "snapshots">("current");
   const [skuFilter, setSkuFilter] = useState("");
   const [poFilter, setPoFilter] = useState("");

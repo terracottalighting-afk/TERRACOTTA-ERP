@@ -31,6 +31,7 @@ type ImportPoOption = {
   isShowroomLocation: boolean;
   locationName: string;
   poNumber: string;
+  salesOrderNumber: string;
   shipDate: string | null;
 };
 
@@ -107,7 +108,6 @@ export async function ImportPrimaryShowroomDisplaysForm({
     loadImportOptions(customerId, enrollmentId),
     poNumber ? loadImportOrder(customerId, enrollmentId, poNumber) : Promise.resolve({ error: undefined, order: null }),
   ]);
-  const formUrl = `/?module=primary-showroom-display-import&customer=${customerId}&primary_showroom=${enrollmentId}`;
 
   return <section className="dashboard-panel">
     <section className="form-header">
@@ -115,9 +115,10 @@ export async function ImportPrimaryShowroomDisplaysForm({
       <DashboardLink customerId={customerId} enrollmentId={enrollmentId} />
     </section>
     {error || result.error ? <div className="form-alert">{decodeURIComponent(error ?? result.error ?? "")}</div> : null}
-    <form action={formUrl} className="customer-form">
-      <fieldset><legend>Find a Shipped PO</legend><div className="form-grid"><label>Customer PO #<select defaultValue={poNumber ?? ""} name="primary_showroom_po" required><option value="">Select a shipped PO from the last {options.periodMonths} months</option>{options.pos.map((po) => <option disabled={!po.isShowroomLocation} key={`${po.poNumber}:${po.locationName}`} value={po.poNumber}>{po.poNumber} · {dateLabel(po.shipDate)} · {po.locationName}{po.isShowroomLocation ? "" : " (different ship-to)"}</option>)}</select></label></div><p className="fieldset-note">POs for other showroom locations are listed for account history but cannot be imported here.</p><div className="form-actions"><button className="primary-action" type="submit">Find Shipped Items</button></div></fieldset>
-    </form>
+    <article className="data-section">
+      <div className="section-title"><div><h3>Shipped POs From the Last {options.periodMonths} Months</h3><p>Choose a PO shipped to this primary showroom to review its items.</p></div><span>{options.pos.length}</span></div>
+      {options.pos.length === 0 ? <EmptyState text="No shipped POs are available for this account in the selected period." /> : <div className="table-wrap"><table><thead><tr><th>Customer PO</th><th>Order</th><th>Shipped Date</th><th>Ship-to Location</th><th>Action</th></tr></thead><tbody>{options.pos.map((po) => <tr key={`${po.salesOrderNumber}:${po.poNumber}`}><td>{po.poNumber}</td><td>{po.salesOrderNumber}</td><td>{dateLabel(po.shipDate)}</td><td>{po.locationName}</td><td>{po.isShowroomLocation ? <Link className="text-action" href={`/?module=primary-showroom-display-import&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_po=${encodeURIComponent(po.poNumber)}`}>Select PO</Link> : <span className="muted-text">Different ship-to</span>}</td></tr>)}</tbody></table></div>}
+    </article>
     {result.order ? <form action={importAction} className="customer-form">
       <input name="customer_id" type="hidden" value={customerId} /><input name="enrollment_id" type="hidden" value={enrollmentId} /><input name="customer_po_number" type="hidden" value={result.order.customerPoNumber} />
       <fieldset><legend>Shipped Display Items</legend>

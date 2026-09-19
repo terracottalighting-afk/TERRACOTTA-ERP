@@ -13307,6 +13307,7 @@ async function getPrimaryShowroomImportOptions(customerId: string, enrollmentId:
       isShowroomLocation: order.customer_location_id === enrollment.customer_location_id,
       locationName: locations.get(order.customer_location_id) ?? "Unknown location",
       poNumber: order.customer_po_number,
+      salesOrderNumber: order.sales_order_number,
       shipDate: latestShipDates.get(order.id) ?? null,
     })),
   };

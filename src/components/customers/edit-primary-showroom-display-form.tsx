@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ModulePlaceholder } from "@/components/ui";
+import { PrimaryShowroomDisplayStatusFields } from "@/components/customers/primary-showroom-display-status-fields";
 
 type DisplayRecord = {
   counts_toward_primary_showroom: boolean;
@@ -38,7 +39,7 @@ export async function EditPrimaryShowroomDisplayForm({ customerId, displayId, en
         <label>Discount (%)<input defaultValue={display.display_discount_percent_snapshot ?? ""} min="0" name="discount_percent" step="0.01" type="number" /></label>
         <label>Shipped Date<input defaultValue={display.display_shipped_date_snapshot ?? ""} name="shipped_date" type="date" /></label>
         <label>Mature Date<input defaultValue={display.minimum_floor_through_date ?? ""} name="mature_date" type="date" /></label>
-        <label>Status<select defaultValue={display.display_status} name="status"><option value="active">On floor</option><option value="sold">Sold</option><option value="swapped">Swapped</option><option value="removed">Removed</option><option value="needs_refresh">Needs refresh</option><option value="expired">Expired</option></select></label>
+        <PrimaryShowroomDisplayStatusFields initialStatus={display.display_status} />
         <label>Sold / Off Date<input defaultValue={display.off_floor_date ?? ""} name="off_floor_date" type="date" /></label>
       </div><div className="checkbox-grid"><label><input defaultChecked={display.counts_toward_primary_showroom} name="counts_toward_primary_showroom" type="checkbox" /> Count toward Primary Showroom</label><label><input defaultChecked={display.replacement_required} name="replacement_required" type="checkbox" /> Replacement Required</label></div></fieldset>
       <div className="form-actions"><button className="primary-action" type="submit">Save Display</button><Link className="secondary-action secondary-action--light" href={dashboardHref}>Cancel</Link></div>

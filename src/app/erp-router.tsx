@@ -13251,6 +13251,15 @@ async function updatePrimaryShowroomDisplayAction(formData: FormData) {
   const { data: enrollment, error: enrollmentError } = await supabase.from("primary_showroom_enrollment")
     .select("id").eq("id", enrollmentId).eq("customer_account_id", customerId).maybeSingle();
   if (enrollmentError || !enrollment) redirect(`${editUrl}&error=${encodeURIComponent(enrollmentError?.message ?? "Primary Showroom enrollment was not found.")}`);
+  const { data: existingDisplay, error: existingDisplayError } = await supabase.from("showroom_display")
+    .select("display_status, notes").eq("id", displayId).eq("primary_showroom_enrollment_id", enrollmentId).maybeSingle();
+  if (existingDisplayError || !existingDisplay) redirect(`${editUrl}&error=${encodeURIComponent(existingDisplayError?.message ?? "Primary Showroom display was not found.")}`);
+  const statusChanged = status !== existingDisplay.display_status;
+  const statusChangeNote = textValue(formData, "status_change_note");
+  if (statusChanged && !statusChangeNote) redirect(`${editUrl}&error=${encodeURIComponent("Enter a reason for changing the display status.")}`);
+  const statusHistoryNote = statusChanged
+    ? `${new Date().toISOString().slice(0, 10)}: Status changed from ${existingDisplay.display_status} to ${status}. ${statusChangeNote}`
+    : null;
   const { error } = await supabase.from("showroom_display").update({
     counts_toward_primary_showroom: formData.get("counts_toward_primary_showroom") === "on",
     customer_po_number_snapshot: textValue(formData, "customer_po_number") || null,
@@ -13262,6 +13271,7 @@ async function updatePrimaryShowroomDisplayAction(formData: FormData) {
     product_name_snapshot: name,
     replacement_required: formData.get("replacement_required") === "on",
     sku_snapshot: sku,
+    ...(statusHistoryNote ? { notes: [existingDisplay.notes, statusHistoryNote].filter(Boolean).join("\n") } : {}),
   }).eq("id", displayId).eq("primary_showroom_enrollment_id", enrollmentId);
   if (error) redirect(`${editUrl}&error=${encodeURIComponent(error.message)}`);
   await syncPrimaryShowroomDisplayCount(enrollmentId);

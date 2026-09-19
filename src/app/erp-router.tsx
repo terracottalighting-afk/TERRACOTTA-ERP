@@ -21,6 +21,7 @@ import { EditLocationFreightForm } from "@/components/customers/edit-location-fr
 import { EditLocationForm } from "@/components/customers/edit-location-form";
 import { EditSalesRepForm } from "@/components/customers/edit-sales-rep-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
+import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
 import { SalesRepAgencyEditor } from "@/components/customers/sales-rep-agency-editor";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { CommissionStatementConfirmationPage } from "@/components/customers/commission-statement-confirmation-page";
@@ -138,6 +139,7 @@ export type SearchParams = Promise<{
   product_status?: string;
   product_style?: string;
   product?: string;
+  primary_showroom?: string;
   rep?: string;
   quote?: string;
   order?: string;
@@ -249,10 +251,13 @@ type CustomerSearchFilters = {
 };
 
 type CustomerLocation = {
+  address_line_1?: string | null;
+  address_line_2?: string | null;
   id: string;
   location_code: string | null;
   location_name: string;
   location_type: string;
+  postal_code?: string | null;
   city: string | null;
   state_province: string | null;
   country_code: string;
@@ -272,6 +277,7 @@ type PrimaryShowroomEnrollment = {
   expiration_date?: string | null;
   free_freight_threshold?: number | null;
   id?: string;
+  last_review_date?: string | null;
   pending_renew_date?: string | null;
   program_status: string;
   required_display_count?: number;
@@ -11007,7 +11013,7 @@ async function getCustomerDashboard(customerId: string) {
     supabase
       .from("customer_location")
       .select(
-        "id, location_code, location_name, location_type, city, state_province, country_code, is_shipping_address, is_default_ship_to, is_billing_address, is_showroom, status, updated_at",
+        "id, location_code, location_name, location_type, address_line_1, address_line_2, city, state_province, postal_code, country_code, is_shipping_address, is_default_ship_to, is_billing_address, is_showroom, status, updated_at",
       )
       .eq("customer_account_id", customerId)
       .order("location_name", { ascending: true }),
@@ -11054,7 +11060,7 @@ async function getCustomerDashboard(customerId: string) {
       .limit(8),
     supabase
       .from("primary_showroom_enrollment")
-      .select("customer_location_id, program_status, updated_at")
+      .select("id, customer_location_id, program_status, enrollment_date, last_review_date, expiration_date, current_display_count, updated_at")
       .eq("customer_account_id", customerId)
       .in("program_status", [
         "pending",
@@ -12869,6 +12875,57 @@ async function getLocationDashboard(customerId: string, locationId: string) {
   };
 }
 
+async function getPrimaryShowroomDashboard(
+  customerId: string,
+  enrollmentId: string,
+) {
+  const supabase = createSupabaseAdminClient();
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from("primary_showroom_enrollment")
+    .select(
+      "id, customer_location_id, program_status, enrollment_date, last_review_date, expiration_date, required_display_count, current_display_count",
+    )
+    .eq("id", enrollmentId)
+    .eq("customer_account_id", customerId)
+    .single();
+
+  if (enrollmentError) throw new Error(enrollmentError.message);
+
+  const [locationResult, displaysResult] = await Promise.all([
+    supabase
+      .from("customer_location")
+      .select(
+        "location_name, address_line_1, address_line_2, city, state_province, postal_code",
+      )
+      .eq("id", enrollment.customer_location_id)
+      .eq("customer_account_id", customerId)
+      .single(),
+    supabase
+      .from("showroom_display")
+      .select(
+        "id, sku_snapshot, product_name_snapshot, customer_po_number_snapshot, display_shipped_date_snapshot, minimum_floor_through_date, display_status, counts_toward_primary_showroom",
+      )
+      .eq("primary_showroom_enrollment_id", enrollmentId)
+      .order("display_shipped_date_snapshot", { ascending: false }),
+  ]);
+
+  if (locationResult.error) throw new Error(locationResult.error.message);
+  if (displaysResult.error) throw new Error(displaysResult.error.message);
+
+  return {
+    displays: displaysResult.data ?? [],
+    enrollment: {
+      current_display_count: Number(enrollment.current_display_count ?? 0),
+      enrollment_date: enrollment.enrollment_date,
+      expiration_date: enrollment.expiration_date,
+      last_review_date: enrollment.last_review_date,
+      program_status: enrollment.program_status,
+      required_display_count: Number(enrollment.required_display_count ?? 0),
+    },
+    location: locationResult.data,
+  };
+}
+
 async function getContactForEdit(contactId: string) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
@@ -13062,6 +13119,7 @@ export async function ErpRouter({
     "invoice-document": "Invoice",
     invoices: "Financial",
     "payment-detail": "Payment",
+    "primary-showroom": "Primary Showroom Dashboard",
     orders: "Orders",
     quotes: "Quotes",
     "obsolete-customers": "Obsolete Accounts",
@@ -13163,6 +13221,7 @@ export async function ErpRouter({
     { key: "locations", label: "Locations" },
     { key: "contacts", label: "Contacts" },
     { key: "sales-rep", label: "Sales Rep" },
+    { key: "primary-showrooms", label: "Primary Showrooms" },
     { key: "freight", label: "Freight" },
     { key: "orders", label: "Orders / Quotes" },
     { key: "shipments", label: "Shipments" },
@@ -13484,6 +13543,13 @@ export async function ErpRouter({
             loadLocationDashboard={getLocationDashboard}
             locationId={params.location}
             selectedTab={params.location_tab}
+          />
+        ) : activeModule === "primary-showroom" ? (
+          <PrimaryShowroomDashboardPage
+            customerId={params.customer}
+            enrollmentId={params.primary_showroom}
+            loadCustomer={getCustomerName}
+            loadPrimaryShowroomDashboard={getPrimaryShowroomDashboard}
           />
         ) : activeModule === "edit-location" ? (
           <EditLocationForm
@@ -14222,6 +14288,79 @@ export async function ErpRouter({
                         </div>
                       ))}
                     </div>
+                  </article>
+
+                  <article
+                    className={
+                      selectedCustomerTab === "primary-showrooms"
+                        ? "data-section"
+                        : "data-section tab-panel-hidden"
+                    }
+                    id="primary-showrooms"
+                  >
+                    <div className="section-title">
+                      <h3>Primary Showrooms</h3>
+                      <span>{dashboard.primaryShowrooms.length}</span>
+                    </div>
+                    {dashboard.primaryShowrooms.length === 0 ? (
+                      <EmptyState text="No showroom locations are enrolled in the Primary Showroom Program." />
+                    ) : (
+                      <div className="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Name</th>
+                              <th>Location Address</th>
+                              <th>Initial Enrollment Date</th>
+                              <th>Last Review Date</th>
+                              <th>Membership Expiration</th>
+                              <th>Displays on Floor</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dashboard.primaryShowrooms.map((showroom) => {
+                              const location = dashboard.locations.find(
+                                (candidate) =>
+                                  candidate.id === showroom.customer_location_id,
+                              );
+                              const address = location
+                                ? [
+                                    location.address_line_1,
+                                    [location.city, location.state_province]
+                                      .filter(Boolean)
+                                      .join(", "),
+                                    location.postal_code,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(", ")
+                                : "Location unavailable";
+
+                              return (
+                                <tr key={showroom.id}>
+                                  <td>
+                                    <Link
+                                      className="table-link"
+                                      href={`/?module=primary-showroom&customer=${dashboard.customer.id}&primary_showroom=${showroom.id}`}
+                                    >
+                                      {location?.location_name ?? "Showroom"}
+                                    </Link>
+                                  </td>
+                                  <td>{address || "Not set"}</td>
+                                  <td>{dateLabel(showroom.enrollment_date)}</td>
+                                  <td>{dateLabel(showroom.last_review_date)}</td>
+                                  <td>{dateLabel(showroom.expiration_date)}</td>
+                                  <td>
+                                    {numberFormatter.format(
+                                      showroom.current_display_count ?? 0,
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </article>
 
                   <article

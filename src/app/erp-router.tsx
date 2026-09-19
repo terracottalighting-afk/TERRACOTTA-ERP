@@ -4310,6 +4310,12 @@ async function createPendingShipmentAction(formData: FormData) {
   } catch (dropshipError) {
     redirect(`${fallbackUrl}&error=${encodeURIComponent(dropshipError instanceof Error ? dropshipError.message : "The Dropship Fee could not be calculated.")}`);
   }
+  const shipmentShipToSnapshot = shipmentResidentialSurcharge > 0
+    ? {
+        ...(order.ship_to_snapshot_json as Record<string, unknown>),
+        residential_surcharge_amount: shipmentResidentialSurcharge,
+      }
+    : order.ship_to_snapshot_json;
   const { data: shipment, error: shipmentError } = await supabase
     .from("freight_shipment")
     .insert({
@@ -4321,7 +4327,7 @@ async function createPendingShipmentAction(formData: FormData) {
       master_tracking_number: masterTrackingNumber,
       notes,
       ship_to_location_id: order.customer_location_id,
-      ship_to_snapshot_json: order.ship_to_snapshot_json,
+      ship_to_snapshot_json: shipmentShipToSnapshot,
       ship_to_type:
         order.ship_to_type as Database["public"]["Enums"]["sales_order_ship_to_type"],
       shipping_type: shipmentCarrier!.shippingType
@@ -4353,7 +4359,7 @@ async function createPendingShipmentAction(formData: FormData) {
       notes,
       sales_order_id: order.id,
       sales_order_number_snapshot: order.sales_order_number,
-      ship_to_snapshot_json: { ...(order.ship_to_snapshot_json as Record<string, unknown>), residential_surcharge_amount: shipmentResidentialSurcharge },
+      ship_to_snapshot_json: shipmentShipToSnapshot,
       ship_to_type:
         order.ship_to_type as Database["public"]["Enums"]["sales_order_ship_to_type"],
       shipping_type_snapshot: shipmentCarrier!.shippingType

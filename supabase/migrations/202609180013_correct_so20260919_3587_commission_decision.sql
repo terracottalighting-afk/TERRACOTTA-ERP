@@ -12,6 +12,13 @@ from public.sales_order orders
 where orders.id = packing.sales_order_id
   and orders.sales_order_number = 'SO20260919-3587';
 
+delete from public.commission_snapshot snapshots
+using public.customer_invoice invoices,
+      public.sales_order orders
+where invoices.id = snapshots.customer_invoice_id
+  and orders.id = invoices.sales_order_id
+  and orders.sales_order_number = 'SO20260919-3587';
+
 update public.customer_invoice invoices
 set
   commission_payable = false,
@@ -24,12 +31,5 @@ from public.sales_order orders
 where orders.id = invoices.sales_order_id
   and orders.sales_order_number = 'SO20260919-3587'
   and invoices.invoice_status <> 'void';
-
-delete from public.commission_snapshot snapshots
-using public.customer_invoice invoices,
-      public.sales_order orders
-where invoices.id = snapshots.customer_invoice_id
-  and orders.id = invoices.sales_order_id
-  and orders.sales_order_number = 'SO20260919-3587';
 
 commit;

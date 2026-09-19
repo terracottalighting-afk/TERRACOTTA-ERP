@@ -51,6 +51,7 @@ export function PrimaryShowroomDashboardTabs({
     enrollmentDate: string;
     expirationDate: string | null;
     lastReviewDate: string | null;
+    nextReviewDate: string | null;
     minimumAnnualSalesTarget: number | null;
     primaryShowroomContact: {
       email: string | null;
@@ -126,6 +127,7 @@ export function PrimaryShowroomDashboardTabs({
               <div><dt>Address</dt><dd>{profile.address || "Not set"}</dd></div>
               <div><dt>Initial Enrollment Date</dt><dd>{dateLabel(profile.enrollmentDate)}</dd></div>
               <div><dt>Last Review Date</dt><dd>{dateLabel(profile.lastReviewDate)}</dd></div>
+              <div><dt>Next Review Date</dt><dd>{dateLabel(profile.nextReviewDate)}</dd></div>
               <div><dt>Membership Expiration</dt><dd>{dateLabel(profile.expirationDate)}</dd></div>
             </dl>
           </article>

@@ -24,6 +24,7 @@ type PrimaryShowroomDashboard = {
     enrollment_date: string;
     expiration_date: string | null;
     last_review_date: string | null;
+    next_review_date: string | null;
     minimum_annual_sales_target: number | null;
     program_status: string;
     required_display_count: number;
@@ -134,6 +135,7 @@ export async function PrimaryShowroomDashboardPage({
           enrollmentDate: dashboard.enrollment.enrollment_date,
           expirationDate: dashboard.enrollment.expiration_date,
           lastReviewDate: dashboard.enrollment.last_review_date,
+          nextReviewDate: dashboard.enrollment.next_review_date,
           minimumAnnualSalesTarget: dashboard.enrollment.minimum_annual_sales_target,
           primaryShowroomContact: dashboard.primaryShowroomContact,
           requiredDisplayCount: dashboard.enrollment.required_display_count,

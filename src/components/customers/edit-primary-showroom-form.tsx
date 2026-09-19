@@ -8,6 +8,7 @@ type PrimaryShowroomForEdit = {
     enrollment_date: string;
     expiration_date: string | null;
     last_review_date: string | null;
+    next_review_date: string | null;
     minimum_annual_sales_target: number | null;
     required_display_count: number;
   };
@@ -83,6 +84,7 @@ export async function EditPrimaryShowroomForm({
               <label>Postal Code<input defaultValue={showroom.location.postal_code ?? ""} name="postal_code" /></label>
               <label>Initial Enrollment Date<input defaultValue={showroom.enrollment.enrollment_date} name="enrollment_date" required type="date" /></label>
               <label>Last Review Date<input defaultValue={showroom.enrollment.last_review_date ?? ""} name="last_review_date" type="date" /></label>
+              <label>Next Review Date<input defaultValue={showroom.enrollment.next_review_date ?? ""} name="next_review_date" type="date" /></label>
               <label>Membership Expiration<input defaultValue={showroom.enrollment.expiration_date ?? ""} name="expiration_date" type="date" /></label>
             </div>
           </fieldset>

@@ -12918,7 +12918,7 @@ async function getPrimaryShowroomDashboard(
   const { data: enrollment, error: enrollmentError } = await supabase
     .from("primary_showroom_enrollment")
     .select(
-      "id, customer_location_id, program_status, enrollment_date, last_review_date, expiration_date, required_display_count, current_display_count, minimum_annual_sales_target",
+      "id, customer_location_id, program_status, enrollment_date, last_review_date, next_review_date, expiration_date, required_display_count, current_display_count, minimum_annual_sales_target",
     )
     .eq("id", enrollmentId)
     .eq("customer_account_id", customerId)
@@ -13011,6 +13011,7 @@ async function getPrimaryShowroomDashboard(
       enrollment_date: enrollment.enrollment_date,
       expiration_date: enrollment.expiration_date,
       last_review_date: enrollment.last_review_date,
+      next_review_date: enrollment.next_review_date,
       minimum_annual_sales_target:
         enrollment.minimum_annual_sales_target === null
           ? null
@@ -13104,7 +13105,7 @@ async function getPrimaryShowroomForEdit(
   const { data: enrollment, error: enrollmentError } = await supabase
     .from("primary_showroom_enrollment")
     .select(
-      "customer_location_id, enrollment_date, last_review_date, expiration_date, current_display_count, required_display_count, minimum_annual_sales_target",
+      "customer_location_id, enrollment_date, last_review_date, next_review_date, expiration_date, current_display_count, required_display_count, minimum_annual_sales_target",
     )
     .eq("id", enrollmentId)
     .eq("customer_account_id", customerId)
@@ -13125,6 +13126,7 @@ async function getPrimaryShowroomForEdit(
       enrollment_date: enrollment.enrollment_date,
       expiration_date: enrollment.expiration_date,
       last_review_date: enrollment.last_review_date,
+      next_review_date: enrollment.next_review_date,
       minimum_annual_sales_target:
         enrollment.minimum_annual_sales_target === null
           ? null
@@ -13193,6 +13195,7 @@ async function updatePrimaryShowroomAction(formData: FormData) {
         enrollment_date: optionalDate("enrollment_date"),
         expiration_date: optionalDate("expiration_date"),
         last_review_date: optionalDate("last_review_date"),
+        next_review_date: optionalDate("next_review_date"),
       })
       .eq("id", enrollmentId);
     if (enrollmentUpdateError) redirect(`${editUrl}&error=${encodeURIComponent(enrollmentUpdateError.message)}`);

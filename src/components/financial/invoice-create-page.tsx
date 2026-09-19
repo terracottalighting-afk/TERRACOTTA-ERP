@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { InvoiceCommissionFields } from "@/components/financial/invoice-commission-fields";
 import { InvoiceTermsAndFreightFields } from "@/components/financial/invoice-terms-and-freight-fields";
 import { money } from "@/lib/formatters";
 
@@ -114,56 +115,11 @@ export async function InvoiceCreatePage({
                 is the commission payee; an assigned sales rep is recorded as a
                 territory note only.
               </p>
-              <div className="table-wrap">
-                <table className="editable-table">
-                  <thead>
-                    <tr>
-                      <th>Brand Invoice</th>
-                      <th>Commission Payable</th>
-                      <th>Commission Rate (%)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {packingList.brandSummaries.map((brand) => (
-                      <tr key={brand.brand_id}>
-                        <td>{brand.brand_name}</td>
-                        <td>
-                          <label className="inline-checkbox">
-                            <input
-                              defaultChecked={packingList.commission.defaultPayable}
-                              name={`commission_payable_${brand.brand_id}`}
-                              type="checkbox"
-                            />
-                            Pay commission
-                          </label>
-                        </td>
-                        <td>
-                          <input
-                            defaultValue={packingList.commission.defaultPercent ?? 0}
-                            max={100}
-                            min={0}
-                            name={`commission_rate_${brand.brand_id}`}
-                            step="0.01"
-                            type="number"
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="form-grid">
-                {packingList.brandSummaries.map((brand) => (
-                  <label className="full-width-field" key={brand.brand_id}>
-                    {brand.brand_name} commission decision-change note
-                    <textarea
-                      name={`commission_change_reason_${brand.brand_id}`}
-                      placeholder="Required only when changing the Pay commission decision from the original order"
-                      rows={2}
-                    />
-                  </label>
-                ))}
-              </div>
+              <InvoiceCommissionFields
+                brands={packingList.brandSummaries}
+                defaultPayable={packingList.commission.defaultPayable}
+                defaultPercent={packingList.commission.defaultPercent}
+              />
             </>
           ) : (
             <p className="fieldset-note">

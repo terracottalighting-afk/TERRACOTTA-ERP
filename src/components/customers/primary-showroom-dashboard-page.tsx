@@ -125,10 +125,12 @@ export async function PrimaryShowroomDashboardPage({
       </section>
 
       <PrimaryShowroomDashboardTabs
+        addDisplayHref={`/?module=primary-showroom-display-add&customer=${customerId}&primary_showroom=${enrollmentId}`}
         createSnapshotAction={createSnapshotAction}
         customerId={customerId}
         displays={dashboard.displays}
         enrollmentId={enrollmentId}
+        importFromPoHref={`/?module=primary-showroom-display-import&customer=${customerId}&primary_showroom=${enrollmentId}`}
         profile={{
           address,
           currentDisplayCount: dashboard.enrollment.current_display_count,

@@ -30,6 +30,8 @@ type Snapshot = {
 export function PrimaryShowroomDashboardTabs({
   createSnapshotAction,
   customerId,
+  addDisplayHref,
+  importFromPoHref,
   profileEditHref,
   primaryShowroomContactEditHref,
   measuresEditHref,
@@ -40,6 +42,8 @@ export function PrimaryShowroomDashboardTabs({
 }: {
   createSnapshotAction: (formData: FormData) => void | Promise<void>;
   customerId: string;
+  addDisplayHref: string;
+  importFromPoHref: string;
   profileEditHref: string;
   primaryShowroomContactEditHref: string;
   measuresEditHref: string;
@@ -162,7 +166,14 @@ export function PrimaryShowroomDashboardTabs({
 
       {activeTab === "displays" ? (
         <article className="data-section">
-          <div className="section-title"><h3>Display Items</h3><span>{filteredDisplays.length}</span></div>
+          <div className="section-title">
+            <h3>Display Items</h3>
+            <div className="form-actions">
+              <Link className="secondary-action secondary-action--light" href={addDisplayHref}>Add a Display</Link>
+              <Link className="small-action" href={importFromPoHref}>Import from PO</Link>
+              <span>{filteredDisplays.length}</span>
+            </div>
+          </div>
           <div className="filter-grid">
             <label>SKU<input onChange={(event) => setSkuFilter(event.target.value)} placeholder="Search SKU" value={skuFilter} /></label>
             <label>PO #<input onChange={(event) => setPoFilter(event.target.value)} placeholder="Search PO number" value={poFilter} /></label>

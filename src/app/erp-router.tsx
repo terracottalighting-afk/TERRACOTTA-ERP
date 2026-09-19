@@ -23,6 +23,7 @@ import { EditSalesRepForm } from "@/components/customers/edit-sales-rep-form";
 import { EditPrimaryShowroomForm } from "@/components/customers/edit-primary-showroom-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
+import { AddPrimaryShowroomDisplayForm, ImportPrimaryShowroomDisplaysForm } from "@/components/customers/primary-showroom-display-forms";
 import { SalesRepAgencyEditor } from "@/components/customers/sales-rep-agency-editor";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
 import { CommissionStatementConfirmationPage } from "@/components/customers/commission-statement-confirmation-page";
@@ -141,6 +142,7 @@ export type SearchParams = Promise<{
   product_style?: string;
   product?: string;
   primary_showroom?: string;
+  primary_showroom_po?: string;
   primary_showroom_section?: string;
   rep?: string;
   quote?: string;
@@ -13097,6 +13099,193 @@ async function createPrimaryShowroomDisplaySnapshotAction(formData: FormData) {
   redirect(`${dashboardUrl}&notice=primary_showroom_snapshot_created`);
 }
 
+function primaryShowroomDashboardUrl(customerId: string, enrollmentId: string) {
+  return `/?module=primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}`;
+}
+
+function addOneYear(date: string | null) {
+  if (!date) return null;
+  const value = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(value.getTime())) return null;
+  value.setFullYear(value.getFullYear() + 1);
+  return value.toISOString().slice(0, 10);
+}
+
+async function getPrimaryShowroomDisplayContext(customerId: string, enrollmentId: string) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from("primary_showroom_enrollment")
+    .select("customer_location_id")
+    .eq("id", enrollmentId)
+    .eq("customer_account_id", customerId)
+    .maybeSingle();
+  if (enrollmentError || !enrollment) throw new Error(enrollmentError?.message ?? "Primary Showroom enrollment was not found.");
+  const { data: location, error: locationError } = await supabase
+    .from("customer_location")
+    .select("location_name, address_line_1, address_line_2, city, state_province, postal_code")
+    .eq("id", enrollment.customer_location_id)
+    .eq("customer_account_id", customerId)
+    .single();
+  if (locationError) throw new Error(locationError.message);
+  return {
+    location: {
+      address: [location.address_line_1, location.address_line_2, [location.city, location.state_province].filter(Boolean).join(", "), location.postal_code].filter(Boolean).join(", "),
+      location_name: location.location_name,
+    },
+  };
+}
+
+async function syncPrimaryShowroomDisplayCount(enrollmentId: string) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { count, error: countError } = await supabase
+    .from("showroom_display")
+    .select("id", { count: "exact", head: true })
+    .eq("primary_showroom_enrollment_id", enrollmentId)
+    .eq("display_status", "active")
+    .eq("counts_toward_primary_showroom", true);
+  if (countError) throw new Error(countError.message);
+  const { error: updateError } = await supabase
+    .from("primary_showroom_enrollment")
+    .update({ current_display_count: count ?? 0 })
+    .eq("id", enrollmentId);
+  if (updateError) throw new Error(updateError.message);
+}
+
+async function addPrimaryShowroomDisplayAction(formData: FormData) {
+  "use server";
+  const customerId = textValue(formData, "customer_id");
+  const enrollmentId = textValue(formData, "enrollment_id");
+  const editUrl = `/?module=primary-showroom-display-add&customer=${customerId}&primary_showroom=${enrollmentId}`;
+  const fail = (message: string) => redirect(`${editUrl}&error=${encodeURIComponent(message)}`);
+  if (!customerId || !enrollmentId) fail("A customer and primary showroom are required.");
+  const sku = textValue(formData, "sku");
+  const name = textValue(formData, "name");
+  const status = textValue(formData, "status");
+  const validStatuses = ["active", "sold", "swapped", "removed", "needs_refresh", "expired"];
+  const discountText = textValue(formData, "discount_percent");
+  const discount = discountText ? Number(discountText) : null;
+  if (!sku || !name || !validStatuses.includes(status)) fail("Enter a SKU, display name, and valid display status.");
+  if (discount !== null && (!Number.isFinite(discount) || discount < 0)) fail("Enter a valid non-negative discount.");
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from("primary_showroom_enrollment").select("customer_location_id")
+    .eq("id", enrollmentId).eq("customer_account_id", customerId).maybeSingle();
+  if (enrollmentError || !enrollment) {
+    redirect(`${editUrl}&error=${encodeURIComponent(enrollmentError?.message ?? "Primary Showroom enrollment was not found.")}`);
+  }
+  const shippedDate = textValue(formData, "shipped_date") || null;
+  const { error } = await supabase.from("showroom_display").insert({
+    counts_toward_primary_showroom: formData.get("counts_toward_primary_showroom") === "on",
+    customer_location_id: enrollment.customer_location_id,
+    customer_po_number_snapshot: textValue(formData, "customer_po_number") || null,
+    display_discount_percent_snapshot: discount,
+    display_shipped_date_snapshot: shippedDate,
+    display_status: status,
+    minimum_floor_through_date: textValue(formData, "mature_date") || addOneYear(shippedDate),
+    notes: "Added manually from Primary Showroom display tracking.",
+    off_floor_date: textValue(formData, "off_floor_date") || null,
+    primary_showroom_enrollment_id: enrollmentId,
+    product_name_snapshot: name,
+    replacement_required: formData.get("replacement_required") === "on",
+    sku_snapshot: sku,
+  });
+  if (error) fail(error.message);
+  await syncPrimaryShowroomDisplayCount(enrollmentId);
+  revalidatePath("/");
+  redirect(`${primaryShowroomDashboardUrl(customerId, enrollmentId)}&notice=primary_showroom_display_added`);
+}
+
+async function getPrimaryShowroomImportOrder(customerId: string, enrollmentId: string, poNumber: string) {
+  const normalizedPo = poNumber.trim();
+  if (!normalizedPo) return { error: "Enter a Customer PO number.", order: null };
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from("primary_showroom_enrollment").select("customer_location_id")
+    .eq("id", enrollmentId).eq("customer_account_id", customerId).maybeSingle();
+  if (enrollmentError || !enrollment) return { error: enrollmentError?.message ?? "Primary Showroom enrollment was not found.", order: null };
+  // A matching saved ship-to location is the durable address validation for PO imports.
+  const { data: order, error: orderError } = await supabase
+    .from("sales_order").select("id, sales_order_number, customer_po_number, order_date")
+    .eq("customer_account_id", customerId)
+    .eq("customer_location_id", enrollment.customer_location_id)
+    .eq("customer_po_number", normalizedPo)
+    .maybeSingle();
+  if (orderError) return { error: orderError.message, order: null };
+  if (!order) return { error: "No order with this PO was shipped to the selected primary showroom location.", order: null };
+  const [linesResult, shipmentResult] = await Promise.all([
+    supabase.from("sales_order_line")
+      .select("id, product_sku_snapshot, product_name_snapshot, quantity_shipped, discount_percent")
+      .eq("sales_order_id", order.id).gt("quantity_shipped", 0).order("line_number", { ascending: true }),
+    supabase.from("packing_list").select("ship_date").eq("sales_order_id", order.id)
+      .not("ship_date", "is", null).order("ship_date", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  if (linesResult.error) return { error: linesResult.error.message, order: null };
+  if (shipmentResult.error) return { error: shipmentResult.error.message, order: null };
+  const lineIds = (linesResult.data ?? []).map((line) => line.id);
+  const existingResult = lineIds.length
+    ? await supabase.from("showroom_display").select("sales_order_line_id").eq("primary_showroom_enrollment_id", enrollmentId).in("sales_order_line_id", lineIds)
+    : { data: [], error: null };
+  if (existingResult.error) return { error: existingResult.error.message, order: null };
+  const existingIds = new Set((existingResult.data ?? []).map((display) => display.sales_order_line_id));
+  return {
+    order: {
+      customerPoNumber: order.customer_po_number,
+      lines: (linesResult.data ?? []).map((line) => ({
+        alreadyImported: existingIds.has(line.id), discountPercent: Number(line.discount_percent ?? 0), id: line.id,
+        name: line.product_name_snapshot, quantityShipped: Number(line.quantity_shipped ?? 0), sku: line.product_sku_snapshot,
+      })),
+      orderDate: order.order_date,
+      salesOrderNumber: order.sales_order_number,
+      shipDate: shipmentResult.data?.ship_date ?? null,
+    },
+  };
+}
+
+async function importPrimaryShowroomDisplaysAction(formData: FormData) {
+  "use server";
+  const customerId = textValue(formData, "customer_id");
+  const enrollmentId = textValue(formData, "enrollment_id");
+  const poNumber = textValue(formData, "customer_po_number");
+  const importUrl = `/?module=primary-showroom-display-import&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_po=${encodeURIComponent(poNumber)}`;
+  const selectedLineIds = formData.getAll("sales_order_line_id").map(String).filter(Boolean);
+  if (!customerId || !enrollmentId || !poNumber || !selectedLineIds.length) redirect(`${importUrl}&error=${encodeURIComponent("Select at least one shipped item to import.")}`);
+  const importOrder = await getPrimaryShowroomImportOrder(customerId, enrollmentId, poNumber);
+  if (!importOrder.order) redirect(`${importUrl}&error=${encodeURIComponent(importOrder.error ?? "The PO could not be imported.")}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from("primary_showroom_enrollment").select("customer_location_id")
+    .eq("id", enrollmentId).eq("customer_account_id", customerId).single();
+  if (enrollmentError) redirect(`${importUrl}&error=${encodeURIComponent(enrollmentError.message)}`);
+  const selectedLines = importOrder.order.lines.filter((line) => selectedLineIds.includes(line.id) && !line.alreadyImported);
+  if (!selectedLines.length) redirect(`${importUrl}&error=${encodeURIComponent("The selected lines were already imported or are no longer available.")}`);
+  const { data: order, error: orderError } = await supabase.from("sales_order").select("id, order_date")
+    .eq("customer_account_id", customerId).eq("customer_location_id", enrollment.customer_location_id)
+    .eq("customer_po_number", poNumber).single();
+  if (orderError || !order) redirect(`${importUrl}&error=${encodeURIComponent(orderError?.message ?? "The matching showroom order could not be found.")}`);
+  const { data: sourceLines, error: sourceLinesError } = await supabase.from("sales_order_line")
+    .select("id, product_id, brand_id_snapshot, product_sku_snapshot, product_name_snapshot, discount_percent")
+    .eq("sales_order_id", order.id).in("id", selectedLines.map((line) => line.id));
+  if (sourceLinesError) redirect(`${importUrl}&error=${encodeURIComponent(sourceLinesError.message)}`);
+  const linesById = new Map((sourceLines ?? []).map((line) => [line.id, line]));
+  const shippedDate = importOrder.order.shipDate;
+  const { error: insertError } = await supabase.from("showroom_display").insert(selectedLines.map((line) => {
+    const source = linesById.get(line.id)!;
+    return {
+      brand_id: source.brand_id_snapshot, counts_toward_primary_showroom: true,
+      customer_location_id: enrollment.customer_location_id, customer_po_number_snapshot: poNumber,
+      display_discount_percent_snapshot: Number(source.discount_percent ?? 0), display_order_date: order.order_date,
+      display_shipped_date_snapshot: shippedDate, display_status: "active", minimum_floor_through_date: addOneYear(shippedDate),
+      notes: "Imported from shipped PO.", primary_showroom_enrollment_id: enrollmentId,
+      product_id: source.product_id, product_name_snapshot: source.product_name_snapshot, replacement_required: false,
+      sales_order_id: order.id, sales_order_line_id: source.id, sku_snapshot: source.product_sku_snapshot,
+    };
+  }));
+  if (insertError) redirect(`${importUrl}&error=${encodeURIComponent(insertError.message)}`);
+  await syncPrimaryShowroomDisplayCount(enrollmentId);
+  revalidatePath("/");
+  redirect(`${primaryShowroomDashboardUrl(customerId, enrollmentId)}&notice=primary_showroom_displays_imported`);
+}
+
 async function getPrimaryShowroomForEdit(
   customerId: string,
   enrollmentId: string,
@@ -13400,6 +13589,8 @@ export async function ErpRouter({
     invoices: "Financial",
     "payment-detail": "Payment",
     "primary-showroom": "Primary Showroom Dashboard",
+    "primary-showroom-display-add": "Add Primary Showroom Display",
+    "primary-showroom-display-import": "Import Primary Showroom Displays",
     orders: "Orders",
     quotes: "Quotes",
     "obsolete-customers": "Obsolete Accounts",
@@ -13831,6 +14022,23 @@ export async function ErpRouter({
             enrollmentId={params.primary_showroom}
             loadCustomer={getCustomerName}
             loadPrimaryShowroomDashboard={getPrimaryShowroomDashboard}
+          />
+        ) : activeModule === "primary-showroom-display-add" ? (
+          <AddPrimaryShowroomDisplayForm
+            customerId={params.customer}
+            enrollmentId={params.primary_showroom}
+            error={params.error}
+            loadShowroom={getPrimaryShowroomDisplayContext}
+            saveAction={addPrimaryShowroomDisplayAction}
+          />
+        ) : activeModule === "primary-showroom-display-import" ? (
+          <ImportPrimaryShowroomDisplaysForm
+            customerId={params.customer}
+            enrollmentId={params.primary_showroom}
+            error={params.error}
+            importAction={importPrimaryShowroomDisplaysAction}
+            loadImportOrder={getPrimaryShowroomImportOrder}
+            poNumber={params.primary_showroom_po}
           />
         ) : activeModule === "edit-primary-showroom" ? (
           <EditPrimaryShowroomForm

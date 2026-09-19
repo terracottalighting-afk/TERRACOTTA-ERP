@@ -20,6 +20,7 @@ import { EditDropshipSettingsForm } from "@/components/customers/edit-dropship-s
 import { EditLocationFreightForm } from "@/components/customers/edit-location-freight-form";
 import { EditLocationForm } from "@/components/customers/edit-location-form";
 import { EditSalesRepForm } from "@/components/customers/edit-sales-rep-form";
+import { EditPrimaryShowroomForm } from "@/components/customers/edit-primary-showroom-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
 import { SalesRepAgencyEditor } from "@/components/customers/sales-rep-agency-editor";
@@ -140,6 +141,7 @@ export type SearchParams = Promise<{
   product_style?: string;
   product?: string;
   primary_showroom?: string;
+  primary_showroom_section?: string;
   rep?: string;
   quote?: string;
   order?: string;
@@ -13058,6 +13060,112 @@ async function createPrimaryShowroomDisplaySnapshotAction(formData: FormData) {
   redirect(`${dashboardUrl}&notice=primary_showroom_snapshot_created`);
 }
 
+async function getPrimaryShowroomForEdit(
+  customerId: string,
+  enrollmentId: string,
+) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from("primary_showroom_enrollment")
+    .select(
+      "customer_location_id, enrollment_date, last_review_date, expiration_date, current_display_count, required_display_count, minimum_annual_sales_target",
+    )
+    .eq("id", enrollmentId)
+    .eq("customer_account_id", customerId)
+    .single();
+  if (enrollmentError) throw new Error(enrollmentError.message);
+
+  const { data: location, error: locationError } = await supabase
+    .from("customer_location")
+    .select("location_name, address_line_1, address_line_2, city, state_province, postal_code")
+    .eq("id", enrollment.customer_location_id)
+    .eq("customer_account_id", customerId)
+    .single();
+  if (locationError) throw new Error(locationError.message);
+
+  return {
+    enrollment: {
+      current_display_count: Number(enrollment.current_display_count ?? 0),
+      enrollment_date: enrollment.enrollment_date,
+      expiration_date: enrollment.expiration_date,
+      last_review_date: enrollment.last_review_date,
+      minimum_annual_sales_target:
+        enrollment.minimum_annual_sales_target === null
+          ? null
+          : Number(enrollment.minimum_annual_sales_target),
+      required_display_count: Number(enrollment.required_display_count ?? 0),
+    },
+    location,
+  };
+}
+
+async function updatePrimaryShowroomAction(formData: FormData) {
+  "use server";
+
+  const customerId = textValue(formData, "customer_id");
+  const enrollmentId = textValue(formData, "enrollment_id");
+  const section = textValue(formData, "section") === "measures" ? "measures" : "profile";
+  const dashboardUrl = `/?module=primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}`;
+  const editUrl = `/?module=edit-primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_section=${section}`;
+  if (!customerId || !enrollmentId) redirect(`${editUrl}&error=missing_required`);
+
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: enrollment, error: enrollmentError } = await supabase
+    .from("primary_showroom_enrollment")
+    .select("customer_location_id")
+    .eq("id", enrollmentId)
+    .eq("customer_account_id", customerId)
+    .maybeSingle();
+  if (enrollmentError || !enrollment) {
+    redirect(`${editUrl}&error=${encodeURIComponent(enrollmentError?.message ?? "Primary Showroom enrollment was not found.")}`);
+  }
+
+  const optionalDate = (key: string) => textValue(formData, key) || null;
+  if (section === "measures") {
+    const currentDisplayCount = Number(textValue(formData, "current_display_count"));
+    const requiredDisplayCount = Number(textValue(formData, "required_display_count"));
+    const salesTargetText = textValue(formData, "minimum_annual_sales_target");
+    const minimumAnnualSalesTarget = salesTargetText ? Number(salesTargetText) : null;
+    if (!Number.isInteger(currentDisplayCount) || currentDisplayCount < 0 || !Number.isInteger(requiredDisplayCount) || requiredDisplayCount < 0 || (minimumAnnualSalesTarget !== null && (!Number.isFinite(minimumAnnualSalesTarget) || minimumAnnualSalesTarget < 0))) {
+      redirect(`${editUrl}&error=${encodeURIComponent("Enter valid non-negative program measures.")}`);
+    }
+    const { error } = await supabase
+      .from("primary_showroom_enrollment")
+      .update({
+        current_display_count: currentDisplayCount,
+        minimum_annual_sales_target: minimumAnnualSalesTarget,
+        required_display_count: requiredDisplayCount,
+      })
+      .eq("id", enrollmentId);
+    if (error) redirect(`${editUrl}&error=${encodeURIComponent(error.message)}`);
+  } else {
+    const { error: locationError } = await supabase
+      .from("customer_location")
+      .update({
+        address_line_1: textValue(formData, "address_line_1") || null,
+        address_line_2: textValue(formData, "address_line_2") || null,
+        city: textValue(formData, "city") || null,
+        postal_code: textValue(formData, "postal_code") || null,
+        state_province: textValue(formData, "state_province") || null,
+      })
+      .eq("id", enrollment.customer_location_id)
+      .eq("customer_account_id", customerId);
+    if (locationError) redirect(`${editUrl}&error=${encodeURIComponent(locationError.message)}`);
+    const { error: enrollmentUpdateError } = await supabase
+      .from("primary_showroom_enrollment")
+      .update({
+        enrollment_date: optionalDate("enrollment_date"),
+        expiration_date: optionalDate("expiration_date"),
+        last_review_date: optionalDate("last_review_date"),
+      })
+      .eq("id", enrollmentId);
+    if (enrollmentUpdateError) redirect(`${editUrl}&error=${encodeURIComponent(enrollmentUpdateError.message)}`);
+  }
+
+  revalidatePath("/");
+  redirect(`${dashboardUrl}&notice=primary_showroom_updated`);
+}
+
 async function getContactForEdit(contactId: string) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
@@ -13232,6 +13340,7 @@ export async function ErpRouter({
     "edit-contact": "Edit Contact",
     "edit-freight": "Edit Freight",
     "edit-dropship-settings": "Edit Dropship Settings",
+    "edit-primary-showroom": "Edit Primary Showroom",
     "edit-location-freight": "Edit Freight Term",
     "edit-location": "Edit Location",
     "edit-sales-rep": "Edit Sales Rep",
@@ -13683,6 +13792,15 @@ export async function ErpRouter({
             enrollmentId={params.primary_showroom}
             loadCustomer={getCustomerName}
             loadPrimaryShowroomDashboard={getPrimaryShowroomDashboard}
+          />
+        ) : activeModule === "edit-primary-showroom" ? (
+          <EditPrimaryShowroomForm
+            customerId={params.customer}
+            enrollmentId={params.primary_showroom}
+            error={params.error}
+            loadPrimaryShowroom={getPrimaryShowroomForEdit}
+            saveAction={updatePrimaryShowroomAction}
+            section={params.primary_showroom_section}
           />
         ) : activeModule === "edit-location" ? (
           <EditLocationForm

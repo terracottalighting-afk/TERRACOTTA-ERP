@@ -126,6 +126,8 @@ export async function PrimaryShowroomDashboardPage({
           minimumAnnualSalesTarget: dashboard.enrollment.minimum_annual_sales_target,
           requiredDisplayCount: dashboard.enrollment.required_display_count,
         }}
+        profileEditHref={`/?module=edit-primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_section=profile`}
+        measuresEditHref={`/?module=edit-primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_section=measures`}
         snapshots={dashboard.snapshots}
       />
     </section>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 
 import { EmptyState, StatusBadge } from "@/components/ui";
 import { dateLabel, label, money, numberFormatter } from "@/lib/formatters";
@@ -29,6 +30,8 @@ type Snapshot = {
 export function PrimaryShowroomDashboardTabs({
   createSnapshotAction,
   customerId,
+  profileEditHref,
+  measuresEditHref,
   displays,
   enrollmentId,
   profile,
@@ -36,6 +39,8 @@ export function PrimaryShowroomDashboardTabs({
 }: {
   createSnapshotAction: (formData: FormData) => void | Promise<void>;
   customerId: string;
+  profileEditHref: string;
+  measuresEditHref: string;
   displays: Display[];
   enrollmentId: string;
   profile: {
@@ -103,7 +108,7 @@ export function PrimaryShowroomDashboardTabs({
       {activeTab === "profile" ? (
         <section className="detail-grid">
           <article className="info-panel">
-            <h3>Showroom Profile</h3>
+            <div className="panel-title-row"><h3>Showroom Profile</h3><Link className="text-action" href={profileEditHref}>Edit</Link></div>
             <dl>
               <div><dt>Address</dt><dd>{profile.address || "Not set"}</dd></div>
               <div><dt>Initial Enrollment Date</dt><dd>{dateLabel(profile.enrollmentDate)}</dd></div>
@@ -112,7 +117,7 @@ export function PrimaryShowroomDashboardTabs({
             </dl>
           </article>
           <article className="info-panel">
-            <h3>Program Measures</h3>
+            <div className="panel-title-row"><h3>Program Measures</h3><Link className="text-action" href={measuresEditHref}>Edit</Link></div>
             <dl>
               <div><dt>Current Displays on Floor</dt><dd>{numberFormatter.format(profile.currentDisplayCount)}</dd></div>
               <div><dt>Required Displays</dt><dd>{numberFormatter.format(profile.requiredDisplayCount)}</dd></div>

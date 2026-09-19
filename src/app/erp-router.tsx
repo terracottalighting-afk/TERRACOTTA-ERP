@@ -5449,9 +5449,11 @@ async function prepareInvoiceConfirmationAction(formData: FormData) {
       return [
         brandId,
         {
-          payable: formData.has(`commission_payable_${brandId}`)
-            ? formData.get(`commission_payable_${brandId}`) === "on"
-            : invoicePackingList.commission_payable_snapshot,
+          payable: textValue(formData, `commission_payable_choice_${brandId}`)
+            ? textValue(formData, `commission_payable_choice_${brandId}`) === "true"
+            : formData.has(`commission_payable_${brandId}`)
+              ? formData.get(`commission_payable_${brandId}`) === "on"
+              : invoicePackingList.commission_payable_snapshot,
           percent: Number.isFinite(percent) ? percent : null,
         },
       ];

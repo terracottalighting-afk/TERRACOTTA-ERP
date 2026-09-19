@@ -36,10 +36,18 @@ export function InvoiceCommissionFields({
               <tr key={brand.brand_id}>
                 <td>{brand.brand_name}</td>
                 <td>
+                  <input
+                    name={`commission_payable_choice_${brand.brand_id}`}
+                    type="hidden"
+                    value={
+                      payableByBrand[brand.brand_id] ?? defaultPayable
+                        ? "true"
+                        : "false"
+                    }
+                  />
                   <label className="inline-checkbox">
                     <input
                       checked={payableByBrand[brand.brand_id] ?? defaultPayable}
-                      name={`commission_payable_${brand.brand_id}`}
                       onChange={(event) =>
                         setPayableByBrand((current) => ({
                           ...current,

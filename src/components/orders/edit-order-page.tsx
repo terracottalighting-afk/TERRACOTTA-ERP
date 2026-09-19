@@ -216,12 +216,12 @@ export function EditOrderPage({
                         ) : (
                           <input
                             defaultValue={line.discount_percent}
-                            max={100}
-                            min={0}
+                            inputMode="decimal"
                             name={`discount_percent_${line.id}`}
+                            onFocus={(event) => event.currentTarget.select()}
+                            pattern="[0-9]*[.]?[0-9]*"
                             required
-                            step="0.01"
-                            type="number"
+                            type="text"
                           />
                         )}
                       </td>

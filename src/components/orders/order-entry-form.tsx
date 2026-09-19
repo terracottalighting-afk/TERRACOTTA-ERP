@@ -621,7 +621,7 @@ export function OrderEntryForm({ accountName, agencyId, customerId, defaultDisco
                       <td>{line.sku}</td><td>{line.name}</td><td>{line.brandName}</td><td>{line.inventory}</td>
                       <td><input min="1" onChange={(event) => updateLine(line.id, { quantity: Math.max(1, Number(event.target.value) || 1) })} step="1" type="number" value={line.quantity} /></td>
                       <td><input min="0" onChange={(event) => updateLine(line.id, { unitPrice: Math.max(0, Number(event.target.value) || 0) })} step="0.01" type="number" value={line.unitPrice} /></td>
-                      <td><input disabled={orderType === "catalog_marketing"} min="0" onChange={(event) => updateLine(line.id, { discountPercent: Math.max(0, Number(event.target.value) || 0) })} step="0.01" type="number" value={line.discountPercent} /></td>
+                      <td><input disabled={orderType === "catalog_marketing"} inputMode="decimal" onChange={(event) => updateLine(line.id, { discountPercent: Math.min(100, Math.max(0, Number(event.target.value) || 0)) })} onFocus={(event) => event.currentTarget.select()} pattern="[0-9]*[.]?[0-9]*" type="text" value={line.discountPercent} /></td>
                       <td>{money.format(lineTotal)}</td>
                       <td><button aria-label={`Remove ${line.sku}`} className="icon-text-action" onClick={() => setLines((current) => current.filter((item) => item.id !== line.id))} type="button">Remove</button></td>
                     </tr>

@@ -2755,6 +2755,24 @@ dd {
   text-decoration: underline;
 }
 
+.primary-showroom-registration-link {
+  color: var(--accent);
+}
+
+.pagination-link,
+.pagination-current {
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.pagination-link:disabled {
+  cursor: not-allowed;
+}
+
+.pagination-current {
+  background: var(--accent);
+}
+
 .badge-row {
   display: flex;
   flex-wrap: wrap;

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { EmptyState, ModulePlaceholder } from "@/components/ui";
 import { PrimaryShowroomRegistrationUploadFields } from "@/components/customers/primary-showroom-registration-upload-fields";
+import { PrimaryShowroomRegistrationTable } from "@/components/customers/primary-showroom-registration-table";
 import { ConfirmRemoveButton } from "@/components/ui/confirm-remove-button";
 import { dateLabel } from "@/lib/formatters";
 
@@ -10,8 +11,7 @@ type FileLink = { id: string; original_file_name: string; signed_url: string | n
 const purposeLabel: Record<string, string> = { initial_participating: "Initial Participating", program_renewal: "Program Renewal", program_audit: "Program Audit", other: "Other" };
 
 export function PrimaryShowroomRegistrationTab({ addHref, customerId, enrollmentId, registrations }: { addHref: string; customerId: string; enrollmentId: string; registrations: Registration[] }) {
-  const detailHref = (id: string) => `/?module=primary-showroom-registration&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_registration=${id}`;
-  return <article className="data-section"><div className="section-title"><div><h3>Registration / Renewal</h3><p>Participation agreements, renewal materials, audit reports, and floor-display images.</p></div><Link className="small-action" href={addHref}>Add Documents</Link></div>{registrations.length === 0 ? <EmptyState text="No registration, renewal, or audit packages have been added." /> : <div className="table-wrap"><table><thead><tr><th>Name</th><th>Purpose</th><th>Documents</th><th>Images</th><th>Created</th></tr></thead><tbody>{registrations.map((registration) => <tr key={registration.id}><td><Link className="record-link" href={detailHref(registration.id)}>{registration.registration_name}</Link></td><td>{purposeLabel[registration.purpose] ?? registration.purpose}</td><td>{registration.documentCount} document{registration.documentCount === 1 ? "" : "s"}</td><td>{registration.imageCount} image{registration.imageCount === 1 ? "" : "s"}</td><td>{dateLabel(registration.created_at)}</td></tr>)}</tbody></table></div>}</article>;
+  return <article className="data-section"><div className="section-title"><div><h3>Registration / Renewal</h3><p>Participation agreements, renewal materials, audit reports, and floor-display images.</p></div><Link className="small-action" href={addHref}>Add Documents</Link></div>{registrations.length === 0 ? <EmptyState text="No registration, renewal, or audit packages have been added." /> : <PrimaryShowroomRegistrationTable customerId={customerId} enrollmentId={enrollmentId} registrations={registrations} />}</article>;
 }
 
 export function PrimaryShowroomRegistrationAddPage({ customerId, enrollmentId, error, saveAction }: { customerId?: string; enrollmentId?: string; error?: string; saveAction: (formData: FormData) => void | Promise<void> }) {

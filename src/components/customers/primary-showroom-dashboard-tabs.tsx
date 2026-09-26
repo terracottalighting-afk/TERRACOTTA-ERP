@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { EmptyState, StatusBadge } from "@/components/ui";
 import { ConfirmRemoveButton } from "@/components/ui/confirm-remove-button";
+import { PrimaryShowroomRegistrationTab } from "@/components/customers/primary-showroom-registration-pages";
 import { dateLabel, label, money, numberFormatter } from "@/lib/formatters";
 
 type Display = {
@@ -28,6 +29,8 @@ type Snapshot = {
   snapshot_name: string;
 };
 
+type Registration = { created_at: string; documentCount: number; id: string; imageCount: number; purpose: string; registration_name: string; };
+
 export function PrimaryShowroomDashboardTabs({
   createSnapshotAction,
   createSnapshotHref,
@@ -42,6 +45,8 @@ export function PrimaryShowroomDashboardTabs({
   displays,
   enrollmentId,
   profile,
+  registrationHref,
+  registrations,
   snapshots,
 }: {
   createSnapshotAction: (formData: FormData) => void | Promise<void>;
@@ -50,7 +55,7 @@ export function PrimaryShowroomDashboardTabs({
   customerId: string;
   addDisplayHref: string;
   importFromPoHref: string;
-  initialTab?: "profile" | "displays" | "history";
+  initialTab?: "profile" | "displays" | "history" | "registration";
   profileEditHref: string;
   primaryShowroomContactEditHref: string;
   measuresEditHref: string;
@@ -77,9 +82,11 @@ export function PrimaryShowroomDashboardTabs({
       sales_rep_name: string | null;
     } | null;
   };
+  registrationHref: string;
+  registrations: Registration[];
   snapshots: Snapshot[];
 }) {
-  const [activeTab, setActiveTab] = useState<"profile" | "displays" | "history">(initialTab ?? "profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "displays" | "history" | "registration">(initialTab ?? "profile");
   const [historyTab, setHistoryTab] = useState<"current" | "snapshots">("current");
   const [skuFilter, setSkuFilter] = useState("");
   const [poFilter, setPoFilter] = useState("");
@@ -128,6 +135,7 @@ export function PrimaryShowroomDashboardTabs({
         <button aria-current={activeTab === "profile" ? "page" : undefined} onClick={() => setActiveTab("profile")} type="button">Profile</button>
         <button aria-current={activeTab === "displays" ? "page" : undefined} onClick={() => setActiveTab("displays")} type="button">Displays</button>
         <button aria-current={activeTab === "history" ? "page" : undefined} onClick={() => setActiveTab("history")} type="button">Current &amp; History</button>
+        <button aria-current={activeTab === "registration" ? "page" : undefined} onClick={() => setActiveTab("registration")} type="button">Registration / Renew</button>
       </section>
 
       {activeTab === "profile" ? (
@@ -224,6 +232,8 @@ export function PrimaryShowroomDashboardTabs({
           )}
         </>
       ) : null}
+
+      {activeTab === "registration" ? <PrimaryShowroomRegistrationTab addHref={registrationHref} customerId={customerId} enrollmentId={enrollmentId} registrations={registrations} /> : null}
     </>
   );
 }

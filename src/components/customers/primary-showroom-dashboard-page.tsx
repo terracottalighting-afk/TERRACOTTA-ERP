@@ -38,6 +38,14 @@ type PrimaryShowroomDashboard = {
     postal_code: string | null;
     state_province: string | null;
   };
+  registrations: {
+    created_at: string;
+    documentCount: number;
+    id: string;
+    imageCount: number;
+    purpose: string;
+    registration_name: string;
+  }[];
   snapshots: {
     display_count: number;
     id: string;
@@ -70,7 +78,7 @@ export async function PrimaryShowroomDashboardPage({
   enrollmentId?: string;
   createSnapshotAction: (formData: FormData) => void | Promise<void>;
   deleteSnapshotAction: (formData: FormData) => void | Promise<void>;
-  initialTab?: "profile" | "displays" | "history";
+  initialTab?: "profile" | "displays" | "history" | "registration";
   loadCustomer: (customerId: string) => Promise<CustomerName>;
   loadPrimaryShowroomDashboard: (customerId: string, enrollmentId: string) => Promise<PrimaryShowroomDashboard>;
 }) {
@@ -139,6 +147,8 @@ export async function PrimaryShowroomDashboardPage({
           salesCoverage: dashboard.salesCoverage,
         }}
         profileEditHref={`/?module=edit-primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_section=profile`}
+        registrationHref={`/?module=primary-showroom-registration-add&customer=${customerId}&primary_showroom=${enrollmentId}`}
+        registrations={dashboard.registrations}
         measuresEditHref={`/?module=edit-primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_section=measures`}
         primaryShowroomContactEditHref={
           dashboard.primaryShowroomContact

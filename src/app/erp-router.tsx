@@ -24,6 +24,7 @@ import { EditPrimaryShowroomForm } from "@/components/customers/edit-primary-sho
 import { EditPrimaryShowroomDisplayForm } from "@/components/customers/edit-primary-showroom-display-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
+import { PrimaryShowroomRegistrationAddPage, PrimaryShowroomRegistrationDetailPage } from "@/components/customers/primary-showroom-registration-pages";
 import { PrimaryShowroomSnapshotCreatePage, PrimaryShowroomSnapshotDetailPage } from "@/components/customers/primary-showroom-snapshot-pages";
 import { AddPrimaryShowroomDisplayForm, ImportPrimaryShowroomDisplaysForm } from "@/components/customers/primary-showroom-display-forms";
 import { SalesRepAgencyEditor } from "@/components/customers/sales-rep-agency-editor";
@@ -146,6 +147,7 @@ export type SearchParams = Promise<{
   primary_showroom?: string;
   primary_showroom_display?: string;
   primary_showroom_snapshot?: string;
+  primary_showroom_registration?: string;
   primary_showroom_tab?: string;
   primary_showroom_po?: string;
   primary_showroom_section?: string;
@@ -12956,7 +12958,7 @@ async function getPrimaryShowroomDashboard(
 
   if (enrollmentError) throw new Error(enrollmentError.message);
 
-  const [locationResult, displaysResult, snapshotsResult, contactResult, salesCoverageResult] = await Promise.all([
+  const [locationResult, displaysResult, snapshotsResult, contactResult, salesCoverageResult, registrationsResult] = await Promise.all([
     supabase
       .from("customer_location")
       .select(
@@ -12991,6 +12993,11 @@ async function getPrimaryShowroomDashboard(
       .eq("customer_location_id", enrollment.customer_location_id)
       .eq("coverage_role", "primary")
       .maybeSingle(),
+    supabase
+      .from("primary_showroom_registration")
+      .select("id, registration_name, purpose, created_at")
+      .eq("primary_showroom_enrollment_id", enrollmentId)
+      .order("created_at", { ascending: false }),
   ]);
 
   if (locationResult.error) throw new Error(locationResult.error.message);
@@ -12998,6 +13005,23 @@ async function getPrimaryShowroomDashboard(
   if (snapshotsResult.error) throw new Error(snapshotsResult.error.message);
   if (contactResult.error) throw new Error(contactResult.error.message);
   if (salesCoverageResult.error) throw new Error(salesCoverageResult.error.message);
+  if (registrationsResult.error) throw new Error(registrationsResult.error.message);
+
+  const registrationIds = (registrationsResult.data ?? []).map((registration) => registration.id);
+  const registrationAttachmentsResult = registrationIds.length
+    ? await supabase
+        .from("primary_showroom_registration_attachment")
+        .select("primary_showroom_registration_id, attachment_type")
+        .in("primary_showroom_registration_id", registrationIds)
+    : { data: [], error: null };
+  if (registrationAttachmentsResult.error) throw new Error(registrationAttachmentsResult.error.message);
+  const registrationAttachmentCounts = new Map<string, { documentCount: number; imageCount: number }>();
+  for (const attachment of registrationAttachmentsResult.data ?? []) {
+    const count = registrationAttachmentCounts.get(attachment.primary_showroom_registration_id) ?? { documentCount: 0, imageCount: 0 };
+    if (attachment.attachment_type === "document") count.documentCount += 1;
+    if (attachment.attachment_type === "image") count.imageCount += 1;
+    registrationAttachmentCounts.set(attachment.primary_showroom_registration_id, count);
+  }
 
   const snapshotIds = (snapshotsResult.data ?? []).map((snapshot) => snapshot.id);
   const snapshotItemsResult = snapshotIds.length
@@ -13051,6 +13075,10 @@ async function getPrimaryShowroomDashboard(
     },
     location: locationResult.data,
     primaryShowroomContact: contactResult.data,
+    registrations: (registrationsResult.data ?? []).map((registration) => ({
+      ...registration,
+      ...(registrationAttachmentCounts.get(registration.id) ?? { documentCount: 0, imageCount: 0 }),
+    })),
     salesCoverage: salesCoverageResult.data,
     snapshots: (snapshotsResult.data ?? []).map((snapshot) => ({
       ...snapshot,
@@ -13180,6 +13208,75 @@ async function deletePrimaryShowroomSnapshotAction(formData: FormData) {
 
 function primaryShowroomDashboardUrl(customerId: string, enrollmentId: string) {
   return `/?module=primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}`;
+}
+
+async function addPrimaryShowroomRegistrationAction(formData: FormData) {
+  "use server";
+  const customerId = textValue(formData, "customer_id");
+  const enrollmentId = textValue(formData, "enrollment_id");
+  const addUrl = `/?module=primary-showroom-registration-add&customer=${customerId}&primary_showroom=${enrollmentId}`;
+  const fail = (message: string) => redirect(`${addUrl}&error=${encodeURIComponent(message)}`);
+  const registrationName = textValue(formData, "registration_name");
+  const purpose = textValue(formData, "purpose");
+  const allowedPurposes = new Set(["initial_participating", "program_renewal", "program_audit", "other"]);
+  const files = [
+    ...formData.getAll("document_files").filter((value): value is File => value instanceof File && value.size > 0).map((file) => ({ file, type: "document" })),
+    ...formData.getAll("image_files").filter((value): value is File => value instanceof File && value.size > 0).map((file) => ({ file, type: "image" })),
+  ];
+  if (!customerId || !enrollmentId || !registrationName || !allowedPurposes.has(purpose)) fail("Enter a name and select a purpose.");
+  if (!files.length) fail("Upload at least one document or image.");
+
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: enrollment, error: enrollmentError } = await supabase.from("primary_showroom_enrollment").select("id").eq("id", enrollmentId).eq("customer_account_id", customerId).maybeSingle();
+  if (enrollmentError || !enrollment) fail(enrollmentError?.message ?? "Primary Showroom enrollment was not found.");
+  const { data: registration, error: registrationError } = await supabase.from("primary_showroom_registration").insert({ primary_showroom_enrollment_id: enrollmentId, registration_name: registrationName, purpose }).select("id").single();
+  if (registrationError) fail(registrationError.message);
+  if (!registration) redirect(`${addUrl}&error=${encodeURIComponent("Could not create the registration package.")}`);
+
+  const bucketName = "primary-showroom-registrations";
+  const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+  if (bucketsError) fail(bucketsError.message);
+  if (!buckets?.some((bucket) => bucket.name === bucketName)) {
+    const { error } = await supabase.storage.createBucket(bucketName, { public: false });
+    if (error) fail(error.message);
+  }
+  for (const [index, upload] of files.entries()) {
+    if (upload.file.size > 25 * 1024 * 1024) fail(`${upload.file.name} is larger than 25 MB.`);
+    if (upload.type === "image" && !upload.file.type.startsWith("image/")) fail(`${upload.file.name} must be an image.`);
+    const safeName = upload.file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const storagePath = `primary-showroom/${enrollmentId}/${registration.id}/${Date.now()}-${index}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from(bucketName).upload(storagePath, new Uint8Array(await upload.file.arrayBuffer()), { contentType: upload.file.type || "application/octet-stream", upsert: false });
+    if (uploadError) fail(uploadError.message);
+    const { data: attachment, error: attachmentError } = await supabase.from("attachment").insert({ category: `primary_showroom_registration_${upload.type}`, content_type: upload.file.type || "application/octet-stream", entity_id: registration.id, entity_type: "primary_showroom_registration", file_size: upload.file.size, original_file_name: upload.file.name, storage_bucket: bucketName, storage_path: storagePath }).select("id").single();
+    if (attachmentError) fail(attachmentError.message);
+    if (!attachment) redirect(`${addUrl}&error=${encodeURIComponent("Could not save the uploaded file.")}`);
+    const { error: linkError } = await supabase.from("primary_showroom_registration_attachment").insert({ attachment_id: attachment.id, attachment_type: upload.type, primary_showroom_registration_id: registration.id });
+    if (linkError) fail(linkError.message);
+  }
+  revalidatePath("/");
+  redirect(`${primaryShowroomDashboardUrl(customerId, enrollmentId)}&primary_showroom_tab=registration&notice=primary_showroom_registration_added`);
+}
+
+async function getPrimaryShowroomRegistrationDetail(customerId: string, enrollmentId: string, registrationId: string) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: enrollment, error: enrollmentError } = await supabase.from("primary_showroom_enrollment").select("id").eq("id", enrollmentId).eq("customer_account_id", customerId).maybeSingle();
+  if (enrollmentError || !enrollment) throw new Error(enrollmentError?.message ?? "Primary Showroom enrollment was not found.");
+  const { data: registration, error: registrationError } = await supabase.from("primary_showroom_registration").select("registration_name, purpose, created_at").eq("id", registrationId).eq("primary_showroom_enrollment_id", enrollmentId).maybeSingle();
+  if (registrationError || !registration) throw new Error(registrationError?.message ?? "Registration package was not found.");
+  const { data: links, error: linksError } = await supabase.from("primary_showroom_registration_attachment").select("attachment_id, attachment_type").eq("primary_showroom_registration_id", registrationId);
+  if (linksError) throw new Error(linksError.message);
+  const attachmentIds = (links ?? []).map((link) => link.attachment_id);
+  const { data: attachments, error: attachmentsError } = attachmentIds.length ? await supabase.from("attachment").select("id, original_file_name, storage_bucket, storage_path").in("id", attachmentIds) : { data: [], error: null };
+  if (attachmentsError) throw new Error(attachmentsError.message);
+  const attachmentById = new Map((attachments ?? []).map((attachment) => [attachment.id, attachment]));
+  const signedFiles = await Promise.all((links ?? []).map(async (link) => {
+    const attachment = attachmentById.get(link.attachment_id);
+    if (!attachment) return null;
+    const { data } = await supabase.storage.from(attachment.storage_bucket).createSignedUrl(attachment.storage_path, 60 * 60);
+    return { ...link, id: attachment.id, original_file_name: attachment.original_file_name, signed_url: data?.signedUrl ?? null };
+  }));
+  const files = signedFiles.filter((file): file is NonNullable<typeof file> => file !== null);
+  return { createdAt: registration.created_at, documents: files.filter((file) => file.attachment_type === "document"), images: files.filter((file) => file.attachment_type === "image"), name: registration.registration_name, purpose: registration.purpose };
 }
 
 function addOneYear(date: string | null) {
@@ -13778,6 +13875,8 @@ export async function ErpRouter({
     "primary-showroom": "Primary Showroom Dashboard",
     "primary-showroom-snapshot": "Primary Showroom Snapshot",
     "primary-showroom-snapshot-create": "Create Primary Showroom Snapshot",
+    "primary-showroom-registration": "Primary Showroom Registration",
+    "primary-showroom-registration-add": "Add Primary Showroom Documents",
     "primary-showroom-display-add": "Add Primary Showroom Display",
     "primary-showroom-display-import": "Import Primary Showroom Displays",
     orders: "Orders",
@@ -14210,7 +14309,7 @@ export async function ErpRouter({
             createSnapshotAction={createPrimaryShowroomDisplaySnapshotAction}
             deleteSnapshotAction={deletePrimaryShowroomSnapshotAction}
             enrollmentId={params.primary_showroom}
-            initialTab={params.primary_showroom_tab === "displays" || params.primary_showroom_tab === "history" ? params.primary_showroom_tab : "profile"}
+            initialTab={params.primary_showroom_tab === "displays" || params.primary_showroom_tab === "history" || params.primary_showroom_tab === "registration" ? params.primary_showroom_tab : "profile"}
             loadCustomer={getCustomerName}
             loadPrimaryShowroomDashboard={getPrimaryShowroomDashboard}
           />
@@ -14228,6 +14327,20 @@ export async function ErpRouter({
             enrollmentId={params.primary_showroom}
             loadSnapshot={getPrimaryShowroomSnapshotDetail}
             snapshotId={params.primary_showroom_snapshot}
+          />
+        ) : activeModule === "primary-showroom-registration-add" ? (
+          <PrimaryShowroomRegistrationAddPage
+            customerId={params.customer}
+            enrollmentId={params.primary_showroom}
+            error={params.error}
+            saveAction={addPrimaryShowroomRegistrationAction}
+          />
+        ) : activeModule === "primary-showroom-registration" ? (
+          <PrimaryShowroomRegistrationDetailPage
+            customerId={params.customer}
+            enrollmentId={params.primary_showroom}
+            loadRegistration={getPrimaryShowroomRegistrationDetail}
+            registrationId={params.primary_showroom_registration}
           />
         ) : activeModule === "primary-showroom-display-add" ? (
           <AddPrimaryShowroomDisplayForm

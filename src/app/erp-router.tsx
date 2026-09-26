@@ -24,7 +24,7 @@ import { EditPrimaryShowroomForm } from "@/components/customers/edit-primary-sho
 import { EditPrimaryShowroomDisplayForm } from "@/components/customers/edit-primary-showroom-display-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
-import { PrimaryShowroomRegistrationAddPage, PrimaryShowroomRegistrationDetailPage } from "@/components/customers/primary-showroom-registration-pages";
+import { PrimaryShowroomRegistrationAddPage, PrimaryShowroomRegistrationAttachmentAddPage, PrimaryShowroomRegistrationDetailPage } from "@/components/customers/primary-showroom-registration-pages";
 import { PrimaryShowroomSnapshotCreatePage, PrimaryShowroomSnapshotDetailPage } from "@/components/customers/primary-showroom-snapshot-pages";
 import { AddPrimaryShowroomDisplayForm, ImportPrimaryShowroomDisplaysForm } from "@/components/customers/primary-showroom-display-forms";
 import { SalesRepAgencyEditor } from "@/components/customers/sales-rep-agency-editor";
@@ -114,6 +114,7 @@ import { createSupabaseAdminClient, createSupabaseUntypedAdminClient } from "@/l
 import type { Database } from "@/types/supabase";
 
 export type SearchParams = Promise<{
+  attachment_type?: string;
   advanced?: string;
   agency_tab?: string;
   commission_tab?: string;
@@ -13263,7 +13264,7 @@ async function getPrimaryShowroomRegistrationDetail(customerId: string, enrollme
   if (enrollmentError || !enrollment) throw new Error(enrollmentError?.message ?? "Primary Showroom enrollment was not found.");
   const { data: registration, error: registrationError } = await supabase.from("primary_showroom_registration").select("registration_name, purpose, created_at").eq("id", registrationId).eq("primary_showroom_enrollment_id", enrollmentId).maybeSingle();
   if (registrationError || !registration) throw new Error(registrationError?.message ?? "Registration package was not found.");
-  const { data: links, error: linksError } = await supabase.from("primary_showroom_registration_attachment").select("attachment_id, attachment_type").eq("primary_showroom_registration_id", registrationId);
+  const { data: links, error: linksError } = await supabase.from("primary_showroom_registration_attachment").select("id, attachment_id, attachment_type").eq("primary_showroom_registration_id", registrationId);
   if (linksError) throw new Error(linksError.message);
   const attachmentIds = (links ?? []).map((link) => link.attachment_id);
   const { data: attachments, error: attachmentsError } = attachmentIds.length ? await supabase.from("attachment").select("id, original_file_name, storage_bucket, storage_path").in("id", attachmentIds) : { data: [], error: null };
@@ -13273,10 +13274,69 @@ async function getPrimaryShowroomRegistrationDetail(customerId: string, enrollme
     const attachment = attachmentById.get(link.attachment_id);
     if (!attachment) return null;
     const { data } = await supabase.storage.from(attachment.storage_bucket).createSignedUrl(attachment.storage_path, 60 * 60);
-    return { ...link, id: attachment.id, original_file_name: attachment.original_file_name, signed_url: data?.signedUrl ?? null };
+    return { ...link, original_file_name: attachment.original_file_name, signed_url: data?.signedUrl ?? null };
   }));
   const files = signedFiles.filter((file): file is NonNullable<typeof file> => file !== null);
   return { createdAt: registration.created_at, documents: files.filter((file) => file.attachment_type === "document"), images: files.filter((file) => file.attachment_type === "image"), name: registration.registration_name, purpose: registration.purpose };
+}
+
+async function addPrimaryShowroomRegistrationAttachmentsAction(formData: FormData) {
+  "use server";
+  const customerId = textValue(formData, "customer_id");
+  const enrollmentId = textValue(formData, "enrollment_id");
+  const registrationId = textValue(formData, "registration_id");
+  const attachmentType = textValue(formData, "attachment_type");
+  const detailUrl = `/?module=primary-showroom-registration&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_registration=${registrationId}`;
+  const addUrl = `/?module=primary-showroom-registration-attachment-add&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_registration=${registrationId}&attachment_type=${attachmentType}`;
+  const fail = (message: string) => redirect(`${addUrl}&error=${encodeURIComponent(message)}`);
+  if (!customerId || !enrollmentId || !registrationId || (attachmentType !== "document" && attachmentType !== "image")) fail("Registration package details are required.");
+  const files = formData.getAll("files").filter((value): value is File => value instanceof File && value.size > 0);
+  if (!files.length) fail("Choose at least one file.");
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: registration, error: registrationError } = await supabase.from("primary_showroom_registration").select("id").eq("id", registrationId).eq("primary_showroom_enrollment_id", enrollmentId).maybeSingle();
+  if (registrationError || !registration) fail(registrationError?.message ?? "Registration package was not found.");
+  const { data: enrollment, error: enrollmentError } = await supabase.from("primary_showroom_enrollment").select("id").eq("id", enrollmentId).eq("customer_account_id", customerId).maybeSingle();
+  if (enrollmentError || !enrollment) fail(enrollmentError?.message ?? "Primary Showroom enrollment was not found.");
+  const bucketName = "primary-showroom-registrations";
+  for (const [index, file] of files.entries()) {
+    if (file.size > 25 * 1024 * 1024) fail(`${file.name} is larger than 25 MB.`);
+    if (attachmentType === "image" && !file.type.startsWith("image/")) fail(`${file.name} must be an image.`);
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
+    const storagePath = `primary-showroom/${enrollmentId}/${registrationId}/${Date.now()}-${index}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from(bucketName).upload(storagePath, new Uint8Array(await file.arrayBuffer()), { contentType: file.type || "application/octet-stream", upsert: false });
+    if (uploadError) fail(uploadError.message);
+    const { data: attachment, error: attachmentError } = await supabase.from("attachment").insert({ category: `primary_showroom_registration_${attachmentType}`, content_type: file.type || "application/octet-stream", entity_id: registrationId, entity_type: "primary_showroom_registration", file_size: file.size, original_file_name: file.name, storage_bucket: bucketName, storage_path: storagePath }).select("id").single();
+    if (attachmentError || !attachment) redirect(`${addUrl}&error=${encodeURIComponent(attachmentError?.message ?? "Could not save the uploaded file.")}`);
+    const { error: linkError } = await supabase.from("primary_showroom_registration_attachment").insert({ attachment_id: attachment.id, attachment_type: attachmentType, primary_showroom_registration_id: registrationId });
+    if (linkError) fail(linkError.message);
+  }
+  revalidatePath("/");
+  redirect(`${detailUrl}&notice=primary_showroom_registration_files_added`);
+}
+
+async function deletePrimaryShowroomRegistrationAttachmentAction(formData: FormData) {
+  "use server";
+  const customerId = textValue(formData, "customer_id");
+  const enrollmentId = textValue(formData, "enrollment_id");
+  const registrationId = textValue(formData, "registration_id");
+  const registrationAttachmentId = textValue(formData, "registration_attachment_id");
+  const detailUrl = `/?module=primary-showroom-registration&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_registration=${registrationId}`;
+  if (!customerId || !enrollmentId || !registrationId || !registrationAttachmentId) redirect(`${detailUrl}&error=missing_required`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: link, error: linkError } = await supabase.from("primary_showroom_registration_attachment").select("id, attachment_id, attachment:attachment_id(storage_bucket, storage_path)").eq("id", registrationAttachmentId).eq("primary_showroom_registration_id", registrationId).maybeSingle();
+  if (linkError || !link) redirect(`${detailUrl}&error=${encodeURIComponent(linkError?.message ?? "File was not found.")}`);
+  const { data: registration, error: registrationError } = await supabase.from("primary_showroom_registration").select("id").eq("id", registrationId).eq("primary_showroom_enrollment_id", enrollmentId).maybeSingle();
+  if (registrationError || !registration) redirect(`${detailUrl}&error=${encodeURIComponent(registrationError?.message ?? "Registration package was not found.")}`);
+  const { data: enrollment, error: enrollmentError } = await supabase.from("primary_showroom_enrollment").select("id").eq("id", enrollmentId).eq("customer_account_id", customerId).maybeSingle();
+  if (enrollmentError || !enrollment) redirect(`${detailUrl}&error=${encodeURIComponent(enrollmentError?.message ?? "Primary Showroom enrollment was not found.")}`);
+  const attachment = Array.isArray(link.attachment) ? link.attachment[0] : link.attachment;
+  if (attachment) await supabase.storage.from(attachment.storage_bucket).remove([attachment.storage_path]);
+  const { error: deleteLinkError } = await supabase.from("primary_showroom_registration_attachment").delete().eq("id", registrationAttachmentId);
+  if (deleteLinkError) redirect(`${detailUrl}&error=${encodeURIComponent(deleteLinkError.message)}`);
+  const { error: deleteAttachmentError } = await supabase.from("attachment").delete().eq("id", link.attachment_id);
+  if (deleteAttachmentError) redirect(`${detailUrl}&error=${encodeURIComponent(deleteAttachmentError.message)}`);
+  revalidatePath("/");
+  redirect(`${detailUrl}&notice=primary_showroom_registration_file_deleted`);
 }
 
 function addOneYear(date: string | null) {
@@ -13877,6 +13937,7 @@ export async function ErpRouter({
     "primary-showroom-snapshot-create": "Create Primary Showroom Snapshot",
     "primary-showroom-registration": "Primary Showroom Registration",
     "primary-showroom-registration-add": "Add Primary Showroom Documents",
+    "primary-showroom-registration-attachment-add": "Add Primary Showroom Files",
     "primary-showroom-display-add": "Add Primary Showroom Display",
     "primary-showroom-display-import": "Import Primary Showroom Displays",
     orders: "Orders",
@@ -14338,9 +14399,19 @@ export async function ErpRouter({
         ) : activeModule === "primary-showroom-registration" ? (
           <PrimaryShowroomRegistrationDetailPage
             customerId={params.customer}
+            deleteAttachmentAction={deletePrimaryShowroomRegistrationAttachmentAction}
             enrollmentId={params.primary_showroom}
             loadRegistration={getPrimaryShowroomRegistrationDetail}
             registrationId={params.primary_showroom_registration}
+          />
+        ) : activeModule === "primary-showroom-registration-attachment-add" ? (
+          <PrimaryShowroomRegistrationAttachmentAddPage
+            attachmentType={params.attachment_type}
+            customerId={params.customer}
+            enrollmentId={params.primary_showroom}
+            error={params.error}
+            registrationId={params.primary_showroom_registration}
+            saveAction={addPrimaryShowroomRegistrationAttachmentsAction}
           />
         ) : activeModule === "primary-showroom-display-add" ? (
           <AddPrimaryShowroomDisplayForm

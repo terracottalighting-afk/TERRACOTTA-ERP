@@ -26,7 +26,9 @@ import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
 import { PrimaryShowroomPerformanceReportPage } from "@/components/customers/primary-showroom-performance-report-page";
 import { PurchasingDashboard } from "@/components/purchasing/purchasing-dashboard";
+import { VendorDashboard, type VendorDashboardData } from "@/components/purchasing/vendor-dashboard";
 import { VendorEditor } from "@/components/purchasing/vendor-editor";
+import { VendorProductEditor, type VendorProductOption } from "@/components/purchasing/vendor-product-editor";
 import { PrimaryShowroomRegistrationAddPage, PrimaryShowroomRegistrationAttachmentAddPage, PrimaryShowroomRegistrationDetailPage } from "@/components/customers/primary-showroom-registration-pages";
 import { PrimaryShowroomSnapshotCreatePage, PrimaryShowroomSnapshotDetailPage, PrimaryShowroomSnapshotExportPage } from "@/components/customers/primary-showroom-snapshot-pages";
 import { AddPrimaryShowroomDisplayForm, ImportPrimaryShowroomDisplaysForm } from "@/components/customers/primary-showroom-display-forms";
@@ -234,6 +236,8 @@ export type SearchParams = Promise<{
   product_tab?: string;
   spec_section?: string;
   vendor_action?: string;
+  vendor?: string;
+  vendor_tab?: string;
   warehouse?: string;
   territory?: string;
   zone?: string;
@@ -13170,6 +13174,53 @@ async function createVendorAction(formData: FormData) {
   redirect("/?module=purchasing&notice=vendor_created");
 }
 
+async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData | null> {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: vendor, error: vendorError } = await supabase.from("vendor").select("*").eq("id", vendorId).maybeSingle();
+  if (vendorError) throw new Error(vendorError.message);
+  if (!vendor) return null;
+  const [vendorProductsResult, ordersResult] = await Promise.all([
+    supabase.from("vendor_product").select("*").eq("vendor_id", vendorId).order("created_at", { ascending: false }),
+    supabase.from("vendor_purchase_order").select("id, vendor_po_number, po_date, expected_ready_date, total_amount, status").eq("vendor_id", vendorId).order("po_date", { ascending: false }),
+  ]);
+  if (vendorProductsResult.error) throw new Error(vendorProductsResult.error.message);
+  if (ordersResult.error) throw new Error(ordersResult.error.message);
+  const vendorProducts = vendorProductsResult.data ?? [];
+  const productIds = vendorProducts.map((row) => row.product_id);
+  const orderIds = (ordersResult.data ?? []).map((row) => row.id);
+  const [productsResult, categoriesResult, boxesResult, linesResult, invoicesResult] = await Promise.all([
+    productIds.length ? supabase.from("product").select("id, sku, name, product_category_id").in("id", productIds) : Promise.resolve({ data: [], error: null }),
+    supabase.from("product_category").select("id, name"),
+    productIds.length ? supabase.from("product_packing_box").select("product_id, box_width, box_length, box_height, net_weight, gross_weight, box_sequence").in("product_id", productIds).order("box_sequence") : Promise.resolve({ data: [], error: null }),
+    orderIds.length ? supabase.from("vendor_purchase_order_line").select("id").in("vendor_purchase_order_id", orderIds) : Promise.resolve({ data: [], error: null }),
+    orderIds.length ? supabase.from("vendor_po_invoice").select("vendor_purchase_order_id, invoice_amount, amount_paid, paid_date, payment_method").in("vendor_purchase_order_id", orderIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  for (const result of [productsResult, categoriesResult, boxesResult, linesResult, invoicesResult]) if (result.error) throw new Error(result.error.message);
+  const productById = new Map((productsResult.data ?? []).map((product) => [product.id, product]));
+  const categoryById = new Map((categoriesResult.data ?? []).map((category) => [category.id, category.name]));
+  const firstBoxByProduct = new Map<string, Record<string, number | null>>();
+  for (const box of boxesResult.data ?? []) if (!firstBoxByProduct.has(box.product_id)) firstBoxByProduct.set(box.product_id, box);
+  const poLineIds = (linesResult.data ?? []).map((line) => line.id);
+  const { data: containerLines, error: containerLinesError } = poLineIds.length ? await supabase.from("import_container_line").select("import_container_id, product_id, quantity_packed").in("vendor_purchase_order_line_id", poLineIds) : { data: [], error: null };
+  if (containerLinesError) throw new Error(containerLinesError.message);
+  const containerIds = [...new Set((containerLines ?? []).map((line) => line.import_container_id))];
+  const { data: containers, error: containersError } = containerIds.length ? await supabase.from("import_container").select("id, container_number, container_status, etd, eta").in("id", containerIds).order("created_at", { ascending: false }) : { data: [], error: null };
+  if (containersError) throw new Error(containersError.message);
+  const invoices = invoicesResult.data ?? [];
+  return {
+    vendor,
+    products: vendorProducts.map((row) => { const product = productById.get(row.product_id); const box = firstBoxByProduct.get(row.product_id); return { id: row.id, sku: product?.sku ?? "Unknown", name: product?.name ?? "Product unavailable", category: product?.product_category_id ? categoryById.get(product.product_category_id) ?? null : null, vendor_item_number: row.vendor_item_number, unit_cost: Number(row.unit_cost), currency: row.currency, minimum_order_quantity: row.minimum_order_quantity === null ? null : Number(row.minimum_order_quantity), is_active: row.is_active, product_type: row.product_type ?? null, hs_code: row.hs_code ?? null, box_width_inches: row.box_width_inches ?? box?.box_width ?? null, box_depth_inches: row.box_depth_inches ?? box?.box_length ?? null, box_height_inches: row.box_height_inches ?? box?.box_height ?? null, net_weight_lbs: row.net_weight_lbs ?? box?.net_weight ?? null, gross_weight_lbs: row.gross_weight_lbs ?? box?.gross_weight ?? null }; }),
+    purchaseOrders: (ordersResult.data ?? []).map((order) => ({ ...order, total_amount: order.total_amount === null ? null : Number(order.total_amount) })),
+    containers: (containers ?? []).map((container) => ({ ...container, product_lines: (containerLines ?? []).filter((line) => line.import_container_id === container.id).map((line) => ({ sku: productById.get(line.product_id)?.sku ?? "Unknown", quantity: Number(line.quantity_packed) })), invoice_amount: invoices.reduce((sum, invoice) => sum + Number(invoice.invoice_amount), 0), amount_paid: invoices.reduce((sum, invoice) => sum + Number(invoice.amount_paid), 0), paid_date: invoices.find((invoice) => invoice.paid_date)?.paid_date ?? null, payment_method: invoices.find((invoice) => invoice.payment_method)?.payment_method ?? null })),
+  };
+}
+
+function vendorRedirect(vendorId: string, tab: string, error?: string) { redirect(`/?module=vendor&vendor=${vendorId}&vendor_tab=${tab}${error ? `&error=${encodeURIComponent(error)}` : ""}`); }
+async function updateVendorProfileAction(formData: FormData) { "use server"; const vendorId = textValue(formData, "vendor_id"); if (!vendorId) redirect("/?module=purchasing"); const optional = (key: string) => textValue(formData, key) || null; const { error } = await createSupabaseUntypedAdminClient().from("vendor").update({ name: textValue(formData, "name"), legal_name: optional("legal_name"), country: textValue(formData, "country"), country_code: textValue(formData, "country_code").toUpperCase(), currency: textValue(formData, "currency"), payment_terms: optional("payment_terms"), contact_name: optional("contact_name"), email: optional("email"), phone: optional("phone"), address_line_1: optional("address_line_1"), address_line_2: optional("address_line_2"), city: optional("city"), state_province: optional("state_province"), postal_code: optional("postal_code"), notes: optional("notes"), bank_name: optional("bank_name"), bank_address: optional("bank_address"), bank_city: optional("bank_city"), bank_country: optional("bank_country"), bank_swift_code: optional("bank_swift_code"), bank_ach_routing_code: optional("bank_ach_routing_code"), bank_account_number: optional("bank_account_number") }).eq("id", vendorId); if (error) vendorRedirect(vendorId, "profile", error.message); revalidatePath("/"); vendorRedirect(vendorId, "profile"); }
+async function updateVendorTermsAction(formData: FormData) { "use server"; const vendorId = textValue(formData, "vendor_id"); if (!vendorId) redirect("/?module=purchasing"); const num = (key: string) => { const value = textValue(formData, key); return value ? Number(value) : null; }; const { error } = await createSupabaseUntypedAdminClient().from("vendor").update({ price_terms: textValue(formData, "price_terms") || null, price_currency: textValue(formData, "price_currency"), default_lead_time_days: num("default_lead_time_days"), default_minimum_order_quantity: num("default_minimum_order_quantity"), prototype_sample_discount_percent: num("prototype_sample_discount_percent"), terms_notes: textValue(formData, "terms_notes") || null }).eq("id", vendorId); if (error) vendorRedirect(vendorId, "terms", error.message); revalidatePath("/"); vendorRedirect(vendorId, "terms"); }
+async function getVendorProductOptions(): Promise<VendorProductOption[]> { const supabase = createSupabaseUntypedAdminClient(); const [{ data: products, error: productsError }, { data: boxes, error: boxesError }, { data: categories, error: categoriesError }] = await Promise.all([supabase.from("product").select("id, sku, name, product_category_id").order("sku"), supabase.from("product_packing_box").select("product_id, box_width, box_length, box_height, net_weight, gross_weight, box_sequence").order("box_sequence"), supabase.from("product_category").select("id, name")]); if (productsError || boxesError || categoriesError) throw new Error(productsError?.message ?? boxesError?.message ?? categoriesError?.message); const categoryNames = new Map((categories ?? []).map((category) => [category.id, category.name])); const firstBoxes = new Map<string, any>(); for (const box of boxes ?? []) if (!firstBoxes.has(box.product_id)) firstBoxes.set(box.product_id, box); return (products ?? []).map((product) => { const box = firstBoxes.get(product.id); return { id: product.id, sku: product.sku, name: product.name, category: product.product_category_id ? categoryNames.get(product.product_category_id) ?? null : null, box_width: box?.box_width ?? null, box_length: box?.box_length ?? null, box_height: box?.box_height ?? null, net_weight: box?.net_weight ?? null, gross_weight: box?.gross_weight ?? null }; }); }
+async function createVendorProductAction(formData: FormData) { "use server"; const vendorId = textValue(formData, "vendor_id"); const fail = (message: string) => redirect(`/?module=vendor-product-add&vendor=${vendorId}&error=${encodeURIComponent(message)}`); if (!vendorId || !textValue(formData, "product_id") || !textValue(formData, "vendor_item_number")) fail("Select a product and enter its vendor code."); const nullableNumber = (key: string) => { const value = textValue(formData, key); return value ? Number(value) : null; }; const { data: vendor, error: vendorError } = await createSupabaseUntypedAdminClient().from("vendor").select("currency").eq("id", vendorId).maybeSingle(); if (vendorError || !vendor) fail(vendorError?.message ?? "Vendor not found."); const vendorCurrency = vendor?.currency ?? "USD"; const { error } = await createSupabaseUntypedAdminClient().from("vendor_product").insert({ vendor_id: vendorId, product_id: textValue(formData, "product_id"), vendor_item_number: textValue(formData, "vendor_item_number"), vendor_item_name: textValue(formData, "vendor_item_name") || null, unit_cost: Number(textValue(formData, "unit_cost") || 0), currency: vendorCurrency, minimum_order_quantity: nullableNumber("minimum_order_quantity"), lead_time_days: nullableNumber("lead_time_days"), is_active: textValue(formData, "is_active") === "true", product_type: textValue(formData, "product_type") || null, hs_code: textValue(formData, "hs_code") || null, box_width_inches: nullableNumber("box_width_inches"), box_depth_inches: nullableNumber("box_depth_inches"), box_height_inches: nullableNumber("box_height_inches"), net_weight_lbs: nullableNumber("net_weight_lbs"), gross_weight_lbs: nullableNumber("gross_weight_lbs") }); if (error) fail(error.message); revalidatePath("/"); vendorRedirect(vendorId, "products"); }
+
 async function getPrimaryShowroomPerformanceReport(customerId: string, enrollmentId: string, startDate?: string, endDate?: string) {
   const [customer, dashboard] = await Promise.all([
     getCustomerName(customerId),
@@ -14001,6 +14052,8 @@ export async function ErpRouter({
     "add-location": "Add Location",
     "add-product": "Add Product",
     "add-vendor": "Add Vendor",
+    vendor: "Vendor Dashboard",
+    "vendor-product-add": "Add Vendor Product",
     "add-product-box": "Add Product Box",
     ar: "Payments / AR",
     "create-rga": "Create RGA",
@@ -14962,6 +15015,15 @@ export async function ErpRouter({
           <PurchasingDashboard dashboard={await getPurchasingDashboard()} />
         ) : activeModule === "add-vendor" ? (
           <VendorEditor error={params.error} saveAction={createVendorAction} />
+        ) : activeModule === "vendor" ? (
+          <VendorDashboard dashboard={params.vendor ? await getVendorDashboard(params.vendor) : null} selectedTab={params.vendor_tab} saveProfileAction={updateVendorProfileAction} saveTermsAction={updateVendorTermsAction} />
+        ) : activeModule === "vendor-product-add" ? (
+          <VendorProductEditor
+            error={params.error}
+            products={await getVendorProductOptions()}
+            saveAction={createVendorProductAction}
+            vendor={params.vendor ? await (async () => { const dashboard = await getVendorDashboard(params.vendor!); return dashboard ? { id: dashboard.vendor.id, name: dashboard.vendor.name, currency: dashboard.vendor.currency, defaultMinimumOrderQuantity: dashboard.vendor.default_minimum_order_quantity, defaultLeadTimeDays: dashboard.vendor.default_lead_time_days } : null; })() : null}
+          />
         ) : activeModule === "admin-warehouse-edit" ? (
           <WarehouseEditor createAction={createWarehouseAction} error={params.error} notice={params.notice} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-territory-edit" ? (

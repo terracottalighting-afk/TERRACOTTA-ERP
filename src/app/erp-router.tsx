@@ -26,6 +26,7 @@ import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
 import { PrimaryShowroomPerformanceReportPage } from "@/components/customers/primary-showroom-performance-report-page";
 import { PurchasingDashboard } from "@/components/purchasing/purchasing-dashboard";
+import { VendorEditor } from "@/components/purchasing/vendor-editor";
 import { PrimaryShowroomRegistrationAddPage, PrimaryShowroomRegistrationAttachmentAddPage, PrimaryShowroomRegistrationDetailPage } from "@/components/customers/primary-showroom-registration-pages";
 import { PrimaryShowroomSnapshotCreatePage, PrimaryShowroomSnapshotDetailPage, PrimaryShowroomSnapshotExportPage } from "@/components/customers/primary-showroom-snapshot-pages";
 import { AddPrimaryShowroomDisplayForm, ImportPrimaryShowroomDisplaysForm } from "@/components/customers/primary-showroom-display-forms";
@@ -13156,6 +13157,19 @@ async function getPurchasingDashboard() {
   };
 }
 
+async function createVendorAction(formData: FormData) {
+  "use server";
+  const optionalText = (key: string) => textValue(formData, key) || null;
+  const name = textValue(formData, "name");
+  const fail = (message: string) => redirect(`/?module=add-vendor&error=${encodeURIComponent(message)}`);
+  if (!name) fail("Vendor name is required.");
+  const supabase = createSupabaseUntypedAdminClient();
+  const { error } = await supabase.from("vendor").insert({ name, legal_name: optionalText("legal_name"), country: textValue(formData, "country"), country_code: textValue(formData, "country_code").toUpperCase(), currency: textValue(formData, "currency").toUpperCase(), payment_terms: optionalText("payment_terms"), contact_name: optionalText("contact_name"), email: optionalText("email"), phone: optionalText("phone"), address_line_1: optionalText("address_line_1"), address_line_2: optionalText("address_line_2"), city: optionalText("city"), state_province: optionalText("state_province"), postal_code: optionalText("postal_code"), notes: optionalText("notes"), status: "active" });
+  if (error) fail(error.message);
+  revalidatePath("/");
+  redirect("/?module=purchasing&notice=vendor_created");
+}
+
 async function getPrimaryShowroomPerformanceReport(customerId: string, enrollmentId: string, startDate?: string, endDate?: string) {
   const [customer, dashboard] = await Promise.all([
     getCustomerName(customerId),
@@ -13986,6 +14000,7 @@ export async function ErpRouter({
     "add-customer": "Add Customer",
     "add-location": "Add Location",
     "add-product": "Add Product",
+    "add-vendor": "Add Vendor",
     "add-product-box": "Add Product Box",
     ar: "Payments / AR",
     "create-rga": "Create RGA",
@@ -14945,6 +14960,8 @@ export async function ErpRouter({
           />
         ) : activeModule === "purchasing" ? (
           <PurchasingDashboard dashboard={await getPurchasingDashboard()} />
+        ) : activeModule === "add-vendor" ? (
+          <VendorEditor error={params.error} saveAction={createVendorAction} />
         ) : activeModule === "admin-warehouse-edit" ? (
           <WarehouseEditor createAction={createWarehouseAction} error={params.error} notice={params.notice} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-territory-edit" ? (

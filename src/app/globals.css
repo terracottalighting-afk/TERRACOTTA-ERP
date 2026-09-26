@@ -2806,6 +2806,22 @@ dd {
   padding: 5px 9px;
 }
 
+.performance-report-summary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 28px;
+}
+
+.performance-report-summary div {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.performance-report-summary dd {
+  font-weight: 800;
+}
+
 .pagination-link,
 .pagination-current {
   background: #ffffff;

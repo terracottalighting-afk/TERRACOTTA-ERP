@@ -24,6 +24,7 @@ import { EditPrimaryShowroomForm } from "@/components/customers/edit-primary-sho
 import { EditPrimaryShowroomDisplayForm } from "@/components/customers/edit-primary-showroom-display-form";
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
+import { PrimaryShowroomPerformanceReportPage } from "@/components/customers/primary-showroom-performance-report-page";
 import { PrimaryShowroomRegistrationAddPage, PrimaryShowroomRegistrationAttachmentAddPage, PrimaryShowroomRegistrationDetailPage } from "@/components/customers/primary-showroom-registration-pages";
 import { PrimaryShowroomSnapshotCreatePage, PrimaryShowroomSnapshotDetailPage } from "@/components/customers/primary-showroom-snapshot-pages";
 import { AddPrimaryShowroomDisplayForm, ImportPrimaryShowroomDisplaysForm } from "@/components/customers/primary-showroom-display-forms";
@@ -153,6 +154,7 @@ export type SearchParams = Promise<{
   primary_showroom_po?: string;
   primary_showroom_performance_from?: string;
   primary_showroom_performance_to?: string;
+  primary_showroom_performance_type?: string;
   primary_showroom_section?: string;
   rep?: string;
   quote?: string;
@@ -13081,16 +13083,16 @@ async function getPrimaryShowroomDashboard(
   if (shippingOrdersResult.error) throw new Error(shippingOrdersResult.error.message);
   const regularShippingOrderIds = new Set((shippingOrdersResult.data ?? []).map((order) => order.id));
   const regularPackingListIds = (packingListsResult.data ?? []).filter((packingList) => regularShippingOrderIds.has(packingList.sales_order_id)).map((packingList) => packingList.id);
-  const shippedLinesResult = regularPackingListIds.length ? await supabase.from("packing_list_line").select("product_sku_snapshot, quantity_shipped, line_total").in("packing_list_id", regularPackingListIds) : { data: [], error: null };
+  const shippedLinesResult = regularPackingListIds.length ? await supabase.from("packing_list_line").select("product_sku_snapshot, brand_name_snapshot, quantity_shipped, line_total").in("packing_list_id", regularPackingListIds) : { data: [], error: null };
   if (shippedLinesResult.error) throw new Error(shippedLinesResult.error.message);
   const displayStatusBySku = new Map<string, "current" | "past">();
   for (const display of displaysResult.data ?? []) {
     const status = display.display_status === "active" ? "current" : "past";
     if (status === "current" || !displayStatusBySku.has(display.sku_snapshot)) displayStatusBySku.set(display.sku_snapshot, status);
   }
-  const itemizedBySku = new Map<string, { displayStatus: "current" | "past" | "never"; quantityShipped: number; salesAmount: number; sku: string }>();
+  const itemizedBySku = new Map<string, { brandName: string; displayStatus: "current" | "past" | "never"; quantityShipped: number; salesAmount: number; sku: string }>();
   for (const line of shippedLinesResult.data ?? []) {
-    const current = itemizedBySku.get(line.product_sku_snapshot) ?? { displayStatus: displayStatusBySku.get(line.product_sku_snapshot) ?? "never", quantityShipped: 0, salesAmount: 0, sku: line.product_sku_snapshot };
+    const current = itemizedBySku.get(line.product_sku_snapshot) ?? { brandName: line.brand_name_snapshot ?? "Not set", displayStatus: displayStatusBySku.get(line.product_sku_snapshot) ?? "never", quantityShipped: 0, salesAmount: 0, sku: line.product_sku_snapshot };
     current.quantityShipped += Number(line.quantity_shipped ?? 0);
     current.salesAmount += Number(line.line_total ?? 0);
     itemizedBySku.set(line.product_sku_snapshot, current);
@@ -13133,6 +13135,19 @@ async function getPrimaryShowroomDashboard(
       display_count: Number(snapshot.display_count ?? 0),
       items: snapshotItemsBySnapshotId.get(snapshot.id) ?? [],
     })),
+  };
+}
+
+async function getPrimaryShowroomPerformanceReport(customerId: string, enrollmentId: string, startDate?: string, endDate?: string) {
+  const [customer, dashboard] = await Promise.all([
+    getCustomerName(customerId),
+    getPrimaryShowroomDashboard(customerId, enrollmentId, startDate, endDate),
+  ]);
+  return {
+    customerName: customer.name,
+    performance: dashboard.performance,
+    recipientEmail: dashboard.primaryShowroomContact?.email ?? null,
+    showroomName: dashboard.location.location_name,
   };
 }
 
@@ -13985,6 +14000,7 @@ export async function ErpRouter({
     "primary-showroom-registration": "Primary Showroom Registration",
     "primary-showroom-registration-add": "Add Primary Showroom Documents",
     "primary-showroom-registration-attachment-add": "Add Primary Showroom Files",
+    "primary-showroom-performance-report": "Primary Showroom Performance Report",
     "primary-showroom-display-add": "Add Primary Showroom Display",
     "primary-showroom-display-import": "Import Primary Showroom Displays",
     orders: "Orders",
@@ -14461,6 +14477,15 @@ export async function ErpRouter({
             error={params.error}
             registrationId={params.primary_showroom_registration}
             saveAction={addPrimaryShowroomRegistrationAttachmentsAction}
+          />
+        ) : activeModule === "primary-showroom-performance-report" ? (
+          <PrimaryShowroomPerformanceReportPage
+            customerId={params.customer}
+            enrollmentId={params.primary_showroom}
+            loadReport={getPrimaryShowroomPerformanceReport}
+            reportEndDate={params.primary_showroom_performance_to}
+            reportStartDate={params.primary_showroom_performance_from}
+            reportType={params.primary_showroom_performance_type}
           />
         ) : activeModule === "primary-showroom-display-add" ? (
           <AddPrimaryShowroomDisplayForm

@@ -40,7 +40,7 @@ type PrimaryShowroomDashboard = {
   };
   performance: {
     endDate: string;
-    itemized: { displayStatus: "current" | "past" | "never"; quantityShipped: number; salesAmount: number; sku: string }[];
+    itemized: { brandName: string; displayStatus: "current" | "past" | "never"; quantityShipped: number; salesAmount: number; sku: string }[];
     orderAmount: number;
     orderCount: number;
     shippedAmount: number;

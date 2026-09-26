@@ -26,7 +26,7 @@ import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
 import { PrimaryShowroomPerformanceReportPage } from "@/components/customers/primary-showroom-performance-report-page";
 import { PrimaryShowroomRegistrationAddPage, PrimaryShowroomRegistrationAttachmentAddPage, PrimaryShowroomRegistrationDetailPage } from "@/components/customers/primary-showroom-registration-pages";
-import { PrimaryShowroomSnapshotCreatePage, PrimaryShowroomSnapshotDetailPage } from "@/components/customers/primary-showroom-snapshot-pages";
+import { PrimaryShowroomSnapshotCreatePage, PrimaryShowroomSnapshotDetailPage, PrimaryShowroomSnapshotExportPage } from "@/components/customers/primary-showroom-snapshot-pages";
 import { AddPrimaryShowroomDisplayForm, ImportPrimaryShowroomDisplaysForm } from "@/components/customers/primary-showroom-display-forms";
 import { SalesRepAgencyEditor } from "@/components/customers/sales-rep-agency-editor";
 import { SalesRepAgencyPage } from "@/components/customers/sales-rep-agency-page";
@@ -13248,7 +13248,12 @@ async function getPrimaryShowroomSnapshotDetail(customerId: string, enrollmentId
   if (snapshotError || !snapshot) throw new Error(snapshotError?.message ?? "Snapshot was not found.");
   const { data: items, error: itemsError } = await supabase.from("primary_showroom_display_snapshot_item").select("id, sku_snapshot, product_name_snapshot, customer_po_number_snapshot, display_discount_percent_snapshot, display_shipped_date_snapshot, minimum_floor_through_date, display_status_snapshot").eq("primary_showroom_display_snapshot_id", snapshotId);
   if (itemsError) throw new Error(itemsError.message);
-  return { contactName: snapshot.primary_showroom_contact_name_snapshot, displays: (items ?? []).map((item) => ({ ...item, display_status: item.display_status_snapshot })), salesAgencyName: snapshot.sales_agency_name_snapshot, salesRepName: snapshot.sales_rep_name_snapshot, showroomName: "", snapshotDate: snapshot.snapshot_date, snapshotName: snapshot.snapshot_name };
+  const salesRepResult = snapshot.sales_rep_name_snapshot ? await supabase.from("sales_rep").select("email").eq("name", snapshot.sales_rep_name_snapshot).eq("status", "active").maybeSingle() : { data: null, error: null };
+  if (salesRepResult.error) throw new Error(salesRepResult.error.message);
+  const locationResult = await supabase.from("primary_showroom_enrollment").select("customer_location(location_name)").eq("id", enrollmentId).maybeSingle();
+  if (locationResult.error) throw new Error(locationResult.error.message);
+  const location = Array.isArray(locationResult.data?.customer_location) ? locationResult.data?.customer_location[0] : locationResult.data?.customer_location;
+  return { contactName: snapshot.primary_showroom_contact_name_snapshot, displays: (items ?? []).map((item) => ({ ...item, display_status: item.display_status_snapshot })), salesAgencyName: snapshot.sales_agency_name_snapshot, salesRepEmail: salesRepResult.data?.email ?? null, salesRepName: snapshot.sales_rep_name_snapshot, showroomName: location?.location_name ?? "Primary Showroom", snapshotDate: snapshot.snapshot_date, snapshotName: snapshot.snapshot_name };
 }
 
 async function deletePrimaryShowroomSnapshotAction(formData: FormData) {
@@ -13997,6 +14002,7 @@ export async function ErpRouter({
     "primary-showroom": "Primary Showroom Dashboard",
     "primary-showroom-snapshot": "Primary Showroom Snapshot",
     "primary-showroom-snapshot-create": "Create Primary Showroom Snapshot",
+    "primary-showroom-snapshot-export": "Export Primary Showroom Snapshot",
     "primary-showroom-registration": "Primary Showroom Registration",
     "primary-showroom-registration-add": "Add Primary Showroom Documents",
     "primary-showroom-registration-attachment-add": "Add Primary Showroom Files",
@@ -14449,6 +14455,13 @@ export async function ErpRouter({
           />
         ) : activeModule === "primary-showroom-snapshot" ? (
           <PrimaryShowroomSnapshotDetailPage
+            customerId={params.customer}
+            enrollmentId={params.primary_showroom}
+            loadSnapshot={getPrimaryShowroomSnapshotDetail}
+            snapshotId={params.primary_showroom_snapshot}
+          />
+        ) : activeModule === "primary-showroom-snapshot-export" ? (
+          <PrimaryShowroomSnapshotExportPage
             customerId={params.customer}
             enrollmentId={params.primary_showroom}
             loadSnapshot={getPrimaryShowroomSnapshotDetail}

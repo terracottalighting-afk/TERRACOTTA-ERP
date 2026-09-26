@@ -135,7 +135,7 @@ export function PrimaryShowroomDashboardTabs({
         <button aria-current={activeTab === "profile" ? "page" : undefined} onClick={() => setActiveTab("profile")} type="button">Profile</button>
         <button aria-current={activeTab === "displays" ? "page" : undefined} onClick={() => setActiveTab("displays")} type="button">Displays</button>
         <button aria-current={activeTab === "history" ? "page" : undefined} onClick={() => setActiveTab("history")} type="button">Current &amp; History</button>
-        <button aria-current={activeTab === "registration" ? "page" : undefined} onClick={() => setActiveTab("registration")} type="button">Registration / Renew</button>
+        <button aria-current={activeTab === "registration" ? "page" : undefined} onClick={() => setActiveTab("registration")} type="button">Registration / Renewal</button>
       </section>
 
       {activeTab === "profile" ? (

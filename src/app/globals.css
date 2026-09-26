@@ -622,6 +622,21 @@ input {
   padding: 0 8px;
 }
 
+.registration-upload-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.registration-upload-fields__label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.registration-upload-fields .text-action {
+  justify-self: start;
+}
+
 .fieldset-note {
   color: var(--muted);
   font-size: 13px;

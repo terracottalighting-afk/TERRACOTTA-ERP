@@ -25,6 +25,7 @@ import { EditPrimaryShowroomDisplayForm } from "@/components/customers/edit-prim
 import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
 import { PrimaryShowroomPerformanceReportPage } from "@/components/customers/primary-showroom-performance-report-page";
+import { PurchasingDashboard } from "@/components/purchasing/purchasing-dashboard";
 import { PrimaryShowroomRegistrationAddPage, PrimaryShowroomRegistrationAttachmentAddPage, PrimaryShowroomRegistrationDetailPage } from "@/components/customers/primary-showroom-registration-pages";
 import { PrimaryShowroomSnapshotCreatePage, PrimaryShowroomSnapshotDetailPage, PrimaryShowroomSnapshotExportPage } from "@/components/customers/primary-showroom-snapshot-pages";
 import { AddPrimaryShowroomDisplayForm, ImportPrimaryShowroomDisplaysForm } from "@/components/customers/primary-showroom-display-forms";
@@ -13138,6 +13139,23 @@ async function getPrimaryShowroomDashboard(
   };
 }
 
+async function getPurchasingDashboard() {
+  const supabase = createSupabaseUntypedAdminClient();
+  const [vendorsResult, purchaseOrdersResult, containersResult] = await Promise.all([
+    supabase.from("vendor").select("id, vendor_number, name, contact_name, email, status").order("name", { ascending: true }),
+    supabase.from("vendor_purchase_order").select("id, vendor_po_number, vendor_name_snapshot, po_date, expected_ready_date, total_amount, status").order("po_date", { ascending: false }),
+    supabase.from("import_container").select("id, container_number, shipping_agency, etd, eta, arrival_date, container_status").order("created_at", { ascending: false }),
+  ]);
+  if (vendorsResult.error) throw new Error(vendorsResult.error.message);
+  if (purchaseOrdersResult.error) throw new Error(purchaseOrdersResult.error.message);
+  if (containersResult.error) throw new Error(containersResult.error.message);
+  return {
+    containers: (containersResult.data ?? []).map((container) => ({ ...container, freight_amount: 0 })),
+    purchaseOrders: purchaseOrdersResult.data ?? [],
+    vendors: vendorsResult.data ?? [],
+  };
+}
+
 async function getPrimaryShowroomPerformanceReport(customerId: string, enrollmentId: string, startDate?: string, endDate?: string) {
   const [customer, dashboard] = await Promise.all([
     getCustomerName(customerId),
@@ -14925,6 +14943,8 @@ export async function ErpRouter({
             notice={params.notice}
             saveAction={recordInvoicePaymentAction}
           />
+        ) : activeModule === "purchasing" ? (
+          <PurchasingDashboard dashboard={await getPurchasingDashboard()} />
         ) : activeModule === "admin-warehouse-edit" ? (
           <WarehouseEditor createAction={createWarehouseAction} error={params.error} notice={params.notice} saveAction={updateWarehouseAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin-territory-edit" ? (

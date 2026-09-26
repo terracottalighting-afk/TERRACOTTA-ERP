@@ -151,6 +151,8 @@ export type SearchParams = Promise<{
   primary_showroom_registration?: string;
   primary_showroom_tab?: string;
   primary_showroom_po?: string;
+  primary_showroom_performance_from?: string;
+  primary_showroom_performance_to?: string;
   primary_showroom_section?: string;
   rep?: string;
   quote?: string;
@@ -12946,6 +12948,8 @@ async function getLocationDashboard(customerId: string, locationId: string) {
 async function getPrimaryShowroomDashboard(
   customerId: string,
   enrollmentId: string,
+  performanceStartDate?: string,
+  performanceEndDate?: string,
 ) {
   const supabase = createSupabaseUntypedAdminClient();
   const { data: enrollment, error: enrollmentError } = await supabase
@@ -13059,6 +13063,40 @@ async function getPrimaryShowroomDashboard(
     snapshotItemsBySnapshotId.set(item.primary_showroom_display_snapshot_id, items);
   }
 
+  const today = new Date();
+  const defaultEndDate = today.toISOString().slice(0, 10);
+  const defaultStart = new Date(today);
+  defaultStart.setFullYear(defaultStart.getFullYear() - 1);
+  defaultStart.setDate(defaultStart.getDate() + 1);
+  const startDate = /^\d{4}-\d{2}-\d{2}$/.test(performanceStartDate ?? "") ? performanceStartDate! : defaultStart.toISOString().slice(0, 10);
+  const endDate = /^\d{4}-\d{2}-\d{2}$/.test(performanceEndDate ?? "") ? performanceEndDate! : defaultEndDate;
+  const [ordersResult, packingListsResult] = await Promise.all([
+    supabase.from("sales_order").select("id, subtotal_amount").eq("customer_location_id", enrollment.customer_location_id).gte("order_date", startDate).lte("order_date", endDate).neq("order_type", "display").is("deleted_at", null),
+    supabase.from("packing_list").select("id, sales_order_id").eq("customer_location_id", enrollment.customer_location_id).gte("ship_date", startDate).lte("ship_date", endDate),
+  ]);
+  if (ordersResult.error) throw new Error(ordersResult.error.message);
+  if (packingListsResult.error) throw new Error(packingListsResult.error.message);
+  const packingOrderIds = [...new Set((packingListsResult.data ?? []).map((packingList) => packingList.sales_order_id))];
+  const shippingOrdersResult = packingOrderIds.length ? await supabase.from("sales_order").select("id, order_type").in("id", packingOrderIds).neq("order_type", "display").is("deleted_at", null) : { data: [], error: null };
+  if (shippingOrdersResult.error) throw new Error(shippingOrdersResult.error.message);
+  const regularShippingOrderIds = new Set((shippingOrdersResult.data ?? []).map((order) => order.id));
+  const regularPackingListIds = (packingListsResult.data ?? []).filter((packingList) => regularShippingOrderIds.has(packingList.sales_order_id)).map((packingList) => packingList.id);
+  const shippedLinesResult = regularPackingListIds.length ? await supabase.from("packing_list_line").select("product_sku_snapshot, quantity_shipped, line_total").in("packing_list_id", regularPackingListIds) : { data: [], error: null };
+  if (shippedLinesResult.error) throw new Error(shippedLinesResult.error.message);
+  const displayStatusBySku = new Map<string, "current" | "past">();
+  for (const display of displaysResult.data ?? []) {
+    const status = display.display_status === "active" ? "current" : "past";
+    if (status === "current" || !displayStatusBySku.has(display.sku_snapshot)) displayStatusBySku.set(display.sku_snapshot, status);
+  }
+  const itemizedBySku = new Map<string, { displayStatus: "current" | "past" | "never"; quantityShipped: number; salesAmount: number; sku: string }>();
+  for (const line of shippedLinesResult.data ?? []) {
+    const current = itemizedBySku.get(line.product_sku_snapshot) ?? { displayStatus: displayStatusBySku.get(line.product_sku_snapshot) ?? "never", quantityShipped: 0, salesAmount: 0, sku: line.product_sku_snapshot };
+    current.quantityShipped += Number(line.quantity_shipped ?? 0);
+    current.salesAmount += Number(line.line_total ?? 0);
+    itemizedBySku.set(line.product_sku_snapshot, current);
+  }
+  const itemized = [...itemizedBySku.values()].sort((left, right) => left.sku.localeCompare(right.sku));
+
   return {
     displays: displaysResult.data ?? [],
     enrollment: {
@@ -13076,6 +13114,15 @@ async function getPrimaryShowroomDashboard(
     },
     location: locationResult.data,
     primaryShowroomContact: contactResult.data,
+    performance: {
+      endDate,
+      itemized,
+      orderAmount: (ordersResult.data ?? []).reduce((total, order) => total + Number(order.subtotal_amount ?? 0), 0),
+      orderCount: (ordersResult.data ?? []).length,
+      shippedAmount: itemized.reduce((total, item) => total + item.salesAmount, 0),
+      shippedSkuCount: itemized.length,
+      startDate,
+    },
     registrations: (registrationsResult.data ?? []).map((registration) => ({
       ...registration,
       ...(registrationAttachmentCounts.get(registration.id) ?? { documentCount: 0, imageCount: 0 }),
@@ -14370,9 +14417,11 @@ export async function ErpRouter({
             createSnapshotAction={createPrimaryShowroomDisplaySnapshotAction}
             deleteSnapshotAction={deletePrimaryShowroomSnapshotAction}
             enrollmentId={params.primary_showroom}
-            initialTab={params.primary_showroom_tab === "displays" || params.primary_showroom_tab === "history" || params.primary_showroom_tab === "registration" ? params.primary_showroom_tab : "profile"}
+            initialTab={params.primary_showroom_tab === "displays" || params.primary_showroom_tab === "history" || params.primary_showroom_tab === "registration" || params.primary_showroom_tab === "performance" ? params.primary_showroom_tab : "profile"}
             loadCustomer={getCustomerName}
-            loadPrimaryShowroomDashboard={getPrimaryShowroomDashboard}
+            loadPrimaryShowroomDashboard={(customerId, enrollmentId) => getPrimaryShowroomDashboard(customerId, enrollmentId, params.primary_showroom_performance_from, params.primary_showroom_performance_to)}
+            performanceEndDate={params.primary_showroom_performance_to}
+            performanceStartDate={params.primary_showroom_performance_from}
           />
         ) : activeModule === "primary-showroom-snapshot-create" ? (
           <PrimaryShowroomSnapshotCreatePage

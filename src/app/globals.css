@@ -2759,6 +2759,53 @@ dd {
   color: var(--accent);
 }
 
+.primary-showroom-performance-filter {
+  align-items: end;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 0;
+}
+
+.primary-showroom-performance-filter label {
+  color: var(--muted);
+  display: grid;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 5px;
+}
+
+.primary-showroom-performance-filter input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-height: 36px;
+  padding: 6px 9px;
+}
+
+.primary-showroom-performance {
+  display: grid;
+  gap: 18px;
+  padding-top: 18px;
+}
+
+.sku-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px;
+}
+
+.sku-chip-list span {
+  background: #edf8f3;
+  border: 1px solid #b7dfc9;
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 5px 9px;
+}
+
 .pagination-link,
 .pagination-current {
   background: #ffffff;

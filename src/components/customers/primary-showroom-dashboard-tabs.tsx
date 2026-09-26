@@ -45,6 +45,9 @@ export function PrimaryShowroomDashboardTabs({
   displays,
   enrollmentId,
   profile,
+  performance,
+  performanceEndDate,
+  performanceStartDate,
   registrationHref,
   registrations,
   snapshots,
@@ -55,7 +58,7 @@ export function PrimaryShowroomDashboardTabs({
   customerId: string;
   addDisplayHref: string;
   importFromPoHref: string;
-  initialTab?: "profile" | "displays" | "history" | "registration";
+  initialTab?: "profile" | "displays" | "history" | "registration" | "performance";
   profileEditHref: string;
   primaryShowroomContactEditHref: string;
   measuresEditHref: string;
@@ -82,15 +85,27 @@ export function PrimaryShowroomDashboardTabs({
       sales_rep_name: string | null;
     } | null;
   };
+  performance: {
+    endDate: string;
+    itemized: { displayStatus: "current" | "past" | "never"; quantityShipped: number; salesAmount: number; sku: string }[];
+    orderAmount: number;
+    orderCount: number;
+    shippedAmount: number;
+    shippedSkuCount: number;
+    startDate: string;
+  };
+  performanceEndDate?: string;
+  performanceStartDate?: string;
   registrationHref: string;
   registrations: Registration[];
   snapshots: Snapshot[];
 }) {
-  const [activeTab, setActiveTab] = useState<"profile" | "displays" | "history" | "registration">(initialTab ?? "profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "displays" | "history" | "registration" | "performance">(initialTab ?? "profile");
   const [historyTab, setHistoryTab] = useState<"current" | "snapshots">("current");
   const [skuFilter, setSkuFilter] = useState("");
   const [poFilter, setPoFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [performanceTab, setPerformanceTab] = useState<"total" | "itemized">("total");
 
   const filteredDisplays = useMemo(() => displays.filter((display) => {
     const matchesSku = !skuFilter || display.sku_snapshot.toLowerCase().includes(skuFilter.toLowerCase());
@@ -136,6 +151,7 @@ export function PrimaryShowroomDashboardTabs({
         <button aria-current={activeTab === "displays" ? "page" : undefined} onClick={() => setActiveTab("displays")} type="button">Displays</button>
         <button aria-current={activeTab === "history" ? "page" : undefined} onClick={() => setActiveTab("history")} type="button">Current &amp; History</button>
         <button aria-current={activeTab === "registration" ? "page" : undefined} onClick={() => setActiveTab("registration")} type="button">Registration / Renewal</button>
+        <button aria-current={activeTab === "performance" ? "page" : undefined} onClick={() => setActiveTab("performance")} type="button">Performance</button>
       </section>
 
       {activeTab === "profile" ? (
@@ -234,6 +250,8 @@ export function PrimaryShowroomDashboardTabs({
       ) : null}
 
       {activeTab === "registration" ? <PrimaryShowroomRegistrationTab addHref={registrationHref} customerId={customerId} enrollmentId={enrollmentId} registrations={registrations} /> : null}
+
+      {activeTab === "performance" ? <><section className="tab-strip tab-strip--nested" aria-label="Primary showroom performance sections"><button aria-current={performanceTab === "total" ? "page" : undefined} onClick={() => setPerformanceTab("total")} type="button">Total Sales</button><button aria-current={performanceTab === "itemized" ? "page" : undefined} onClick={() => setPerformanceTab("itemized")} type="button">Itemized Report</button></section><form className="primary-showroom-performance-filter" method="get"><input name="module" type="hidden" value="primary-showroom" /><input name="customer" type="hidden" value={customerId} /><input name="primary_showroom" type="hidden" value={enrollmentId} /><input name="primary_showroom_tab" type="hidden" value="performance" /><label>From<input defaultValue={performanceStartDate ?? performance.startDate} name="primary_showroom_performance_from" type="date" /></label><label>To<input defaultValue={performanceEndDate ?? performance.endDate} name="primary_showroom_performance_to" type="date" /></label><button className="secondary-action" type="submit">Run Report</button></form>{performanceTab === "total" ? <section className="primary-showroom-performance"><div className="metric-grid"><article className="metric"><span>Number of Orders (PO)</span><strong>{numberFormatter.format(performance.orderCount)}</strong></article><article className="metric"><span>Order Amount</span><strong>{money(performance.orderAmount)}</strong></article><article className="metric"><span>Shipped Amount</span><strong>{money(performance.shippedAmount)}</strong></article><article className="metric"><span>Unique SKUs Sold</span><strong>{numberFormatter.format(performance.shippedSkuCount)}</strong></article></div><article className="data-section"><div className="section-title"><h3>Sold SKUs</h3><span>{performance.shippedSkuCount}</span></div>{performance.itemized.length ? <div className="sku-chip-list">{performance.itemized.map((item) => <span key={item.sku}>{item.sku}</span>)}</div> : <EmptyState text="No regular-order sales were shipped during this period." />}</article></section> : <article className="data-section"><div className="section-title"><div><h3>Itemized Sales Report</h3><p>Regular, non-display order shipments for the selected period.</p></div><span>{performance.itemized.length}</span></div>{performance.itemized.length ? <div className="table-wrap"><table><thead><tr><th>SKU</th><th>Pieces Shipped</th><th>Sales Amount</th><th>Display History</th></tr></thead><tbody>{performance.itemized.map((item) => <tr key={item.sku}><td>{item.sku}</td><td>{numberFormatter.format(item.quantityShipped)}</td><td>{money(item.salesAmount)}</td><td>{item.displayStatus === "current" ? "Current display" : item.displayStatus === "past" ? "Past display" : "Never a display"}</td></tr>)}</tbody></table></div> : <EmptyState text="No regular-order sales were shipped during this period." />}</article>}</> : null}
     </>
   );
 }

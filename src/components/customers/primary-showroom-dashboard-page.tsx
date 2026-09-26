@@ -38,6 +38,15 @@ type PrimaryShowroomDashboard = {
     postal_code: string | null;
     state_province: string | null;
   };
+  performance: {
+    endDate: string;
+    itemized: { displayStatus: "current" | "past" | "never"; quantityShipped: number; salesAmount: number; sku: string }[];
+    orderAmount: number;
+    orderCount: number;
+    shippedAmount: number;
+    shippedSkuCount: number;
+    startDate: string;
+  };
   registrations: {
     created_at: string;
     documentCount: number;
@@ -71,6 +80,8 @@ export async function PrimaryShowroomDashboardPage({
   createSnapshotAction,
   deleteSnapshotAction,
   initialTab,
+  performanceEndDate,
+  performanceStartDate,
   loadCustomer,
   loadPrimaryShowroomDashboard,
 }: {
@@ -78,7 +89,9 @@ export async function PrimaryShowroomDashboardPage({
   enrollmentId?: string;
   createSnapshotAction: (formData: FormData) => void | Promise<void>;
   deleteSnapshotAction: (formData: FormData) => void | Promise<void>;
-  initialTab?: "profile" | "displays" | "history" | "registration";
+  initialTab?: "profile" | "displays" | "history" | "registration" | "performance";
+  performanceEndDate?: string;
+  performanceStartDate?: string;
   loadCustomer: (customerId: string) => Promise<CustomerName>;
   loadPrimaryShowroomDashboard: (customerId: string, enrollmentId: string) => Promise<PrimaryShowroomDashboard>;
 }) {
@@ -147,6 +160,9 @@ export async function PrimaryShowroomDashboardPage({
           salesCoverage: dashboard.salesCoverage,
         }}
         profileEditHref={`/?module=edit-primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_section=profile`}
+        performance={dashboard.performance}
+        performanceEndDate={performanceEndDate}
+        performanceStartDate={performanceStartDate}
         registrationHref={`/?module=primary-showroom-registration-add&customer=${customerId}&primary_showroom=${enrollmentId}`}
         registrations={dashboard.registrations}
         measuresEditHref={`/?module=edit-primary-showroom&customer=${customerId}&primary_showroom=${enrollmentId}&primary_showroom_section=measures`}

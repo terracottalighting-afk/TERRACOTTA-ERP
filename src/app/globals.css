@@ -3592,3 +3592,10 @@ tr:last-child td {
 .data-table tbody tr.admin-row-selected:hover td {
   background: #dcedc8;
 }
+
+.product-table-image {
+  display: block;
+  height: 48px;
+  object-fit: contain;
+  width: 48px;
+}

@@ -13189,18 +13189,26 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
   const vendorProducts = vendorProductsResult.data ?? [];
   const productIds = vendorProducts.map((row) => row.product_id);
   const orderIds = (ordersResult.data ?? []).map((row) => row.id);
-  const [productsResult, categoriesResult, boxesResult, linesResult, invoicesResult] = await Promise.all([
+  const [productsResult, categoriesResult, boxesResult, productImagesResult, linesResult, invoicesResult] = await Promise.all([
     productIds.length ? supabase.from("product").select("id, sku, name, product_category_id").in("id", productIds) : Promise.resolve({ data: [], error: null }),
     supabase.from("product_category").select("id, name"),
     productIds.length ? supabase.from("product_packing_box").select("product_id, box_width, box_length, box_height, net_weight, gross_weight, box_sequence").in("product_id", productIds).order("box_sequence") : Promise.resolve({ data: [], error: null }),
+    productIds.length ? supabase.from("product_image").select("product_id, file_id, is_default_thumbnail, sort_order").in("product_id", productIds).eq("is_active", true).order("is_default_thumbnail", { ascending: false }).order("sort_order") : Promise.resolve({ data: [], error: null }),
     orderIds.length ? supabase.from("vendor_purchase_order_line").select("id").in("vendor_purchase_order_id", orderIds) : Promise.resolve({ data: [], error: null }),
     orderIds.length ? supabase.from("vendor_po_invoice").select("vendor_purchase_order_id, invoice_amount, amount_paid, paid_date, payment_method").in("vendor_purchase_order_id", orderIds) : Promise.resolve({ data: [], error: null }),
   ]);
-  for (const result of [productsResult, categoriesResult, boxesResult, linesResult, invoicesResult]) if (result.error) throw new Error(result.error.message);
+  for (const result of [productsResult, categoriesResult, boxesResult, productImagesResult, linesResult, invoicesResult]) if (result.error) throw new Error(result.error.message);
   const productById = new Map((productsResult.data ?? []).map((product) => [product.id, product]));
   const categoryById = new Map((categoriesResult.data ?? []).map((category) => [category.id, category.name]));
   const firstBoxByProduct = new Map<string, Record<string, number | null>>();
   for (const box of boxesResult.data ?? []) if (!firstBoxByProduct.has(box.product_id)) firstBoxByProduct.set(box.product_id, box);
+  const firstImageByProduct = new Map<string, string>();
+  for (const image of productImagesResult.data ?? []) if (!firstImageByProduct.has(image.product_id)) firstImageByProduct.set(image.product_id, image.file_id);
+  const imageFileIds = [...new Set(firstImageByProduct.values())];
+  const { data: imageAttachments, error: imageAttachmentsError } = imageFileIds.length ? await supabase.from("attachment").select("id, storage_bucket, storage_path").in("id", imageFileIds) : { data: [], error: null };
+  if (imageAttachmentsError) throw new Error(imageAttachmentsError.message);
+  const imageUrlByFileId = new Map<string, string>();
+  await Promise.all((imageAttachments ?? []).map(async (attachment) => { const { data } = await supabase.storage.from(attachment.storage_bucket).createSignedUrl(attachment.storage_path, 60 * 60); if (data?.signedUrl) imageUrlByFileId.set(attachment.id, data.signedUrl); }));
   const poLineIds = (linesResult.data ?? []).map((line) => line.id);
   const { data: containerLines, error: containerLinesError } = poLineIds.length ? await supabase.from("import_container_line").select("import_container_id, product_id, quantity_packed").in("vendor_purchase_order_line_id", poLineIds) : { data: [], error: null };
   if (containerLinesError) throw new Error(containerLinesError.message);
@@ -13215,7 +13223,7 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
       default_minimum_order_quantity: vendor.default_minimum_order_quantity === null || vendor.default_minimum_order_quantity === undefined ? null : Number(vendor.default_minimum_order_quantity),
       prototype_sample_discount_percent: vendor.prototype_sample_discount_percent === null || vendor.prototype_sample_discount_percent === undefined ? null : Number(vendor.prototype_sample_discount_percent),
     },
-    products: vendorProducts.map((row) => { const product = productById.get(row.product_id); const box = firstBoxByProduct.get(row.product_id); return { id: row.id, sku: product?.sku ?? "Unknown", name: product?.name ?? "Product unavailable", category: product?.product_category_id ? categoryById.get(product.product_category_id) ?? null : null, vendor_item_number: row.vendor_item_number, unit_cost: Number(row.unit_cost), currency: row.currency, minimum_order_quantity: row.minimum_order_quantity === null ? null : Number(row.minimum_order_quantity), is_active: row.is_active, product_type: row.product_type ?? null, hs_code: row.hs_code ?? null, box_width_inches: row.box_width_inches ?? box?.box_width ?? null, box_depth_inches: row.box_depth_inches ?? box?.box_length ?? null, box_height_inches: row.box_height_inches ?? box?.box_height ?? null, net_weight_lbs: row.net_weight_lbs ?? box?.net_weight ?? null, gross_weight_lbs: row.gross_weight_lbs ?? box?.gross_weight ?? null }; }),
+    products: vendorProducts.map((row) => { const product = productById.get(row.product_id); const box = firstBoxByProduct.get(row.product_id); const imageFileId = firstImageByProduct.get(row.product_id); return { id: row.id, product_id: row.product_id, sku: product?.sku ?? "Unknown", name: product?.name ?? "Product unavailable", image_url: imageFileId ? imageUrlByFileId.get(imageFileId) ?? null : null, category: product?.product_category_id ? categoryById.get(product.product_category_id) ?? null : null, vendor_item_number: row.vendor_item_number, unit_cost: Number(row.unit_cost), currency: row.currency, minimum_order_quantity: row.minimum_order_quantity === null ? null : Number(row.minimum_order_quantity), is_active: row.is_active, product_type: row.product_type ?? null, hs_code: row.hs_code ?? null, box_width_inches: row.box_width_inches ?? box?.box_width ?? null, box_depth_inches: row.box_depth_inches ?? box?.box_length ?? null, box_height_inches: row.box_height_inches ?? box?.box_height ?? null, net_weight_lbs: row.net_weight_lbs ?? box?.net_weight ?? null, gross_weight_lbs: row.gross_weight_lbs ?? box?.gross_weight ?? null }; }),
     purchaseOrders: (ordersResult.data ?? []).map((order) => ({ ...order, total_amount: order.total_amount === null ? null : Number(order.total_amount) })),
     containers: (containers ?? []).map((container) => ({ ...container, product_lines: (containerLines ?? []).filter((line) => line.import_container_id === container.id).map((line) => ({ sku: productById.get(line.product_id)?.sku ?? "Unknown", quantity: Number(line.quantity_packed) })), invoice_amount: invoices.reduce((sum, invoice) => sum + Number(invoice.invoice_amount), 0), amount_paid: invoices.reduce((sum, invoice) => sum + Number(invoice.amount_paid), 0), paid_date: invoices.find((invoice) => invoice.paid_date)?.paid_date ?? null, payment_method: invoices.find((invoice) => invoice.payment_method)?.payment_method ?? null })),
   };

@@ -3599,3 +3599,12 @@ tr:last-child td {
   object-fit: contain;
   width: 48px;
 }
+
+.product-detail-image {
+  display: block;
+  height: 180px;
+  margin: 0 0 16px;
+  max-width: 100%;
+  object-fit: contain;
+  width: 180px;
+}

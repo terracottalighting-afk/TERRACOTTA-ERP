@@ -28,6 +28,7 @@ import { PrimaryShowroomPerformanceReportPage } from "@/components/customers/pri
 import { PurchasingDashboard } from "@/components/purchasing/purchasing-dashboard";
 import { VendorDashboard, type VendorDashboardData } from "@/components/purchasing/vendor-dashboard";
 import { VendorEditor } from "@/components/purchasing/vendor-editor";
+import { VendorProductDetailPage } from "@/components/purchasing/vendor-product-detail-page";
 import { VendorProductEditor, type VendorProductOption } from "@/components/purchasing/vendor-product-editor";
 import { PrimaryShowroomRegistrationAddPage, PrimaryShowroomRegistrationAttachmentAddPage, PrimaryShowroomRegistrationDetailPage } from "@/components/customers/primary-showroom-registration-pages";
 import { PrimaryShowroomSnapshotCreatePage, PrimaryShowroomSnapshotDetailPage, PrimaryShowroomSnapshotExportPage } from "@/components/customers/primary-showroom-snapshot-pages";
@@ -238,6 +239,7 @@ export type SearchParams = Promise<{
   vendor_action?: string;
   vendor?: string;
   vendor_edit?: string;
+  vendor_product?: string;
   vendor_tab?: string;
   warehouse?: string;
   territory?: string;
@@ -14067,6 +14069,7 @@ export async function ErpRouter({
     "add-product": "Add Product",
     "add-vendor": "Add Vendor",
     vendor: "Vendor Dashboard",
+    "vendor-product": "Vendor Product",
     "vendor-product-add": "Add Vendor Product",
     "add-product-box": "Add Product Box",
     ar: "Payments / AR",
@@ -15031,6 +15034,11 @@ export async function ErpRouter({
           <VendorEditor error={params.error} saveAction={createVendorAction} />
         ) : activeModule === "vendor" ? (
           <VendorDashboard dashboard={params.vendor ? await getVendorDashboard(params.vendor) : null} editingProfile={params.vendor_edit === "profile"} editingTerms={params.vendor_edit === "terms"} error={params.error} selectedTab={params.vendor_tab} saveProfileAction={updateVendorProfileAction} saveTermsAction={updateVendorTermsAction} />
+        ) : activeModule === "vendor-product" ? (
+          <VendorProductDetailPage
+            vendor={params.vendor ? (await getVendorDashboard(params.vendor))?.vendor ?? null : null}
+            product={params.vendor && params.vendor_product ? (await getVendorDashboard(params.vendor))?.products.find((product) => product.id === params.vendor_product) ?? null : null}
+          />
         ) : activeModule === "vendor-product-add" ? (
           <VendorProductEditor
             error={params.error}

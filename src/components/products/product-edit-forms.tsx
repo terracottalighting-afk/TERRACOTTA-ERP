@@ -1824,6 +1824,11 @@ export async function EditProductSpecsForm({
           names: ["safety rating", "safety rate", "ul etl"],
         },
         { key: "upc_code", label: "UPC Code", names: ["upc", "upc code"] },
+        {
+          key: "hs_code",
+          label: "HS Code",
+          names: ["hs code", "harmonized system code", "harmonized code"],
+        },
       ],
     },
     packing: {

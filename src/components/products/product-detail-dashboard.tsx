@@ -463,6 +463,7 @@ export function ProductDetailDashboard({
               {specRows([
                 { label: "Safety Rating", names: ["safety rating", "safety rate", "ul etl"] },
                 { label: "UPC Code", names: ["upc", "upc code"] },
+                { label: "HS Code", names: ["hs code", "harmonized system code", "harmonized code"] },
               ]).map((row) => (
                 <div key={row.label}>
                   <dt>{row.label}</dt>

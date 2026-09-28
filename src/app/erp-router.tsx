@@ -15017,7 +15017,7 @@ export async function ErpRouter({
         ) : activeModule === "add-vendor" ? (
           <VendorEditor error={params.error} saveAction={createVendorAction} />
         ) : activeModule === "vendor" ? (
-          <VendorDashboard dashboard={params.vendor ? await getVendorDashboard(params.vendor) : null} editingProfile={params.vendor_edit === "profile"} selectedTab={params.vendor_tab} saveProfileAction={updateVendorProfileAction} saveTermsAction={updateVendorTermsAction} />
+          <VendorDashboard dashboard={params.vendor ? await getVendorDashboard(params.vendor) : null} editingProfile={params.vendor_edit === "profile"} editingTerms={params.vendor_edit === "terms"} selectedTab={params.vendor_tab} saveProfileAction={updateVendorProfileAction} saveTermsAction={updateVendorTermsAction} />
         ) : activeModule === "vendor-product-add" ? (
           <VendorProductEditor
             error={params.error}

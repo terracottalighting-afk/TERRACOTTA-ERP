@@ -13209,7 +13209,12 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
   if (containersError) throw new Error(containersError.message);
   const invoices = invoicesResult.data ?? [];
   return {
-    vendor,
+    vendor: {
+      ...vendor,
+      default_lead_time_days: vendor.default_lead_time_days === null || vendor.default_lead_time_days === undefined ? null : Number(vendor.default_lead_time_days),
+      default_minimum_order_quantity: vendor.default_minimum_order_quantity === null || vendor.default_minimum_order_quantity === undefined ? null : Number(vendor.default_minimum_order_quantity),
+      prototype_sample_discount_percent: vendor.prototype_sample_discount_percent === null || vendor.prototype_sample_discount_percent === undefined ? null : Number(vendor.prototype_sample_discount_percent),
+    },
     products: vendorProducts.map((row) => { const product = productById.get(row.product_id); const box = firstBoxByProduct.get(row.product_id); return { id: row.id, sku: product?.sku ?? "Unknown", name: product?.name ?? "Product unavailable", category: product?.product_category_id ? categoryById.get(product.product_category_id) ?? null : null, vendor_item_number: row.vendor_item_number, unit_cost: Number(row.unit_cost), currency: row.currency, minimum_order_quantity: row.minimum_order_quantity === null ? null : Number(row.minimum_order_quantity), is_active: row.is_active, product_type: row.product_type ?? null, hs_code: row.hs_code ?? null, box_width_inches: row.box_width_inches ?? box?.box_width ?? null, box_depth_inches: row.box_depth_inches ?? box?.box_length ?? null, box_height_inches: row.box_height_inches ?? box?.box_height ?? null, net_weight_lbs: row.net_weight_lbs ?? box?.net_weight ?? null, gross_weight_lbs: row.gross_weight_lbs ?? box?.gross_weight ?? null }; }),
     purchaseOrders: (ordersResult.data ?? []).map((order) => ({ ...order, total_amount: order.total_amount === null ? null : Number(order.total_amount) })),
     containers: (containers ?? []).map((container) => ({ ...container, product_lines: (containerLines ?? []).filter((line) => line.import_container_id === container.id).map((line) => ({ sku: productById.get(line.product_id)?.sku ?? "Unknown", quantity: Number(line.quantity_packed) })), invoice_amount: invoices.reduce((sum, invoice) => sum + Number(invoice.invoice_amount), 0), amount_paid: invoices.reduce((sum, invoice) => sum + Number(invoice.amount_paid), 0), paid_date: invoices.find((invoice) => invoice.paid_date)?.paid_date ?? null, payment_method: invoices.find((invoice) => invoice.payment_method)?.payment_method ?? null })),
@@ -15017,7 +15022,7 @@ export async function ErpRouter({
         ) : activeModule === "add-vendor" ? (
           <VendorEditor error={params.error} saveAction={createVendorAction} />
         ) : activeModule === "vendor" ? (
-          <VendorDashboard dashboard={params.vendor ? await getVendorDashboard(params.vendor) : null} editingProfile={params.vendor_edit === "profile"} editingTerms={params.vendor_edit === "terms"} selectedTab={params.vendor_tab} saveProfileAction={updateVendorProfileAction} saveTermsAction={updateVendorTermsAction} />
+          <VendorDashboard dashboard={params.vendor ? await getVendorDashboard(params.vendor) : null} editingProfile={params.vendor_edit === "profile"} editingTerms={params.vendor_edit === "terms"} error={params.error} selectedTab={params.vendor_tab} saveProfileAction={updateVendorProfileAction} saveTermsAction={updateVendorTermsAction} />
         ) : activeModule === "vendor-product-add" ? (
           <VendorProductEditor
             error={params.error}

@@ -26,6 +26,7 @@ import { LocationInfoPage } from "@/components/customers/location-info-page";
 import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-showroom-dashboard-page";
 import { PrimaryShowroomPerformanceReportPage } from "@/components/customers/primary-showroom-performance-report-page";
 import { PurchasingDashboard } from "@/components/purchasing/purchasing-dashboard";
+import { PurchaseOrderEditor } from "@/components/purchasing/purchase-order-editor";
 import { VendorDashboard, type VendorDashboardData } from "@/components/purchasing/vendor-dashboard";
 import { VendorEditor } from "@/components/purchasing/vendor-editor";
 import { VendorProductDetailPage } from "@/components/purchasing/vendor-product-detail-page";
@@ -13165,6 +13166,61 @@ async function getPurchasingDashboard() {
   };
 }
 
+async function getActivePurchaseOrderVendors() {
+  const { data, error } = await createSupabaseUntypedAdminClient()
+    .from("vendor")
+    .select("id, name, currency, price_currency")
+    .eq("status", "active")
+    .order("name", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((vendor) => ({
+    id: vendor.id,
+    name: vendor.name,
+    currency: vendor.price_currency ?? vendor.currency ?? "USD",
+  }));
+}
+
+async function createVendorPurchaseOrderAction(formData: FormData) {
+  "use server";
+  const vendorId = textValue(formData, "vendor_id");
+  const vendorPoNumber = textValue(formData, "vendor_po_number");
+  const fail = (message: string) => redirect(`/?module=create-vendor-purchase-order&error=${encodeURIComponent(message)}`);
+  if (!vendorId || !vendorPoNumber) fail("Select a vendor and enter a PO number.");
+  const freightAmount = Number(textValue(formData, "freight_amount") || 0);
+  if (!Number.isFinite(freightAmount) || freightAmount < 0) fail("Freight amount must be a non-negative number.");
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: vendor, error: vendorError } = await supabase
+    .from("vendor")
+    .select("name, currency, price_currency, address_line_1, address_line_2, city, state_province, postal_code, country")
+    .eq("id", vendorId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (vendorError || !vendor) fail(vendorError?.message ?? "The selected vendor is not active.");
+  const { error } = await supabase.from("vendor_purchase_order").insert({
+    vendor_po_number: vendorPoNumber,
+    vendor_id: vendorId,
+    po_date: textValue(formData, "po_date"),
+    expected_ready_date: textValue(formData, "expected_ready_date") || null,
+    expected_ship_date: textValue(formData, "expected_ship_date") || null,
+    status: "draft",
+    currency: vendor!.price_currency ?? vendor!.currency ?? "USD",
+    freight_amount: freightAmount,
+    vendor_name_snapshot: vendor!.name,
+    vendor_address_snapshot_json: {
+      address_line_1: vendor!.address_line_1,
+      address_line_2: vendor!.address_line_2,
+      city: vendor!.city,
+      state_province: vendor!.state_province,
+      postal_code: vendor!.postal_code,
+      country: vendor!.country,
+    },
+    notes: textValue(formData, "notes") || null,
+  });
+  if (error) fail(error.message);
+  revalidatePath("/");
+  redirect("/?module=purchasing&notice=purchase_order_created");
+}
+
 async function createVendorAction(formData: FormData) {
   "use server";
   const optionalText = (key: string) => textValue(formData, key) || null;
@@ -15201,6 +15257,12 @@ export async function ErpRouter({
           />
         ) : activeModule === "purchasing" ? (
           <PurchasingDashboard dashboard={await getPurchasingDashboard()} />
+        ) : activeModule === "create-vendor-purchase-order" ? (
+          <PurchaseOrderEditor
+            error={params.error}
+            saveAction={createVendorPurchaseOrderAction}
+            vendors={await getActivePurchaseOrderVendors()}
+          />
         ) : activeModule === "add-vendor" ? (
           <VendorEditor error={params.error} saveAction={createVendorAction} />
         ) : activeModule === "vendor" ? (

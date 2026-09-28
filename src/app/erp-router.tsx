@@ -13186,8 +13186,6 @@ async function createVendorPurchaseOrderAction(formData: FormData) {
   const vendorPoNumber = textValue(formData, "vendor_po_number");
   const fail = (message: string) => redirect(`/?module=create-vendor-purchase-order&error=${encodeURIComponent(message)}`);
   if (!vendorId || !vendorPoNumber) fail("Select a vendor and enter a PO number.");
-  const freightAmount = Number(textValue(formData, "freight_amount") || 0);
-  if (!Number.isFinite(freightAmount) || freightAmount < 0) fail("Freight amount must be a non-negative number.");
   const supabase = createSupabaseUntypedAdminClient();
   const { data: vendor, error: vendorError } = await supabase
     .from("vendor")
@@ -13202,9 +13200,9 @@ async function createVendorPurchaseOrderAction(formData: FormData) {
     po_date: textValue(formData, "po_date"),
     expected_ready_date: textValue(formData, "expected_ready_date") || null,
     expected_ship_date: textValue(formData, "expected_ship_date") || null,
+    expected_arrival_date: textValue(formData, "expected_arrival_date") || null,
     status: "draft",
     currency: vendor!.price_currency ?? vendor!.currency ?? "USD",
-    freight_amount: freightAmount,
     vendor_name_snapshot: vendor!.name,
     vendor_address_snapshot_json: {
       address_line_1: vendor!.address_line_1,

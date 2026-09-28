@@ -13191,8 +13191,9 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
   if (ordersResult.error) throw new Error(ordersResult.error.message);
   const vendorProducts = vendorProductsResult.data ?? [];
   const productIds = vendorProducts.map((row) => row.product_id);
+  const vendorProductIds = vendorProducts.map((row) => row.id);
   const orderIds = (ordersResult.data ?? []).map((row) => row.id);
-  const [productsResult, categoriesResult, boxesResult, productImagesResult, finishesResult, specsResult, linesResult, invoicesResult] = await Promise.all([
+  const [productsResult, categoriesResult, boxesResult, productImagesResult, finishesResult, specsResult, linesResult, invoicesResult, vendorPackingBoxesResult] = await Promise.all([
     productIds.length ? supabase.from("product").select("id, sku, name, product_category_id").in("id", productIds) : Promise.resolve({ data: [], error: null }),
     supabase.from("product_category").select("id, name"),
     productIds.length ? supabase.from("product_packing_box").select("product_id, box_width, box_length, box_height, net_weight, gross_weight, box_sequence").in("product_id", productIds).order("box_sequence") : Promise.resolve({ data: [], error: null }),
@@ -13201,12 +13202,15 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
     productIds.length ? supabase.from("product_spec_attribute").select("product_id, attribute_name, attribute_value, unit").in("product_id", productIds).eq("is_active", true).order("sort_order") : Promise.resolve({ data: [], error: null }),
     orderIds.length ? supabase.from("vendor_purchase_order_line").select("id").in("vendor_purchase_order_id", orderIds) : Promise.resolve({ data: [], error: null }),
     orderIds.length ? supabase.from("vendor_po_invoice").select("vendor_purchase_order_id, invoice_amount, amount_paid, paid_date, payment_method").in("vendor_purchase_order_id", orderIds) : Promise.resolve({ data: [], error: null }),
+    vendorProductIds.length ? supabase.from("vendor_product_packing_box").select("id, vendor_product_id, catalog_product_packing_box_id, box_sequence, box_label, box_width_inches, box_depth_inches, box_height_inches, net_weight_lbs, gross_weight_lbs").in("vendor_product_id", vendorProductIds).eq("is_active", true).order("box_sequence") : Promise.resolve({ data: [], error: null }),
   ]);
-  for (const result of [productsResult, categoriesResult, boxesResult, productImagesResult, finishesResult, specsResult, linesResult, invoicesResult]) if (result.error) throw new Error(result.error.message);
+  for (const result of [productsResult, categoriesResult, boxesResult, productImagesResult, finishesResult, specsResult, linesResult, invoicesResult, vendorPackingBoxesResult]) if (result.error) throw new Error(result.error.message);
   const productById = new Map((productsResult.data ?? []).map((product) => [product.id, product]));
   const categoryById = new Map((categoriesResult.data ?? []).map((category) => [category.id, category.name]));
   const firstBoxByProduct = new Map<string, Record<string, number | null>>();
   for (const box of boxesResult.data ?? []) if (!firstBoxByProduct.has(box.product_id)) firstBoxByProduct.set(box.product_id, box);
+  const vendorPackingBoxesByProductId = new Map<string, typeof vendorPackingBoxesResult.data>();
+  for (const box of vendorPackingBoxesResult.data ?? []) vendorPackingBoxesByProductId.set(box.vendor_product_id, [...(vendorPackingBoxesByProductId.get(box.vendor_product_id) ?? []), box]);
   const firstImageByProduct = new Map<string, string>();
   for (const image of productImagesResult.data ?? []) if (!firstImageByProduct.has(image.product_id)) firstImageByProduct.set(image.product_id, image.file_id);
   const imageFileIds = [...new Set(firstImageByProduct.values())];
@@ -13233,7 +13237,7 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
       default_minimum_order_quantity: vendor.default_minimum_order_quantity === null || vendor.default_minimum_order_quantity === undefined ? null : Number(vendor.default_minimum_order_quantity),
       prototype_sample_discount_percent: vendor.prototype_sample_discount_percent === null || vendor.prototype_sample_discount_percent === undefined ? null : Number(vendor.prototype_sample_discount_percent),
     },
-    products: vendorProducts.map((row) => { const product = productById.get(row.product_id); const box = firstBoxByProduct.get(row.product_id); const imageFileId = firstImageByProduct.get(row.product_id); return { id: row.id, product_id: row.product_id, sku: product?.sku ?? "Unknown", name: product?.name ?? "Product unavailable", image_url: imageFileId ? imageUrlByFileId.get(imageFileId) ?? null : null, category: product?.product_category_id ? categoryById.get(product.product_category_id) ?? null : null, finishes: finishesByProductId.get(row.product_id) ?? [], dimensions: dimensionsByProductId.get(row.product_id) ?? [], vendor_item_number: row.vendor_item_number, vendor_item_name: row.vendor_item_name ?? null, unit_cost: Number(row.unit_cost), currency: row.currency, minimum_order_quantity: row.minimum_order_quantity === null ? null : Number(row.minimum_order_quantity), lead_time_days: row.lead_time_days === null ? null : Number(row.lead_time_days), is_active: row.is_active, product_type: null, hs_code: hsCodeByProductId.get(row.product_id) ?? null, box_width_inches: row.box_width_inches ?? box?.box_width ?? null, box_depth_inches: row.box_depth_inches ?? box?.box_length ?? null, box_height_inches: row.box_height_inches ?? box?.box_height ?? null, net_weight_lbs: row.net_weight_lbs ?? box?.net_weight ?? null, gross_weight_lbs: row.gross_weight_lbs ?? box?.gross_weight ?? null }; }),
+    products: vendorProducts.map((row) => { const product = productById.get(row.product_id); const box = firstBoxByProduct.get(row.product_id); const imageFileId = firstImageByProduct.get(row.product_id); const vendorBoxes = (vendorPackingBoxesByProductId.get(row.id) ?? []).map((vendorBox) => ({ id: vendorBox.id, catalog_product_packing_box_id: vendorBox.catalog_product_packing_box_id, sequence: vendorBox.box_sequence, label: vendorBox.box_label, width: vendorBox.box_width_inches === null ? null : Number(vendorBox.box_width_inches), depth: vendorBox.box_depth_inches === null ? null : Number(vendorBox.box_depth_inches), height: vendorBox.box_height_inches === null ? null : Number(vendorBox.box_height_inches), net_weight: vendorBox.net_weight_lbs === null ? null : Number(vendorBox.net_weight_lbs), gross_weight: vendorBox.gross_weight_lbs === null ? null : Number(vendorBox.gross_weight_lbs) })); return { id: row.id, product_id: row.product_id, sku: product?.sku ?? "Unknown", name: product?.name ?? "Product unavailable", image_url: imageFileId ? imageUrlByFileId.get(imageFileId) ?? null : null, category: product?.product_category_id ? categoryById.get(product.product_category_id) ?? null : null, finishes: finishesByProductId.get(row.product_id) ?? [], dimensions: dimensionsByProductId.get(row.product_id) ?? [], vendor_item_number: row.vendor_item_number, vendor_item_name: row.vendor_item_name ?? null, unit_cost: Number(row.unit_cost), currency: row.currency, minimum_order_quantity: row.minimum_order_quantity === null ? null : Number(row.minimum_order_quantity), lead_time_days: row.lead_time_days === null ? null : Number(row.lead_time_days), is_active: row.is_active, product_type: null, hs_code: hsCodeByProductId.get(row.product_id) ?? null, packing_boxes: vendorBoxes, box_width_inches: row.box_width_inches ?? box?.box_width ?? null, box_depth_inches: row.box_depth_inches ?? box?.box_length ?? null, box_height_inches: row.box_height_inches ?? box?.box_height ?? null, net_weight_lbs: row.net_weight_lbs ?? box?.net_weight ?? null, gross_weight_lbs: row.gross_weight_lbs ?? box?.gross_weight ?? null }; }),
     purchaseOrders: (ordersResult.data ?? []).map((order) => ({ ...order, total_amount: order.total_amount === null ? null : Number(order.total_amount) })),
     containers: (containers ?? []).map((container) => ({ ...container, product_lines: (containerLines ?? []).filter((line) => line.import_container_id === container.id).map((line) => ({ sku: productById.get(line.product_id)?.sku ?? "Unknown", quantity: Number(line.quantity_packed) })), invoice_amount: invoices.reduce((sum, invoice) => sum + Number(invoice.invoice_amount), 0), amount_paid: invoices.reduce((sum, invoice) => sum + Number(invoice.amount_paid), 0), paid_date: invoices.find((invoice) => invoice.paid_date)?.paid_date ?? null, payment_method: invoices.find((invoice) => invoice.payment_method)?.payment_method ?? null })),
   };
@@ -13242,9 +13246,166 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
 function vendorRedirect(vendorId: string, tab: string, error?: string) { redirect(`/?module=vendor&vendor=${vendorId}&vendor_tab=${tab}${error ? `&error=${encodeURIComponent(error)}` : ""}`); }
 async function updateVendorProfileAction(formData: FormData) { "use server"; const vendorId = textValue(formData, "vendor_id"); if (!vendorId) redirect("/?module=purchasing"); const optional = (key: string) => textValue(formData, key) || null; const { error } = await createSupabaseUntypedAdminClient().from("vendor").update({ name: textValue(formData, "name"), legal_name: optional("legal_name"), country: textValue(formData, "country"), country_code: textValue(formData, "country_code").toUpperCase(), currency: textValue(formData, "currency"), payment_terms: optional("payment_terms"), contact_name: optional("contact_name"), email: optional("email"), phone: optional("phone"), address_line_1: optional("address_line_1"), address_line_2: optional("address_line_2"), city: optional("city"), state_province: optional("state_province"), postal_code: optional("postal_code"), notes: optional("notes"), bank_name: optional("bank_name"), bank_address: optional("bank_address"), bank_city: optional("bank_city"), bank_country: optional("bank_country"), bank_swift_code: optional("bank_swift_code"), bank_ach_routing_code: optional("bank_ach_routing_code"), bank_account_number: optional("bank_account_number") }).eq("id", vendorId); if (error) vendorRedirect(vendorId, "profile", error.message); revalidatePath("/"); vendorRedirect(vendorId, "profile"); }
 async function updateVendorTermsAction(formData: FormData) { "use server"; const vendorId = textValue(formData, "vendor_id"); if (!vendorId) redirect("/?module=purchasing"); const num = (key: string) => { const value = textValue(formData, key); return value ? Number(value) : null; }; const { error } = await createSupabaseUntypedAdminClient().from("vendor").update({ price_terms: textValue(formData, "price_terms") || null, price_currency: textValue(formData, "price_currency"), default_lead_time_days: num("default_lead_time_days"), default_minimum_order_quantity: num("default_minimum_order_quantity"), prototype_sample_discount_percent: num("prototype_sample_discount_percent"), terms_notes: textValue(formData, "terms_notes") || null }).eq("id", vendorId); if (error) vendorRedirect(vendorId, "terms", error.message); revalidatePath("/"); vendorRedirect(vendorId, "terms"); }
-async function getVendorProductOptions(): Promise<VendorProductOption[]> { const supabase = createSupabaseUntypedAdminClient(); const [{ data: products, error: productsError }, { data: boxes, error: boxesError }, { data: categories, error: categoriesError }, { data: specs, error: specsError }] = await Promise.all([supabase.from("product").select("id, sku, name, product_category_id").order("sku"), supabase.from("product_packing_box").select("product_id, box_width, box_length, box_height, net_weight, gross_weight, box_sequence").order("box_sequence"), supabase.from("product_category").select("id, name"), supabase.from("product_spec_attribute").select("product_id, attribute_name, attribute_value").eq("is_active", true)]); if (productsError || boxesError || categoriesError || specsError) throw new Error(productsError?.message ?? boxesError?.message ?? categoriesError?.message ?? specsError?.message); const categoryNames = new Map((categories ?? []).map((category) => [category.id, category.name])); const hsCodeByProduct = new Map<string, string>(); for (const spec of specs ?? []) if (spec.attribute_name.toLowerCase().includes("hs") && spec.attribute_name.toLowerCase().includes("code")) hsCodeByProduct.set(spec.product_id, spec.attribute_value); const firstBoxes = new Map<string, any>(); for (const box of boxes ?? []) if (!firstBoxes.has(box.product_id)) firstBoxes.set(box.product_id, box); return (products ?? []).map((product) => { const box = firstBoxes.get(product.id); return { id: product.id, sku: product.sku, name: product.name, category: product.product_category_id ? categoryNames.get(product.product_category_id) ?? null : null, hs_code: hsCodeByProduct.get(product.id) ?? null, box_width: box?.box_width ?? null, box_length: box?.box_length ?? null, box_height: box?.box_height ?? null, net_weight: box?.net_weight ?? null, gross_weight: box?.gross_weight ?? null }; }); }
-async function createVendorProductAction(formData: FormData) { "use server"; const vendorId = textValue(formData, "vendor_id"); const fail = (message: string) => redirect(`/?module=vendor-product-add&vendor=${vendorId}&error=${encodeURIComponent(message)}`); if (!vendorId || !textValue(formData, "product_id") || !textValue(formData, "vendor_item_number")) fail("Select a product and enter its vendor code."); const nullableNumber = (key: string) => { const value = textValue(formData, key); return value ? Number(value) : null; }; const { data: vendor, error: vendorError } = await createSupabaseUntypedAdminClient().from("vendor").select("currency, price_currency").eq("id", vendorId).maybeSingle(); if (vendorError || !vendor) fail(vendorError?.message ?? "Vendor not found."); const vendorCurrency = vendor?.price_currency ?? vendor?.currency ?? "USD"; const { error } = await createSupabaseUntypedAdminClient().from("vendor_product").insert({ vendor_id: vendorId, product_id: textValue(formData, "product_id"), vendor_item_number: textValue(formData, "vendor_item_number"), vendor_item_name: textValue(formData, "vendor_item_name") || null, unit_cost: Number(textValue(formData, "unit_cost") || 0), currency: vendorCurrency, minimum_order_quantity: nullableNumber("minimum_order_quantity"), lead_time_days: nullableNumber("lead_time_days"), is_active: textValue(formData, "is_active") === "true", box_width_inches: nullableNumber("box_width_inches"), box_depth_inches: nullableNumber("box_depth_inches"), box_height_inches: nullableNumber("box_height_inches"), net_weight_lbs: nullableNumber("net_weight_lbs"), gross_weight_lbs: nullableNumber("gross_weight_lbs") }); if (error) fail(error.message); revalidatePath("/"); vendorRedirect(vendorId, "products"); }
-async function updateVendorProductAction(formData: FormData) { "use server"; const vendorId = textValue(formData, "vendor_id"); const vendorProductId = textValue(formData, "vendor_product_id"); const fail = (message: string) => redirect(`/?module=vendor-product-edit&vendor=${vendorId}&vendor_product=${vendorProductId}&error=${encodeURIComponent(message)}`); if (!vendorId || !vendorProductId) fail("Vendor product was not found."); const numeric = (key: string) => { const value = textValue(formData, key); return value ? Number(value) : null; }; const { error } = await createSupabaseUntypedAdminClient().from("vendor_product").update({ vendor_item_number: textValue(formData, "vendor_item_number"), vendor_item_name: textValue(formData, "vendor_item_name") || null, unit_cost: Number(textValue(formData, "unit_cost") || 0), minimum_order_quantity: numeric("minimum_order_quantity"), lead_time_days: numeric("lead_time_days"), is_active: textValue(formData, "is_active") === "true", box_width_inches: numeric("box_width_inches"), box_depth_inches: numeric("box_depth_inches"), box_height_inches: numeric("box_height_inches"), net_weight_lbs: numeric("net_weight_lbs"), gross_weight_lbs: numeric("gross_weight_lbs") }).eq("id", vendorProductId).eq("vendor_id", vendorId); if (error) fail(error.message); revalidatePath("/"); redirect(`/?module=vendor-product&vendor=${vendorId}&vendor_product=${vendorProductId}`); }
+async function getVendorProductOptions(): Promise<VendorProductOption[]> {
+  const supabase = createSupabaseUntypedAdminClient();
+  const [{ data: products, error: productsError }, { data: boxes, error: boxesError }, { data: categories, error: categoriesError }, { data: specs, error: specsError }] = await Promise.all([
+    supabase.from("product").select("id, sku, name, product_category_id").order("sku"),
+    supabase.from("product_packing_box").select("id, product_id, box_label, box_width, box_length, box_height, net_weight, gross_weight, box_sequence").eq("is_active", true).order("box_sequence"),
+    supabase.from("product_category").select("id, name"),
+    supabase.from("product_spec_attribute").select("product_id, attribute_name, attribute_value").eq("is_active", true),
+  ]);
+  if (productsError || boxesError || categoriesError || specsError) throw new Error(productsError?.message ?? boxesError?.message ?? categoriesError?.message ?? specsError?.message);
+  const categoryNames = new Map((categories ?? []).map((category) => [category.id, category.name]));
+  const hsCodeByProduct = new Map<string, string>();
+  for (const spec of specs ?? []) if (spec.attribute_name.toLowerCase().includes("hs") && spec.attribute_name.toLowerCase().includes("code")) hsCodeByProduct.set(spec.product_id, spec.attribute_value);
+  const boxesByProduct = new Map<string, typeof boxes>();
+  for (const box of boxes ?? []) boxesByProduct.set(box.product_id, [...(boxesByProduct.get(box.product_id) ?? []), box]);
+  return (products ?? []).map((product) => ({
+    id: product.id,
+    sku: product.sku,
+    name: product.name,
+    category: product.product_category_id ? categoryNames.get(product.product_category_id) ?? null : null,
+    hs_code: hsCodeByProduct.get(product.id) ?? null,
+    packing_boxes: (boxesByProduct.get(product.id) ?? []).map((box) => ({
+      id: box.id,
+      sequence: box.box_sequence,
+      label: box.box_label,
+      width: box.box_width === null ? null : Number(box.box_width),
+      depth: box.box_length === null ? null : Number(box.box_length),
+      height: box.box_height === null ? null : Number(box.box_height),
+      netWeight: box.net_weight === null ? null : Number(box.net_weight),
+      grossWeight: box.gross_weight === null ? null : Number(box.gross_weight),
+    })),
+  }));
+}
+
+type VendorPackingBoxInput = {
+  catalogProductPackingBoxId: string | null;
+  sequence: number;
+  label: string | null;
+  width: number | null;
+  depth: number | null;
+  height: number | null;
+  netWeight: number | null;
+  grossWeight: number | null;
+};
+
+function vendorPackingBoxesFromFormData(formData: FormData): VendorPackingBoxInput[] {
+  const count = Number(textValue(formData, "packing_box_count") || 0);
+  if (!Number.isInteger(count) || count < 0) throw new Error("Packing box details are invalid.");
+  const measurement = (key: string) => {
+    const raw = textValue(formData, key);
+    if (!raw) return null;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) throw new Error("Packing box measurements must be non-negative numbers.");
+    return value;
+  };
+  return Array.from({ length: count }, (_, index) => {
+    const catalogProductPackingBoxId = textValue(formData, `packing_box_${index}_catalog_box_id`) || null;
+    const sequence = Number(textValue(formData, `packing_box_${index}_sequence`));
+    if (!Number.isInteger(sequence) || sequence < 1) throw new Error("Packing box details are invalid.");
+    return {
+      catalogProductPackingBoxId,
+      sequence,
+      label: textValue(formData, `packing_box_${index}_label`) || null,
+      width: measurement(`packing_box_${index}_width`),
+      depth: measurement(`packing_box_${index}_depth`),
+      height: measurement(`packing_box_${index}_height`),
+      netWeight: measurement(`packing_box_${index}_net_weight`),
+      grossWeight: measurement(`packing_box_${index}_gross_weight`),
+    };
+  });
+}
+
+function vendorPackingBoxRows(vendorProductId: string, boxes: VendorPackingBoxInput[]) {
+  return boxes.map((box) => ({
+    vendor_product_id: vendorProductId,
+    catalog_product_packing_box_id: box.catalogProductPackingBoxId,
+    box_sequence: box.sequence,
+    box_label: box.label,
+    box_width_inches: box.width,
+    box_depth_inches: box.depth,
+    box_height_inches: box.height,
+    net_weight_lbs: box.netWeight,
+    gross_weight_lbs: box.grossWeight,
+  }));
+}
+
+async function createVendorProductAction(formData: FormData) {
+  "use server";
+  const vendorId = textValue(formData, "vendor_id");
+  const fail = (message: string) => redirect(`/?module=vendor-product-add&vendor=${vendorId}&error=${encodeURIComponent(message)}`);
+  if (!vendorId || !textValue(formData, "product_id") || !textValue(formData, "vendor_item_number")) fail("Select a product and enter its vendor code.");
+  const nullableNumber = (key: string) => { const value = textValue(formData, key); return value ? Number(value) : null; };
+  let packingBoxes: VendorPackingBoxInput[];
+  try { packingBoxes = vendorPackingBoxesFromFormData(formData); } catch (error) { fail(error instanceof Error ? error.message : "Packing box details are invalid."); }
+  const { data: vendor, error: vendorError } = await createSupabaseUntypedAdminClient().from("vendor").select("currency, price_currency").eq("id", vendorId).maybeSingle();
+  if (vendorError || !vendor) fail(vendorError?.message ?? "Vendor not found.");
+  const firstBox = packingBoxes![0];
+  const vendorCurrency = vendor!.price_currency ?? vendor!.currency ?? "USD";
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: vendorProduct, error } = await supabase.from("vendor_product").insert({
+    vendor_id: vendorId,
+    product_id: textValue(formData, "product_id"),
+    vendor_item_number: textValue(formData, "vendor_item_number"),
+    vendor_item_name: textValue(formData, "vendor_item_name") || null,
+    unit_cost: Number(textValue(formData, "unit_cost") || 0),
+    currency: vendorCurrency,
+    minimum_order_quantity: nullableNumber("minimum_order_quantity"),
+    lead_time_days: nullableNumber("lead_time_days"),
+    is_active: textValue(formData, "is_active") === "true",
+    box_width_inches: firstBox?.width ?? null,
+    box_depth_inches: firstBox?.depth ?? null,
+    box_height_inches: firstBox?.height ?? null,
+    net_weight_lbs: firstBox?.netWeight ?? null,
+    gross_weight_lbs: firstBox?.grossWeight ?? null,
+  }).select("id").single();
+  if (error || !vendorProduct) fail(error?.message ?? "Vendor product could not be created.");
+  if (packingBoxes!.length) {
+    const { error: packingError } = await supabase.from("vendor_product_packing_box").insert(vendorPackingBoxRows(vendorProduct!.id, packingBoxes!));
+    if (packingError) {
+      await supabase.from("vendor_product").delete().eq("id", vendorProduct!.id);
+      fail(packingError.message);
+    }
+  }
+  revalidatePath("/");
+  vendorRedirect(vendorId, "products");
+}
+
+async function updateVendorProductAction(formData: FormData) {
+  "use server";
+  const vendorId = textValue(formData, "vendor_id");
+  const vendorProductId = textValue(formData, "vendor_product_id");
+  const fail = (message: string) => redirect(`/?module=vendor-product-edit&vendor=${vendorId}&vendor_product=${vendorProductId}&error=${encodeURIComponent(message)}`);
+  if (!vendorId || !vendorProductId) fail("Vendor product was not found.");
+  const numeric = (key: string) => { const value = textValue(formData, key); return value ? Number(value) : null; };
+  let packingBoxes: VendorPackingBoxInput[];
+  try { packingBoxes = vendorPackingBoxesFromFormData(formData); } catch (error) { fail(error instanceof Error ? error.message : "Packing box details are invalid."); }
+  const firstBox = packingBoxes![0];
+  const supabase = createSupabaseUntypedAdminClient();
+  const { error } = await supabase.from("vendor_product").update({
+    vendor_item_number: textValue(formData, "vendor_item_number"),
+    vendor_item_name: textValue(formData, "vendor_item_name") || null,
+    unit_cost: Number(textValue(formData, "unit_cost") || 0),
+    minimum_order_quantity: numeric("minimum_order_quantity"),
+    lead_time_days: numeric("lead_time_days"),
+    is_active: textValue(formData, "is_active") === "true",
+    box_width_inches: firstBox?.width ?? null,
+    box_depth_inches: firstBox?.depth ?? null,
+    box_height_inches: firstBox?.height ?? null,
+    net_weight_lbs: firstBox?.netWeight ?? null,
+    gross_weight_lbs: firstBox?.grossWeight ?? null,
+  }).eq("id", vendorProductId).eq("vendor_id", vendorId);
+  if (error) fail(error.message);
+  const { error: deleteError } = await supabase.from("vendor_product_packing_box").delete().eq("vendor_product_id", vendorProductId);
+  if (deleteError) fail(deleteError.message);
+  if (packingBoxes!.length) {
+    const { error: packingError } = await supabase.from("vendor_product_packing_box").insert(vendorPackingBoxRows(vendorProductId, packingBoxes!));
+    if (packingError) fail(packingError.message);
+  }
+  revalidatePath("/");
+  redirect(`/?module=vendor-product&vendor=${vendorId}&vendor_product=${vendorProductId}`);
+}
 
 async function getPrimaryShowroomPerformanceReport(customerId: string, enrollmentId: string, startDate?: string, endDate?: string) {
   const [customer, dashboard] = await Promise.all([

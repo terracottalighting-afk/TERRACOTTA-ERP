@@ -3258,6 +3258,78 @@ tfoot td {
   font-weight: 800;
 }
 
+.po-line-editor-row > td {
+  background: #f8fbfa;
+  padding: 0;
+}
+
+.po-line-editor {
+  border-left: 3px solid var(--brand);
+  padding: 18px 20px;
+}
+
+.po-line-editor-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.po-line-editor-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.po-line-editor-heading strong {
+  font-size: 15px;
+}
+
+.po-line-editor-heading > span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.po-line-editor-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(120px, 0.65fr) minmax(190px, 1fr) minmax(250px, 1.35fr);
+}
+
+.po-line-editor-grid label {
+  color: var(--muted);
+  display: grid;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 7px;
+}
+
+.po-line-editor-grid input {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--foreground);
+  min-height: 40px;
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.po-line-editor .form-actions {
+  margin-top: 16px;
+}
+
+@media (max-width: 760px) {
+  .po-line-editor-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .po-line-editor-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .confirmation-dialog {
   border: 1px solid var(--line);
   border-radius: 8px;

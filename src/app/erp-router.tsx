@@ -28,6 +28,7 @@ import { PrimaryShowroomPerformanceReportPage } from "@/components/customers/pri
 import { PurchasingDashboard } from "@/components/purchasing/purchasing-dashboard";
 import { PurchaseOrderEditor } from "@/components/purchasing/purchase-order-editor";
 import { PurchaseOrderLinesEditor } from "@/components/purchasing/purchase-order-lines-editor";
+import { PurchaseOrderReview } from "@/components/purchasing/purchase-order-review";
 import { VendorDashboard, type VendorDashboardData } from "@/components/purchasing/vendor-dashboard";
 import { VendorEditor } from "@/components/purchasing/vendor-editor";
 import { VendorProductDetailPage } from "@/components/purchasing/vendor-product-detail-page";
@@ -209,6 +210,8 @@ export type SearchParams = Promise<{
   shipment_edit?: string;
   packing_list?: string;
   purchase_order?: string;
+  po_edit?: string;
+  po_line?: string;
   payment?: string;
   invoice?: string;
   credit_memo?: string;
@@ -13232,14 +13235,14 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
   const supabase = createSupabaseUntypedAdminClient();
   const { data: order, error: orderError } = await supabase
     .from("vendor_purchase_order")
-    .select("id, vendor_id, vendor_po_number, vendor_name_snapshot, currency, po_date, expected_ready_date, expected_ship_date, expected_arrival_date")
+    .select("id, vendor_id, vendor_po_number, vendor_name_snapshot, currency, status, po_date, expected_ready_date, expected_ship_date, expected_arrival_date, expected_available_date, notes, review_notes")
     .eq("id", purchaseOrderId)
     .maybeSingle();
   if (orderError) throw new Error(orderError.message);
   if (!order) return null;
   const [{ data: vendorProducts, error: vendorProductsError }, { data: lines, error: linesError }] = await Promise.all([
     supabase.from("vendor_product").select("id, product_id, vendor_item_number, unit_cost").eq("vendor_id", order.vendor_id).eq("is_active", true).order("vendor_item_number"),
-    supabase.from("vendor_purchase_order_line").select("id, product_sku_snapshot, product_name_snapshot, vendor_item_number_snapshot, quantity_ordered, unit_cost, line_total").eq("vendor_purchase_order_id", order.id).order("created_at"),
+    supabase.from("vendor_purchase_order_line").select("id, product_sku_snapshot, product_name_snapshot, vendor_item_number_snapshot, quantity_ordered, unit_cost, line_total, expected_ready_date, notes").eq("vendor_purchase_order_id", order.id).order("created_at"),
   ]);
   if (vendorProductsError || linesError) throw new Error(vendorProductsError?.message ?? linesError?.message);
   const productIds = (vendorProducts ?? []).map((product) => product.product_id);
@@ -13252,7 +13255,7 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
       const product = productById.get(vendorProduct.product_id);
       return product ? [{ id: vendorProduct.id, sku: product.sku, name: product.name, vendor_item_number: vendorProduct.vendor_item_number, unit_cost: Number(vendorProduct.unit_cost) }] : [];
     }),
-    lines: (lines ?? []).map((line) => ({ id: line.id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, vendor_item_number: line.vendor_item_number_snapshot, quantity_ordered: Number(line.quantity_ordered), unit_cost: Number(line.unit_cost), line_total: Number(line.line_total) })),
+    lines: (lines ?? []).map((line) => ({ id: line.id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, vendor_item_number: line.vendor_item_number_snapshot, quantity_ordered: Number(line.quantity_ordered), unit_cost: Number(line.unit_cost), line_total: Number(line.line_total), expected_ready_date: line.expected_ready_date, notes: line.notes })),
   };
 }
 
@@ -13287,6 +13290,94 @@ async function addVendorPurchaseOrderLineAction(formData: FormData) {
   if (error) fail(error.message);
   revalidatePath("/");
   redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
+}
+
+async function updateVendorPurchaseOrderScheduleAction(formData: FormData) {
+  "use server";
+  const purchaseOrderId = textValue(formData, "purchase_order_id");
+  const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  if (!purchaseOrderId || !textValue(formData, "po_date")) fail("A PO date is required.");
+  const { error } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").update({
+    po_date: textValue(formData, "po_date"),
+    expected_ready_date: textValue(formData, "expected_ready_date") || null,
+    expected_ship_date: textValue(formData, "expected_ship_date") || null,
+    expected_arrival_date: textValue(formData, "expected_arrival_date") || null,
+  }).eq("id", purchaseOrderId).eq("status", "draft");
+  if (error) fail(error.message);
+  revalidatePath("/");
+  redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
+}
+
+async function updateVendorPurchaseOrderLineAction(formData: FormData) {
+  "use server";
+  const purchaseOrderId = textValue(formData, "purchase_order_id");
+  const lineId = textValue(formData, "line_id");
+  const quantityOrdered = Number(textValue(formData, "quantity_ordered"));
+  const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  if (!purchaseOrderId || !lineId || !Number.isFinite(quantityOrdered) || quantityOrdered <= 0) fail("Enter a quantity greater than zero.");
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).eq("status", "draft").maybeSingle();
+  if (orderError || !order) fail(orderError?.message ?? "Only draft purchase orders can be edited.");
+  const { error } = await supabase.from("vendor_purchase_order_line").update({ quantity_ordered: quantityOrdered, expected_ready_date: textValue(formData, "expected_ready_date") || null, notes: textValue(formData, "notes") || null }).eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId);
+  if (error) fail(error.message);
+  revalidatePath("/");
+  redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
+}
+
+async function deleteVendorPurchaseOrderLineAction(formData: FormData) {
+  "use server";
+  const purchaseOrderId = textValue(formData, "purchase_order_id");
+  const lineId = textValue(formData, "line_id");
+  const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  if (!purchaseOrderId || !lineId) fail("The purchase order product was not found.");
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).eq("status", "draft").maybeSingle();
+  if (orderError || !order) fail(orderError?.message ?? "Only draft purchase orders can be edited.");
+  const { error } = await supabase.from("vendor_purchase_order_line").delete().eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId);
+  if (error) fail(error.message);
+  revalidatePath("/");
+  redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
+}
+
+async function submitVendorPurchaseOrderForReviewAction(formData: FormData) {
+  "use server";
+  const purchaseOrderId = textValue(formData, "purchase_order_id");
+  const fail = (message: string) => redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { count, error: lineError } = await supabase.from("vendor_purchase_order_line").select("id", { count: "exact", head: true }).eq("vendor_purchase_order_id", purchaseOrderId);
+  if (lineError || !count) fail(lineError?.message ?? "Add at least one product before sending this PO for review.");
+  const { error } = await supabase.from("vendor_purchase_order").update({ status: "ready_for_review" }).eq("id", purchaseOrderId).eq("status", "draft");
+  if (error) fail(error.message);
+  revalidatePath("/");
+  redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}`);
+}
+
+async function reviewVendorPurchaseOrderAction(formData: FormData) {
+  "use server";
+  const purchaseOrderId = textValue(formData, "purchase_order_id");
+  const decision = textValue(formData, "decision");
+  const fail = (message: string) => redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  if (!purchaseOrderId || !["approve", "reject"].includes(decision)) fail("Choose approve or reject.");
+  const reviewNotes = textValue(formData, "review_notes") || null;
+  if (decision === "reject" && !reviewNotes) fail("Add review notes when rejecting a purchase order.");
+  const { error } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").update({ status: decision === "approve" ? "for_vendor_confirmation" : "draft", review_notes: reviewNotes, reviewed_at: new Date().toISOString() }).eq("id", purchaseOrderId).eq("status", "ready_for_review");
+  if (error) fail(error.message);
+  revalidatePath("/");
+  redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}`);
+}
+
+async function confirmVendorPurchaseOrderAction(formData: FormData) {
+  "use server";
+  const purchaseOrderId = textValue(formData, "purchase_order_id");
+  const fail = (message: string) => redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  const expectedReadyDate = textValue(formData, "expected_ready_date");
+  const expectedShipDate = textValue(formData, "expected_ship_date");
+  const expectedAvailableDate = textValue(formData, "expected_available_date");
+  if (!purchaseOrderId || !expectedReadyDate || !expectedShipDate || !expectedAvailableDate) fail("Enter the confirmed ready, ship, and available dates.");
+  const { error } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").update({ expected_ready_date: expectedReadyDate, expected_ship_date: expectedShipDate, expected_available_date: expectedAvailableDate, status: "in_production", vendor_confirmed_at: new Date().toISOString() }).eq("id", purchaseOrderId).eq("status", "for_vendor_confirmation");
+  if (error) fail(error.message);
+  revalidatePath("/");
+  redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}`);
 }
 
 async function createVendorAction(formData: FormData) {
@@ -15333,7 +15424,10 @@ export async function ErpRouter({
           />
         ) : activeModule === "vendor-purchase-order" ? await (async () => {
           const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;
-          return <PurchaseOrderLinesEditor error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} products={workspace?.products ?? []} saveAction={addVendorPurchaseOrderLineAction} />;
+          return <PurchaseOrderLinesEditor addLineAction={addVendorPurchaseOrderLineAction} deleteLineAction={deleteVendorPurchaseOrderLineAction} editingLineId={params.po_line} editingSchedule={params.po_edit === "schedule"} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} products={workspace?.products ?? []} updateLineAction={updateVendorPurchaseOrderLineAction} updateScheduleAction={updateVendorPurchaseOrderScheduleAction} />;
+        })() : activeModule === "vendor-purchase-order-review" ? await (async () => {
+          const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;
+          return <PurchaseOrderReview decisionAction={reviewVendorPurchaseOrderAction} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} submitForReviewAction={submitVendorPurchaseOrderForReviewAction} vendorConfirmationAction={confirmVendorPurchaseOrderAction} />;
         })() : activeModule === "add-vendor" ? (
           <VendorEditor error={params.error} saveAction={createVendorAction} />
         ) : activeModule === "vendor" ? (

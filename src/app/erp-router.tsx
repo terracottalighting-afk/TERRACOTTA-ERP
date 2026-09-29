@@ -13301,12 +13301,15 @@ async function updateVendorPurchaseOrderScheduleAction(formData: FormData) {
   const purchaseOrderId = textValue(formData, "purchase_order_id");
   const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
   if (!purchaseOrderId || !textValue(formData, "po_date")) fail("A PO date is required.");
+  const freightAmount = Number(textValue(formData, "freight_amount") || 0);
+  if (!Number.isFinite(freightAmount) || freightAmount < 0) fail("Expected freight cost must be zero or greater.");
   const { error } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").update({
     po_date: textValue(formData, "po_date"),
     expected_ready_date: textValue(formData, "expected_ready_date") || null,
     expected_ship_date: textValue(formData, "expected_ship_date") || null,
     expected_arrival_date: textValue(formData, "expected_arrival_date") || null,
     expected_available_date: textValue(formData, "expected_available_date") || null,
+    freight_amount: freightAmount,
   }).eq("id", purchaseOrderId).eq("status", "draft");
   if (error) fail(error.message);
   revalidatePath("/");

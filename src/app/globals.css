@@ -1945,6 +1945,7 @@ input {
 .quote-document-table th, .quote-document-table td { border-bottom: 1px solid var(--line); padding: 10px 8px; text-align: left; }
 .quote-document-table th { color: var(--muted); font-size: 12px; }
 .quote-document-table th:nth-last-child(-n + 3), .quote-document-table td:nth-last-child(-n + 3) { text-align: right; }
+.quote-document-table .quote-document-line-note td { background: #edf6ea; color: #294a44; font-size: 13px; padding: 9px 14px 12px; text-align: left; white-space: pre-wrap; }
 .quote-document-total { display: flex; font-size: 17px; gap: 36px; justify-content: flex-end; padding: 22px 8px 0; }
 .packing-list-detail-table th:nth-child(4), .packing-list-detail-table td:nth-child(4) { text-align: left; }
 .packing-list-box-row td { background: #f3f7f8; color: #516273; }

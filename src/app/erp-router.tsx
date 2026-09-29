@@ -114,6 +114,7 @@ import {
   timestampLabel,
 } from "@/lib/formatters";
 import { productPartRoleOptions } from "@/lib/product-part-roles";
+import { DEFAULT_IMPORT_TARIFF_RATE_PERCENT, DEFAULT_VENDOR_PRODUCTION_COMMITMENT } from "@/lib/purchasing";
 import {
   EmptyState,
   Metric,
@@ -13284,16 +13285,22 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
     .maybeSingle();
   if (orderError) throw new Error(orderError.message);
   if (!order) return null;
-  const [{ data: vendorProducts, error: vendorProductsError }, { data: lines, error: linesError }, { data: vendorContact, error: vendorContactError }] = await Promise.all([
+  const [{ data: vendorProducts, error: vendorProductsError }, { data: lines, error: linesError }, { data: vendorContact, error: vendorContactError }, { data: purchasingSettings, error: purchasingSettingsError }] = await Promise.all([
     supabase.from("vendor_product").select("id, product_id, vendor_item_number, unit_cost").eq("vendor_id", order.vendor_id).eq("is_active", true).order("vendor_item_number"),
     supabase.from("vendor_purchase_order_line").select("id, product_sku_snapshot, product_name_snapshot, vendor_item_number_snapshot, quantity_ordered, unit_cost, line_total, expected_ready_date, notes").eq("vendor_purchase_order_id", order.id).order("created_at"),
     supabase.from("vendor").select("email").eq("id", order.vendor_id).maybeSingle(),
+    supabase.from("system_setting").select("setting_key, setting_value").in("setting_key", ["purchasing_import_tariff_rate_percent", "purchasing_vendor_production_commitment"]),
   ]);
-  if (vendorProductsError || linesError || vendorContactError) throw new Error(vendorProductsError?.message ?? linesError?.message ?? vendorContactError?.message);
+  if (vendorProductsError || linesError || vendorContactError || purchasingSettingsError) throw new Error(vendorProductsError?.message ?? linesError?.message ?? vendorContactError?.message ?? purchasingSettingsError?.message);
   const productIds = (vendorProducts ?? []).map((product) => product.product_id);
   const { data: products, error: productsError } = productIds.length ? await supabase.from("product").select("id, sku, name").in("id", productIds) : { data: [], error: null };
   if (productsError) throw new Error(productsError.message);
   const productById = new Map((products ?? []).map((product) => [product.id, product]));
+  const purchasingSettingByKey = new Map((purchasingSettings ?? []).map((setting) => [setting.setting_key, setting.setting_value]));
+  const configuredTariffRate = Number(purchasingSettingByKey.get("purchasing_import_tariff_rate_percent") ?? DEFAULT_IMPORT_TARIFF_RATE_PERCENT);
+  const tariffRatePercent = Number.isFinite(configuredTariffRate) && configuredTariffRate >= 0 && configuredTariffRate <= 100 ? configuredTariffRate : DEFAULT_IMPORT_TARIFF_RATE_PERCENT;
+  const configuredCommitment = purchasingSettingByKey.get("purchasing_vendor_production_commitment");
+  const vendorProductionCommitment = typeof configuredCommitment === "string" && configuredCommitment.trim() ? configuredCommitment : DEFAULT_VENDOR_PRODUCTION_COMMITMENT;
   return {
     order: { ...order, vendor_name: order.vendor_name_snapshot, vendor_email: vendorContact?.email ?? null },
     products: (vendorProducts ?? []).flatMap((vendorProduct) => {
@@ -13301,6 +13308,7 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
       return product ? [{ id: vendorProduct.id, sku: product.sku, name: product.name, vendor_item_number: vendorProduct.vendor_item_number, unit_cost: Number(vendorProduct.unit_cost) }] : [];
     }),
     lines: (lines ?? []).map((line) => ({ id: line.id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, vendor_item_number: line.vendor_item_number_snapshot, quantity_ordered: Number(line.quantity_ordered), unit_cost: Number(line.unit_cost), line_total: Number(line.line_total), expected_ready_date: line.expected_ready_date, notes: line.notes })),
+    purchasingSettings: { tariffRatePercent, vendorProductionCommitment },
   };
 }
 
@@ -15492,10 +15500,10 @@ export async function ErpRouter({
           return <PurchaseOrderLinesEditor addLineAction={addVendorPurchaseOrderLineAction} deleteLineAction={deleteVendorPurchaseOrderLineAction} editingLineId={params.po_line} editingSchedule={params.po_edit === "schedule"} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} products={workspace?.products ?? []} updateLineAction={updateVendorPurchaseOrderLineAction} updateScheduleAction={updateVendorPurchaseOrderScheduleAction} />;
         })() : activeModule === "vendor-purchase-order-review" ? await (async () => {
           const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;
-          return <PurchaseOrderReview decisionAction={reviewVendorPurchaseOrderAction} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} showVendorConfirmation={params.po_vendor_confirmation === "1"} submitForReviewAction={submitVendorPurchaseOrderForReviewAction} vendorConfirmationAction={confirmVendorPurchaseOrderAction} />;
+          return <PurchaseOrderReview decisionAction={reviewVendorPurchaseOrderAction} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} showVendorConfirmation={params.po_vendor_confirmation === "1"} submitForReviewAction={submitVendorPurchaseOrderForReviewAction} tariffRatePercent={workspace?.purchasingSettings.tariffRatePercent ?? DEFAULT_IMPORT_TARIFF_RATE_PERCENT} vendorConfirmationAction={confirmVendorPurchaseOrderAction} />;
         })() : activeModule === "vendor-purchase-order-document" ? await (async () => {
           const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;
-          return <VendorPurchaseOrderDocumentPage lines={workspace?.lines ?? []} order={workspace?.order ?? null} />;
+          return <VendorPurchaseOrderDocumentPage lines={workspace?.lines ?? []} order={workspace?.order ?? null} tariffRatePercent={workspace?.purchasingSettings.tariffRatePercent ?? DEFAULT_IMPORT_TARIFF_RATE_PERCENT} vendorProductionCommitment={workspace?.purchasingSettings.vendorProductionCommitment ?? DEFAULT_VENDOR_PRODUCTION_COMMITMENT} />;
         })() : activeModule === "add-vendor" ? (
           <VendorEditor error={params.error} saveAction={createVendorAction} />
         ) : activeModule === "vendor" ? (

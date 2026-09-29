@@ -1955,6 +1955,8 @@ input {
 .preparation-list-totals { border-top: 2px solid var(--ink); margin-top: 14px; }
 .quote-document-notes { border-top: 1px solid var(--line); margin-top: 28px; padding-top: 18px; }
 .quote-document-notes p { margin-bottom: 0; white-space: pre-wrap; }
+.quote-document-commitment { background: #edf6ea; border-left: 4px solid #16826d; margin-top: 32px; padding: 16px 18px; }
+.quote-document-commitment span { color: #0f695d; font-weight: 700; }
 
 @media print {
   .erp-sidebar, .workspace-header, .quote-document-controls, .print-hidden { display: none !important; }

@@ -602,6 +602,9 @@ input {
   border-color: #b7dec3;
   color: var(--good);
 }
+.purchase-order-status { align-items: center; background: #edf6ea; border-left: 4px solid #16826d; display: flex; gap: 12px; margin: 0 0 22px; padding: 13px 16px; }
+.purchase-order-status span { color: #516273; font-size: 13px; font-weight: 700; text-transform: uppercase; }
+.purchase-order-status strong { color: #0f695d; font-size: 16px; }
 
 .customer-form {
   display: grid;

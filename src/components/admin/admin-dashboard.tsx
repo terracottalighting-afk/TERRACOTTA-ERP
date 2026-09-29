@@ -8,13 +8,14 @@ import { FreightLevelManager } from "./freight-level-manager";
 import { FreightCarrierManager } from "./freight-carrier-manager";
 import { DropshipSettingsManager } from "./dropship-settings-manager";
 import { PrimaryShowroomSettingsManager } from "./primary-showroom-settings-manager";
+import { PurchasingSettingsManager } from "./purchasing-settings-manager";
 
-type AdminTab = "users" | "products" | "warehouse" | "territory" | "customers" | "freight";
+type AdminTab = "users" | "products" | "warehouse" | "territory" | "customers" | "freight" | "purchasing";
 
-export async function AdminDashboard({ assignStyleAction, deactivateCustomerSettingAction, deactivateProductSettingAction, deactivateWarehousesAction, error, saveCustomerSettingAction, saveDropshipSettingsAction, saveFreightCarrierAction, saveFreightLevelAction, savePrimaryShowroomSettingsAction, saveProductSettingAction, selectedFreightTab, selectedTab }: { assignStyleAction: (formData: FormData) => Promise<void>; deactivateCustomerSettingAction: (formData: FormData) => Promise<void>; deactivateProductSettingAction: (formData: FormData) => Promise<void>; deactivateWarehousesAction: (formData: FormData) => Promise<void>; error?: string; saveCustomerSettingAction: (formData: FormData) => Promise<void>; saveDropshipSettingsAction: (formData: FormData) => Promise<void>; saveFreightCarrierAction: (formData: FormData) => Promise<void>; saveFreightLevelAction: (formData: FormData) => Promise<void>; savePrimaryShowroomSettingsAction: (formData: FormData) => Promise<void>; saveProductSettingAction: (formData: FormData) => Promise<void>; selectedFreightTab?: string; selectedTab?: string }) {
+export async function AdminDashboard({ assignStyleAction, deactivateCustomerSettingAction, deactivateProductSettingAction, deactivateWarehousesAction, error, saveCustomerSettingAction, saveDropshipSettingsAction, saveFreightCarrierAction, saveFreightLevelAction, savePrimaryShowroomSettingsAction, saveProductSettingAction, savePurchasingSettingsAction, selectedFreightTab, selectedTab }: { assignStyleAction: (formData: FormData) => Promise<void>; deactivateCustomerSettingAction: (formData: FormData) => Promise<void>; deactivateProductSettingAction: (formData: FormData) => Promise<void>; deactivateWarehousesAction: (formData: FormData) => Promise<void>; error?: string; saveCustomerSettingAction: (formData: FormData) => Promise<void>; saveDropshipSettingsAction: (formData: FormData) => Promise<void>; saveFreightCarrierAction: (formData: FormData) => Promise<void>; saveFreightLevelAction: (formData: FormData) => Promise<void>; savePrimaryShowroomSettingsAction: (formData: FormData) => Promise<void>; saveProductSettingAction: (formData: FormData) => Promise<void>; savePurchasingSettingsAction: (formData: FormData) => Promise<void>; selectedFreightTab?: string; selectedTab?: string }) {
   const supabase = createSupabaseAdminClient();
   const untypedSupabase = createSupabaseUntypedAdminClient();
-  const [warehousesResult, deactivatedWarehousesResult, territoriesResult, brandsResult, suitesResult, stylesResult, categoriesResult, materialsResult, finishesResult, partRolesResult, customerAccountTypesResult, customerBusinessTypesResult, customerStatusesResult, freightLevelsResult, freightLevelGroupsResult, freightCarriersResult, dropshipSettingsResult, primaryShowroomSettingsResult] = await Promise.all([
+  const [warehousesResult, deactivatedWarehousesResult, territoriesResult, brandsResult, suitesResult, stylesResult, categoriesResult, materialsResult, finishesResult, partRolesResult, customerAccountTypesResult, customerBusinessTypesResult, customerStatusesResult, freightLevelsResult, freightLevelGroupsResult, freightCarriersResult, dropshipSettingsResult, primaryShowroomSettingsResult, purchasingTariffRateResult, purchasingCommitmentResult] = await Promise.all([
     supabase.from("warehouse").select("id, warehouse_code, name, is_active").eq("is_active", true).order("name", { ascending: true }),
     supabase.from("warehouse").select("id, warehouse_code, name, is_active").eq("is_active", false).order("name", { ascending: true }),
     supabase.from("territory").select("id, territory_code, name, description, state_codes_json, status").order("name", { ascending: true }),
@@ -33,8 +34,10 @@ export async function AdminDashboard({ assignStyleAction, deactivateCustomerSett
     untypedSupabase.from("freight_carrier").select("id, carrier_name, freight_type, contact_name, contact_email, website, is_active").order("carrier_name", { ascending: true }),
     untypedSupabase.from("system_setting").select("setting_value").eq("setting_key", "dropship_settings").maybeSingle(),
     untypedSupabase.from("system_setting").select("setting_value").eq("setting_key", "BackTrack_Display_PO_Period").maybeSingle(),
+    untypedSupabase.from("system_setting").select("setting_value").eq("setting_key", "purchasing_import_tariff_rate_percent").maybeSingle(),
+    untypedSupabase.from("system_setting").select("setting_value").eq("setting_key", "purchasing_vendor_production_commitment").maybeSingle(),
   ]);
-  const failedResult = [warehousesResult, deactivatedWarehousesResult, territoriesResult, brandsResult, suitesResult, stylesResult, categoriesResult, materialsResult, finishesResult, partRolesResult, customerAccountTypesResult, customerBusinessTypesResult, customerStatusesResult, freightLevelsResult, freightLevelGroupsResult, freightCarriersResult, dropshipSettingsResult, primaryShowroomSettingsResult].find((result) => result.error);
+  const failedResult = [warehousesResult, deactivatedWarehousesResult, territoriesResult, brandsResult, suitesResult, stylesResult, categoriesResult, materialsResult, finishesResult, partRolesResult, customerAccountTypesResult, customerBusinessTypesResult, customerStatusesResult, freightLevelsResult, freightLevelGroupsResult, freightCarriersResult, dropshipSettingsResult, primaryShowroomSettingsResult, purchasingTariffRateResult, purchasingCommitmentResult].find((result) => result.error);
   if (failedResult?.error) throw new Error(failedResult.error.message);
 
   const warehouses = warehousesResult.data ?? [];
@@ -44,8 +47,10 @@ export async function AdminDashboard({ assignStyleAction, deactivateCustomerSett
   const dropshipRatePercent = Number(dropshipSettings?.ratePercent ?? 0);
   const residentialSurchargeRatePercent = Number(dropshipSettings?.residentialSurchargeRatePercent ?? 0);
   const primaryShowroomBacktrackPeriod = Number(primaryShowroomSettingsResult.data?.setting_value ?? 12);
+  const purchasingTariffRatePercent = Number(purchasingTariffRateResult.data?.setting_value ?? 39);
+  const purchasingCommitment = String(purchasingCommitmentResult.data?.setting_value ?? "By accepting this purchase order, the vendor confirms its commitment to complete production by the stated Expected Ready Date. Delays may be subject to a late-performance charge of up to 1% of the applicable purchase-order value for each day of delay, subject to the agreed terms between Terracotta Designs / Kanova & Co. and the vendor.");
 
-  const activeTab: AdminTab = selectedTab === "products" || selectedTab === "warehouse" || selectedTab === "territory" || selectedTab === "customers" || selectedTab === "freight" ? selectedTab : "users";
+  const activeTab: AdminTab = selectedTab === "products" || selectedTab === "warehouse" || selectedTab === "territory" || selectedTab === "customers" || selectedTab === "freight" || selectedTab === "purchasing" ? selectedTab : "users";
 
   return <section className="dashboard-panel">
     <section className="account-header"><div><span className="eyebrow">System Administration</span><h2>Admin Dashboard</h2><p className="fieldset-note">Central register for operational setup, shared lists, and user access.</p></div></section>
@@ -56,6 +61,7 @@ export async function AdminDashboard({ assignStyleAction, deactivateCustomerSett
       <Link aria-current={activeTab === "territory" ? "page" : undefined} href="/?module=admin&admin_tab=territory">Territory Settings</Link>
       <Link aria-current={activeTab === "customers" ? "page" : undefined} href="/?module=admin&admin_tab=customers">Customer Settings</Link>
       <Link aria-current={activeTab === "freight" ? "page" : undefined} href="/?module=admin&admin_tab=freight">Freight Settings</Link>
+      <Link aria-current={activeTab === "purchasing" ? "page" : undefined} href="/?module=admin&admin_tab=purchasing">Purchasing</Link>
     </section>
     <section className="section-stack">
       <article className={activeTab === "warehouse" ? "data-section" : "data-section tab-panel-hidden"}>
@@ -72,6 +78,7 @@ export async function AdminDashboard({ assignStyleAction, deactivateCustomerSett
         {selectedFreightTab === "carriers" ? <FreightCarrierManager carriers={freightCarriersResult.data ?? []} error={error} saveAction={saveFreightCarrierAction} /> : selectedFreightTab === "dropship" ? <DropshipSettingsManager error={error} isActive={dropshipSettings?.isActive !== false} ratePercent={Number.isFinite(dropshipRatePercent) ? dropshipRatePercent : 0} residentialSurchargeActive={dropshipSettings?.residentialSurchargeActive === true} residentialSurchargeRatePercent={Number.isFinite(residentialSurchargeRatePercent) ? residentialSurchargeRatePercent : 0} saveAction={saveDropshipSettingsAction} /> : <FreightLevelManager accountTypes={customerAccountTypesResult.data ?? []} error={error} freightLevels={freightLevelsResult.data ?? []} groups={freightLevelGroupsResult.data ?? []} saveAction={saveFreightLevelAction} />}
       </article>
       <article className={activeTab === "products" ? "data-section tab-panel--flush" : "data-section tab-panel-hidden"}><ProductSettingsManager assignStyleAction={assignStyleAction} brands={brandsResult.data ?? []} categories={categoriesResult.data ?? []} deactivateAction={deactivateProductSettingAction} error={error} finishes={finishesResult.data ?? []} materials={materialsResult.data ?? []} partRoles={partRolesResult.data ?? []} saveAction={saveProductSettingAction} styles={stylesResult.data ?? []} suites={suitesResult.data ?? []} /></article>
+      <article className={activeTab === "purchasing" ? "data-section tab-panel--flush" : "data-section tab-panel-hidden"}><PurchasingSettingsManager commitment={purchasingCommitment} error={error} saveAction={savePurchasingSettingsAction} tariffRatePercent={Number.isFinite(purchasingTariffRatePercent) ? purchasingTariffRatePercent : 39} /></article>
       <article className={activeTab === "users" ? "data-section" : "data-section tab-panel-hidden"}><div className="section-title"><h3>Users and Access Roles</h3></div><p className="fieldset-note">User accounts and security roles are intentionally protected from the general application database role. This tab reserves the management area; its controlled user-administration screen will be added with the required access policy.</p></article>
     </section>
   </section>;

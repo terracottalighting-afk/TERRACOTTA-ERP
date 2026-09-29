@@ -2144,6 +2144,47 @@ async function savePrimaryShowroomSettingsAction(formData: FormData) {
   redirect("/?module=admin&admin_tab=customers");
 }
 
+async function savePurchasingSettingsAction(formData: FormData) {
+  "use server";
+  const tariffRateText = textValue(formData, "import_tariff_rate_percent");
+  const tariffRatePercent = Number(tariffRateText);
+  const commitment = textValue(formData, "vendor_production_commitment");
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=purchasing&error=${encodeURIComponent(message)}`;
+
+  if (!tariffRateText || !Number.isFinite(tariffRatePercent) || tariffRatePercent < 0 || tariffRatePercent > 100) {
+    redirect(errorUrl("Enter an import tariff rate between 0% and 100%."));
+  }
+  if (!commitment) redirect(errorUrl("Enter the vendor production commitment."));
+
+  const supabase = createSupabaseUntypedAdminClient();
+  const [tariffResult, commitmentResult] = await Promise.all([
+    supabase.from("system_setting").upsert({
+      category: "purchasing",
+      default_value_json: 39,
+      description: "Default expected import tariff rate used for purchase-order cost planning.",
+      setting_key: "purchasing_import_tariff_rate_percent",
+      setting_label: "Import Tariff Rate",
+      setting_value: tariffRatePercent,
+      validation_json: { maximum: 100, minimum: 0, type: "number" },
+      value_type: "number",
+    }, { onConflict: "setting_key" }),
+    supabase.from("system_setting").upsert({
+      category: "purchasing",
+      default_value_json: "By accepting this purchase order, the vendor confirms its commitment to complete production by the stated Expected Ready Date. Delays may be subject to a late-performance charge of up to 1% of the applicable purchase-order value for each day of delay, subject to the agreed terms between Terracotta Designs / Kanova & Co. and the vendor.",
+      description: "Vendor-facing production commitment displayed at the bottom of purchase-order sheets.",
+      setting_key: "purchasing_vendor_production_commitment",
+      setting_label: "Vendor Production Commitment",
+      setting_value: commitment,
+      validation_json: { minLength: 1, type: "string" },
+      value_type: "string",
+    }, { onConflict: "setting_key" }),
+  ]);
+  const error = tariffResult.error ?? commitmentResult.error;
+  if (error) redirect(errorUrl(error.message));
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=purchasing");
+}
+
 async function resolveShipmentCarrier(formData: FormData) {
   if (formData.get("use_customer_carriers") === "on") {
     const selection = textValue(formData, "customer_carrier_selection");
@@ -15496,7 +15537,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
+          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

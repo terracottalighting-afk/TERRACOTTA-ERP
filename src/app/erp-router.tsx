@@ -13213,6 +13213,7 @@ async function createVendorPurchaseOrderAction(formData: FormData) {
     expected_ready_date: textValue(formData, "expected_ready_date") || null,
     expected_ship_date: textValue(formData, "expected_ship_date") || null,
     expected_arrival_date: textValue(formData, "expected_arrival_date") || null,
+    expected_available_date: textValue(formData, "expected_available_date") || null,
     status: "draft",
     currency: vendor!.price_currency ?? vendor!.currency ?? "USD",
     vendor_name_snapshot: vendor!.name,
@@ -13302,6 +13303,7 @@ async function updateVendorPurchaseOrderScheduleAction(formData: FormData) {
     expected_ready_date: textValue(formData, "expected_ready_date") || null,
     expected_ship_date: textValue(formData, "expected_ship_date") || null,
     expected_arrival_date: textValue(formData, "expected_arrival_date") || null,
+    expected_available_date: textValue(formData, "expected_available_date") || null,
   }).eq("id", purchaseOrderId).eq("status", "draft");
   if (error) fail(error.message);
   revalidatePath("/");
@@ -13374,7 +13376,23 @@ async function confirmVendorPurchaseOrderAction(formData: FormData) {
   const expectedShipDate = textValue(formData, "expected_ship_date");
   const expectedAvailableDate = textValue(formData, "expected_available_date");
   if (!purchaseOrderId || !expectedReadyDate || !expectedShipDate || !expectedAvailableDate) fail("Enter the confirmed ready, ship, and available dates.");
-  const { error } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").update({ expected_ready_date: expectedReadyDate, expected_ship_date: expectedShipDate, expected_available_date: expectedAvailableDate, status: "in_production", vendor_confirmed_at: new Date().toISOString() }).eq("id", purchaseOrderId).eq("status", "for_vendor_confirmation");
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("vendor_po_number").eq("id", purchaseOrderId).eq("status", "for_vendor_confirmation").maybeSingle();
+  if (orderError || !order) fail(orderError?.message ?? "This PO is no longer awaiting vendor confirmation.");
+  const { data: lines, error: linesError } = await supabase.from("vendor_purchase_order_line").select("id, product_id, quantity_ordered").eq("vendor_purchase_order_id", purchaseOrderId);
+  if (linesError || !lines?.length) fail(linesError?.message ?? "This purchase order has no products to confirm.");
+  const lineIds = lines!.map((line) => line.id);
+  const { data: existingIncoming, error: existingIncomingError } = await supabase.from("incoming_inventory").select("id, vendor_purchase_order_line_id").in("vendor_purchase_order_line_id", lineIds).in("status", ["expected", "in_transit"]);
+  if (existingIncomingError) fail(existingIncomingError.message);
+  const existingLineIds = new Set((existingIncoming ?? []).flatMap((row) => row.vendor_purchase_order_line_id ? [row.vendor_purchase_order_line_id] : []));
+  const { error: incomingUpdateError } = await supabase.from("incoming_inventory").update({ expected_date: expectedAvailableDate }).in("vendor_purchase_order_line_id", lineIds).in("status", ["expected", "in_transit"]);
+  if (incomingUpdateError) fail(incomingUpdateError.message);
+  const incomingRows = lines!.filter((line) => !existingLineIds.has(line.id)).map((line) => ({ product_id: line.product_id, vendor_purchase_order_line_id: line.id, expected_quantity: line.quantity_ordered, expected_date: expectedAvailableDate, status: "expected", source_reference: `Vendor PO ${order!.vendor_po_number}` }));
+  if (incomingRows.length) {
+    const { error: incomingInsertError } = await supabase.from("incoming_inventory").insert(incomingRows);
+    if (incomingInsertError) fail(incomingInsertError.message);
+  }
+  const { error } = await supabase.from("vendor_purchase_order").update({ expected_ready_date: expectedReadyDate, expected_ship_date: expectedShipDate, expected_available_date: expectedAvailableDate, status: "in_production", vendor_confirmed_at: new Date().toISOString() }).eq("id", purchaseOrderId).eq("status", "for_vendor_confirmation");
   if (error) fail(error.message);
   revalidatePath("/");
   redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}`);

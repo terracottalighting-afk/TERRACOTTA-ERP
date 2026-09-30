@@ -15519,6 +15519,7 @@ export async function ErpRouter({
           />
         ) : activeModule === "vendor-purchase-order" ? await (async () => {
           const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;
+          if (workspace?.order.status === "in_production") redirect(`/?module=vendor-purchase-order-review&purchase_order=${workspace.order.id}`);
           return <PurchaseOrderLinesEditor addLineAction={addVendorPurchaseOrderLineAction} deleteLineAction={deleteVendorPurchaseOrderLineAction} editingLineId={params.po_line} editingSchedule={params.po_edit === "schedule"} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} products={workspace?.products ?? []} updateLineAction={updateVendorPurchaseOrderLineAction} updateScheduleAction={updateVendorPurchaseOrderScheduleAction} />;
         })() : activeModule === "vendor-purchase-order-review" ? await (async () => {
           const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;

@@ -29,6 +29,7 @@ import { PurchasingDashboard } from "@/components/purchasing/purchasing-dashboar
 import { PurchaseOrderEditor } from "@/components/purchasing/purchase-order-editor";
 import { PurchaseOrderLinesEditor } from "@/components/purchasing/purchase-order-lines-editor";
 import { PurchaseOrderReview } from "@/components/purchasing/purchase-order-review";
+import { PurchaseOrderProductionUpdate } from "@/components/purchasing/purchase-order-production-update";
 import { VendorPurchaseOrderDocumentPage } from "@/components/purchasing/vendor-purchase-order-document-page";
 import { VendorDashboard, type VendorDashboardData } from "@/components/purchasing/vendor-dashboard";
 import { VendorEditor } from "@/components/purchasing/vendor-editor";
@@ -13287,7 +13288,7 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
   if (!order) return null;
   const [{ data: vendorProducts, error: vendorProductsError }, { data: lines, error: linesError }, { data: vendorContact, error: vendorContactError }, { data: purchasingSettings, error: purchasingSettingsError }] = await Promise.all([
     supabase.from("vendor_product").select("id, product_id, vendor_item_number, unit_cost").eq("vendor_id", order.vendor_id).eq("is_active", true).order("vendor_item_number"),
-    supabase.from("vendor_purchase_order_line").select("id, product_sku_snapshot, product_name_snapshot, vendor_item_number_snapshot, quantity_ordered, unit_cost, line_total, expected_ready_date, notes").eq("vendor_purchase_order_id", order.id).order("created_at"),
+    supabase.from("vendor_purchase_order_line").select("id, product_sku_snapshot, product_name_snapshot, vendor_item_number_snapshot, quantity_ordered, unit_cost, line_total, expected_ready_date, notes, production_status, production_status_changed_at, quantity_exited_factory").eq("vendor_purchase_order_id", order.id).order("created_at"),
     supabase.from("vendor").select("email").eq("id", order.vendor_id).maybeSingle(),
     supabase.from("system_setting").select("setting_key, setting_value").in("setting_key", ["purchasing_import_tariff_rate_percent", "purchasing_vendor_production_commitment"]),
   ]);
@@ -13307,7 +13308,7 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
       const product = productById.get(vendorProduct.product_id);
       return product ? [{ id: vendorProduct.id, sku: product.sku, name: product.name, vendor_item_number: vendorProduct.vendor_item_number, unit_cost: Number(vendorProduct.unit_cost) }] : [];
     }),
-    lines: (lines ?? []).map((line) => ({ id: line.id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, vendor_item_number: line.vendor_item_number_snapshot, quantity_ordered: Number(line.quantity_ordered), unit_cost: Number(line.unit_cost), line_total: Number(line.line_total), expected_ready_date: line.expected_ready_date, notes: line.notes })),
+    lines: (lines ?? []).map((line) => ({ id: line.id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, vendor_item_number: line.vendor_item_number_snapshot, quantity_ordered: Number(line.quantity_ordered), unit_cost: Number(line.unit_cost), line_total: Number(line.line_total), expected_ready_date: line.expected_ready_date, notes: line.notes, production_status: line.production_status, production_status_changed_at: line.production_status_changed_at, quantity_exited_factory: Number(line.quantity_exited_factory ?? 0) })),
     purchasingSettings: { tariffRatePercent, vendorProductionCommitment },
   };
 }
@@ -13451,6 +13452,27 @@ async function confirmVendorPurchaseOrderAction(formData: FormData) {
   if (error) fail(error.message);
   revalidatePath("/");
   redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}`);
+}
+
+async function updateVendorPurchaseOrderLineProductionAction(formData: FormData) {
+  "use server";
+  const purchaseOrderId = textValue(formData, "purchase_order_id");
+  const lineId = textValue(formData, "line_id");
+  const productionStatus = textValue(formData, "production_status");
+  const fail = (message: string) => redirect(`/?module=vendor-purchase-order-production&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  const allowedStatuses = ["in_production", "complete", "qa_pass", "qa_failed", "exit_factory"];
+  if (!purchaseOrderId || !lineId || !allowedStatuses.includes(productionStatus)) fail("Choose a valid production status.");
+
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).eq("status", "in_production").maybeSingle();
+  if (orderError || !order) fail(orderError?.message ?? "Only purchase orders in production can receive production updates.");
+  const changedAt = new Date().toISOString();
+  const { error: updateError } = await supabase.from("vendor_purchase_order_line").update({ production_status: productionStatus, production_status_changed_at: changedAt }).eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId);
+  if (updateError) fail(updateError.message);
+  const { error: historyError } = await supabase.from("vendor_purchase_order_line_production_event").insert({ vendor_purchase_order_line_id: lineId, production_status: productionStatus, changed_at: changedAt });
+  if (historyError) fail(historyError.message);
+  revalidatePath("/");
+  redirect(`/?module=vendor-purchase-order-production&purchase_order=${purchaseOrderId}`);
 }
 
 async function createVendorAction(formData: FormData) {
@@ -15501,6 +15523,9 @@ export async function ErpRouter({
         })() : activeModule === "vendor-purchase-order-review" ? await (async () => {
           const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;
           return <PurchaseOrderReview decisionAction={reviewVendorPurchaseOrderAction} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} showVendorConfirmation={params.po_vendor_confirmation === "1"} submitForReviewAction={submitVendorPurchaseOrderForReviewAction} tariffRatePercent={workspace?.purchasingSettings.tariffRatePercent ?? DEFAULT_IMPORT_TARIFF_RATE_PERCENT} vendorConfirmationAction={confirmVendorPurchaseOrderAction} />;
+        })() : activeModule === "vendor-purchase-order-production" ? await (async () => {
+          const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;
+          return <PurchaseOrderProductionUpdate error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} saveAction={updateVendorPurchaseOrderLineProductionAction} />;
         })() : activeModule === "vendor-purchase-order-document" ? await (async () => {
           const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;
           return <VendorPurchaseOrderDocumentPage lines={workspace?.lines ?? []} order={workspace?.order ?? null} tariffRatePercent={workspace?.purchasingSettings.tariffRatePercent ?? DEFAULT_IMPORT_TARIFF_RATE_PERCENT} vendorProductionCommitment={workspace?.purchasingSettings.vendorProductionCommitment ?? DEFAULT_VENDOR_PRODUCTION_COMMITMENT} />;

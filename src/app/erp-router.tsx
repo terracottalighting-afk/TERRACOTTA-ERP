@@ -15532,6 +15532,7 @@ export async function ErpRouter({
           <PurchaseOrderEditor
             error={params.error}
             saveAction={createVendorPurchaseOrderAction}
+            selectedVendorId={params.vendor}
             vendors={await getActivePurchaseOrderVendors()}
           />
         ) : activeModule === "vendor-purchase-order" ? await (async () => {

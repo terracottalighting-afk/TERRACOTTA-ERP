@@ -13287,7 +13287,7 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
   if (!order) return null;
   const [{ data: vendorProducts, error: vendorProductsError }, { data: lines, error: linesError }, { data: vendorContact, error: vendorContactError }, { data: purchasingSettings, error: purchasingSettingsError }] = await Promise.all([
     supabase.from("vendor_product").select("id, product_id, vendor_item_number, unit_cost").eq("vendor_id", order.vendor_id).eq("is_active", true).order("vendor_item_number"),
-    supabase.from("vendor_purchase_order_line").select("id, product_sku_snapshot, product_name_snapshot, vendor_item_number_snapshot, quantity_ordered, unit_cost, line_total, expected_ready_date, notes, production_status, production_status_changed_at, quantity_exited_factory").eq("vendor_purchase_order_id", order.id).order("created_at"),
+    supabase.from("vendor_purchase_order_line").select("id, product_sku_snapshot, product_name_snapshot, vendor_item_number_snapshot, quantity_ordered, unit_cost, line_total, expected_ready_date, notes, production_status, production_status_changed_at, quantity_exited_factory, cancellation_reason").eq("vendor_purchase_order_id", order.id).order("created_at"),
     supabase.from("vendor").select("email").eq("id", order.vendor_id).maybeSingle(),
     supabase.from("system_setting").select("setting_key, setting_value").in("setting_key", ["purchasing_import_tariff_rate_percent", "purchasing_vendor_production_commitment"]),
   ]);
@@ -13307,7 +13307,7 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
       const product = productById.get(vendorProduct.product_id);
       return product ? [{ id: vendorProduct.id, sku: product.sku, name: product.name, vendor_item_number: vendorProduct.vendor_item_number, unit_cost: Number(vendorProduct.unit_cost) }] : [];
     }),
-    lines: (lines ?? []).map((line) => ({ id: line.id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, vendor_item_number: line.vendor_item_number_snapshot, quantity_ordered: Number(line.quantity_ordered), unit_cost: Number(line.unit_cost), line_total: Number(line.line_total), expected_ready_date: line.expected_ready_date, notes: line.notes, production_status: line.production_status, production_status_changed_at: line.production_status_changed_at, quantity_exited_factory: Number(line.quantity_exited_factory ?? 0) })),
+    lines: (lines ?? []).map((line) => ({ id: line.id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, vendor_item_number: line.vendor_item_number_snapshot, quantity_ordered: Number(line.quantity_ordered), unit_cost: Number(line.unit_cost), line_total: Number(line.line_total), expected_ready_date: line.expected_ready_date, notes: line.notes, production_status: line.production_status, production_status_changed_at: line.production_status_changed_at, quantity_exited_factory: Number(line.quantity_exited_factory ?? 0), cancellation_reason: line.cancellation_reason })),
     purchasingSettings: { tariffRatePercent, vendorProductionCommitment },
   };
 }
@@ -13475,19 +13475,21 @@ async function updateVendorPurchaseOrderLineProductionAction(formData: FormData)
   const purchaseOrderId = textValue(formData, "purchase_order_id");
   const lineId = textValue(formData, "line_id");
   const productionStatus = textValue(formData, "production_status");
-  const fail = (message: string) => redirect(`/?module=vendor-purchase-order-production&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
-  const allowedStatuses = ["in_production", "complete", "qa_pass", "qa_failed", "exit_factory"];
-  if (!purchaseOrderId || !lineId || !allowedStatuses.includes(productionStatus)) fail("Choose a valid production status.");
+  const cancellationReason = textValue(formData, "cancellation_reason");
+  const fail = (message: string) => ({ error: message });
+  const allowedStatuses = ["in_production", "complete", "qa_pass", "qa_failed", "exit_factory", "cancelled"];
+  if (!purchaseOrderId || !lineId || !allowedStatuses.includes(productionStatus)) return fail("Choose a valid production status.");
+  if (productionStatus === "cancelled" && !cancellationReason) return fail("Enter a reason for cancelling this product line.");
 
   const supabase = createSupabaseUntypedAdminClient();
   const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).eq("status", "in_production").maybeSingle();
-  if (orderError || !order) fail(orderError?.message ?? "Only purchase orders in production can receive production updates.");
+  if (orderError || !order) return fail(orderError?.message ?? "Only purchase orders in production can receive production updates.");
   const changedAt = new Date().toISOString();
-  const { error: updateError } = await supabase.from("vendor_purchase_order_line").update({ production_status: productionStatus, production_status_changed_at: changedAt }).eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId);
-  if (updateError) fail(updateError.message);
-  const { error: historyError } = await supabase.from("vendor_purchase_order_line_production_event").insert({ vendor_purchase_order_line_id: lineId, production_status: productionStatus, changed_at: changedAt });
-  if (historyError) fail(historyError.message);
-  redirect(`/?module=vendor-purchase-order-production&purchase_order=${purchaseOrderId}`);
+  const { error: updateError } = await supabase.from("vendor_purchase_order_line").update({ production_status: productionStatus, production_status_changed_at: changedAt, cancellation_reason: productionStatus === "cancelled" ? cancellationReason : null }).eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId);
+  if (updateError) return fail(updateError.message);
+  const { error: historyError } = await supabase.from("vendor_purchase_order_line_production_event").insert({ vendor_purchase_order_line_id: lineId, production_status: productionStatus, changed_at: changedAt, notes: productionStatus === "cancelled" ? cancellationReason : null });
+  if (historyError) return fail(historyError.message);
+  return { destination: `/?module=vendor-purchase-order-production&purchase_order=${purchaseOrderId}` };
 }
 
 async function createVendorAction(formData: FormData) {
@@ -13560,7 +13562,7 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
   const purchaseOrderById = new Map((ordersResult.data ?? []).map((order) => [order.id, order]));
   const balanceLines = (linesResult.data ?? []).flatMap((line) => {
     const order = purchaseOrderById.get(line.vendor_purchase_order_id);
-    if (!order || ["closed", "cancelled"].includes(order.status)) return [];
+    if (!order || ["closed", "cancelled"].includes(order.status) || line.production_status === "cancelled") return [];
     const orderedQuantity = Number(line.quantity_ordered ?? 0);
     const exitedFactoryQuantity = Number(line.quantity_exited_factory ?? 0);
     const balanceInFactory = Math.max(0, orderedQuantity - exitedFactoryQuantity);

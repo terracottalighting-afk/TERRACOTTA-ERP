@@ -13341,7 +13341,6 @@ async function addVendorPurchaseOrderLineAction(formData: FormData) {
     notes: textValue(formData, "notes") || null,
   });
   if (error) fail(error.message);
-  revalidatePath("/");
   redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
 }
 
@@ -13361,7 +13360,6 @@ async function updateVendorPurchaseOrderScheduleAction(formData: FormData) {
     freight_amount: freightAmount,
   }).eq("id", purchaseOrderId).eq("status", "draft");
   if (error) fail(error.message);
-  revalidatePath("/");
   redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
 }
 
@@ -13377,7 +13375,6 @@ async function updateVendorPurchaseOrderLineAction(formData: FormData) {
   if (orderError || !order) fail(orderError?.message ?? "Only draft purchase orders can be edited.");
   const { error } = await supabase.from("vendor_purchase_order_line").update({ quantity_ordered: quantityOrdered, expected_ready_date: textValue(formData, "expected_ready_date") || null, notes: textValue(formData, "notes") || null }).eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId);
   if (error) fail(error.message);
-  revalidatePath("/");
   redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
 }
 
@@ -13392,7 +13389,6 @@ async function deleteVendorPurchaseOrderLineAction(formData: FormData) {
   if (orderError || !order) fail(orderError?.message ?? "Only draft purchase orders can be edited.");
   const { error } = await supabase.from("vendor_purchase_order_line").delete().eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId);
   if (error) fail(error.message);
-  revalidatePath("/");
   redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
 }
 
@@ -13405,7 +13401,6 @@ async function submitVendorPurchaseOrderForReviewAction(formData: FormData) {
   if (lineError || !count) fail(lineError?.message ?? "Add at least one product before sending this PO for review.");
   const { error } = await supabase.from("vendor_purchase_order").update({ status: "ready_for_review" }).eq("id", purchaseOrderId).eq("status", "draft");
   if (error) fail(error.message);
-  revalidatePath("/");
   redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}`);
 }
 
@@ -13419,7 +13414,6 @@ async function reviewVendorPurchaseOrderAction(formData: FormData) {
   if (decision === "reject" && !reviewNotes) fail("Add review notes when rejecting a purchase order.");
   const { error } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").update({ status: decision === "approve" ? "for_vendor_confirmation" : "draft", review_notes: reviewNotes, reviewed_at: new Date().toISOString() }).eq("id", purchaseOrderId).eq("status", "ready_for_review");
   if (error) fail(error.message);
-  revalidatePath("/");
   redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}`);
 }
 
@@ -13449,7 +13443,6 @@ async function confirmVendorPurchaseOrderAction(formData: FormData) {
   }
   const { error } = await supabase.from("vendor_purchase_order").update({ expected_ready_date: expectedReadyDate, expected_ship_date: expectedShipDate, expected_available_date: expectedAvailableDate, status: "in_production", vendor_confirmed_at: new Date().toISOString() }).eq("id", purchaseOrderId).eq("status", "for_vendor_confirmation");
   if (error) fail(error.message);
-  revalidatePath("/");
   redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}`);
 }
 
@@ -13470,7 +13463,6 @@ async function updateVendorPurchaseOrderLineProductionAction(formData: FormData)
   if (updateError) fail(updateError.message);
   const { error: historyError } = await supabase.from("vendor_purchase_order_line_production_event").insert({ vendor_purchase_order_line_id: lineId, production_status: productionStatus, changed_at: changedAt });
   if (historyError) fail(historyError.message);
-  revalidatePath("/");
   redirect(`/?module=vendor-purchase-order-production&purchase_order=${purchaseOrderId}`);
 }
 

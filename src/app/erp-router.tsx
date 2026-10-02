@@ -13337,6 +13337,7 @@ async function addVendorPurchaseOrderLineAction(formData: FormData) {
     product_name_snapshot: product!.name,
     quantity_ordered: quantityOrdered,
     unit_cost: vendorProduct!.unit_cost,
+    production_status: "pending_approval",
     expected_ready_date: textValue(formData, "expected_ready_date") || null,
     notes: textValue(formData, "notes") || null,
   });
@@ -13441,7 +13442,12 @@ async function confirmVendorPurchaseOrderAction(formData: FormData) {
     const { error: incomingInsertError } = await supabase.from("incoming_inventory").insert(incomingRows);
     if (incomingInsertError) fail(incomingInsertError.message);
   }
-  const { error } = await supabase.from("vendor_purchase_order").update({ expected_ready_date: expectedReadyDate, expected_ship_date: expectedShipDate, expected_available_date: expectedAvailableDate, status: "in_production", vendor_confirmed_at: new Date().toISOString() }).eq("id", purchaseOrderId).eq("status", "for_vendor_confirmation");
+  const productionStartedAt = new Date().toISOString();
+  const { error: productionLineError } = await supabase.from("vendor_purchase_order_line").update({ production_status: "in_production", production_status_changed_at: productionStartedAt }).eq("vendor_purchase_order_id", purchaseOrderId);
+  if (productionLineError) fail(productionLineError.message);
+  const { error: productionEventError } = await supabase.from("vendor_purchase_order_line_production_event").insert(lines!.map((line) => ({ vendor_purchase_order_line_id: line.id, production_status: "in_production", changed_at: productionStartedAt })));
+  if (productionEventError) fail(productionEventError.message);
+  const { error } = await supabase.from("vendor_purchase_order").update({ expected_ready_date: expectedReadyDate, expected_ship_date: expectedShipDate, expected_available_date: expectedAvailableDate, status: "in_production", vendor_confirmed_at: productionStartedAt }).eq("id", purchaseOrderId).eq("status", "for_vendor_confirmation");
   if (error) fail(error.message);
   redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}`);
 }

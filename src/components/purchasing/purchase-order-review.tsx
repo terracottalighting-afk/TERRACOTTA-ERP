@@ -7,8 +7,8 @@ type Order = { id: string; vendor_id: string; vendor_po_number: string; vendor_n
 type Line = { id: string; sku: string; name: string; vendor_item_number: string; quantity_ordered: number; quantity_exited_factory: number; production_status: string; unit_cost: number; line_total: number };
 
 const dateValue = (value: string | null) => value || "Not set";
-const productionStatusLabel = (status: string) => ({ in_production: "In Production", complete: "Complete", qa_pass: "QA Pass", qa_failed: "QA Failed", exit_factory: "Exit Factory" }[status] ?? status);
-const productionStatusTone = (status: string) => status === "qa_failed" ? "danger" : status === "qa_pass" || status === "complete" || status === "exit_factory" ? "good" : "primary";
+const productionStatusLabel = (status: string) => ({ pending_approval: "Pending Approval", in_production: "In Production", complete: "Complete", qa_pass: "QA Pass", qa_failed: "QA Failed", exit_factory: "Exit Factory" }[status] ?? status);
+const productionStatusTone = (status: string) => status === "qa_failed" ? "danger" : status === "qa_pass" || status === "complete" || status === "exit_factory" ? "good" : status === "pending_approval" ? "neutral" : "primary";
 
 export function PurchaseOrderReview({ decisionAction, error, lines, order, showVendorConfirmation, submitForReviewAction, tariffRatePercent, vendorConfirmationAction }: { decisionAction: (formData: FormData) => Promise<void>; error?: string; lines: Line[]; order: Order | null; showVendorConfirmation: boolean; submitForReviewAction: (formData: FormData) => Promise<void>; tariffRatePercent: number; vendorConfirmationAction: (formData: FormData) => Promise<void> }) {
   if (!order) return <section className="dashboard-panel"><div className="form-alert">Purchase order was not found.</div><Link className="secondary-action secondary-action--light" href="/?module=purchasing">Back to Purchasing</Link></section>;

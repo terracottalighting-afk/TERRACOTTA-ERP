@@ -13312,6 +13312,8 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
   };
 }
 
+const PRE_VENDOR_CONFIRMATION_EDITABLE_PO_STATUSES = ["draft", "ready_for_review", "for_vendor_confirmation"];
+
 async function addVendorPurchaseOrderLineAction(formData: FormData) {
   "use server";
   const purchaseOrderId = textValue(formData, "purchase_order_id");
@@ -13321,7 +13323,7 @@ async function addVendorPurchaseOrderLineAction(formData: FormData) {
   if (!purchaseOrderId || !vendorProductId || !Number.isFinite(quantityOrdered) || quantityOrdered <= 0) fail("Select a product and enter a quantity greater than zero.");
   const supabase = createSupabaseUntypedAdminClient();
   const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("vendor_id, status").eq("id", purchaseOrderId).maybeSingle();
-  if (orderError || !order || order.status !== "draft") fail(orderError?.message ?? "Only draft purchase orders can be edited.");
+  if (orderError || !order || !PRE_VENDOR_CONFIRMATION_EDITABLE_PO_STATUSES.includes(order.status)) fail(orderError?.message ?? "Purchase orders can be edited until vendor confirmation is saved.");
   const { data: vendorProduct, error: vendorProductError } = await supabase.from("vendor_product").select("product_id, vendor_item_number, vendor_item_name, unit_cost").eq("id", vendorProductId).eq("vendor_id", order!.vendor_id).eq("is_active", true).maybeSingle();
   if (vendorProductError || !vendorProduct) fail(vendorProductError?.message ?? "Vendor product was not found.");
   const { data: product, error: productError } = await supabase.from("product").select("sku, name, brand_id").eq("id", vendorProduct!.product_id).maybeSingle();
@@ -13337,7 +13339,7 @@ async function addVendorPurchaseOrderLineAction(formData: FormData) {
     product_name_snapshot: product!.name,
     quantity_ordered: quantityOrdered,
     unit_cost: vendorProduct!.unit_cost,
-    production_status: "pending_approval",
+    production_status: order!.status === "for_vendor_confirmation" ? "pending_vendor_confirmation" : "pending_approval",
     expected_ready_date: textValue(formData, "expected_ready_date") || null,
     notes: textValue(formData, "notes") || null,
   });
@@ -13352,6 +13354,8 @@ async function updateVendorPurchaseOrderScheduleAction(formData: FormData) {
   if (!purchaseOrderId || !textValue(formData, "po_date")) fail("A PO date is required.");
   const freightAmount = Number(textValue(formData, "freight_amount") || 0);
   if (!Number.isFinite(freightAmount) || freightAmount < 0) fail("Expected freight cost must be zero or greater.");
+  const { data: order, error: orderError } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).in("status", PRE_VENDOR_CONFIRMATION_EDITABLE_PO_STATUSES).maybeSingle();
+  if (orderError || !order) fail(orderError?.message ?? "Purchase orders can be edited until vendor confirmation is saved.");
   const { error } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").update({
     po_date: textValue(formData, "po_date"),
     expected_ready_date: textValue(formData, "expected_ready_date") || null,
@@ -13359,7 +13363,7 @@ async function updateVendorPurchaseOrderScheduleAction(formData: FormData) {
     expected_arrival_date: textValue(formData, "expected_arrival_date") || null,
     expected_available_date: textValue(formData, "expected_available_date") || null,
     freight_amount: freightAmount,
-  }).eq("id", purchaseOrderId).eq("status", "draft");
+  }).eq("id", purchaseOrderId).in("status", PRE_VENDOR_CONFIRMATION_EDITABLE_PO_STATUSES);
   if (error) fail(error.message);
   redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
 }
@@ -13372,8 +13376,8 @@ async function updateVendorPurchaseOrderLineAction(formData: FormData) {
   const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
   if (!purchaseOrderId || !lineId || !Number.isFinite(quantityOrdered) || quantityOrdered <= 0) fail("Enter a quantity greater than zero.");
   const supabase = createSupabaseUntypedAdminClient();
-  const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).eq("status", "draft").maybeSingle();
-  if (orderError || !order) fail(orderError?.message ?? "Only draft purchase orders can be edited.");
+  const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).in("status", PRE_VENDOR_CONFIRMATION_EDITABLE_PO_STATUSES).maybeSingle();
+  if (orderError || !order) fail(orderError?.message ?? "Purchase orders can be edited until vendor confirmation is saved.");
   const { error } = await supabase.from("vendor_purchase_order_line").update({ quantity_ordered: quantityOrdered, expected_ready_date: textValue(formData, "expected_ready_date") || null, notes: textValue(formData, "notes") || null }).eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId);
   if (error) fail(error.message);
   redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
@@ -13386,8 +13390,8 @@ async function deleteVendorPurchaseOrderLineAction(formData: FormData) {
   const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
   if (!purchaseOrderId || !lineId) fail("The purchase order product was not found.");
   const supabase = createSupabaseUntypedAdminClient();
-  const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).eq("status", "draft").maybeSingle();
-  if (orderError || !order) fail(orderError?.message ?? "Only draft purchase orders can be edited.");
+  const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).in("status", PRE_VENDOR_CONFIRMATION_EDITABLE_PO_STATUSES).maybeSingle();
+  if (orderError || !order) fail(orderError?.message ?? "Purchase orders can be edited until vendor confirmation is saved.");
   const { error } = await supabase.from("vendor_purchase_order_line").delete().eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId);
   if (error) fail(error.message);
   redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);

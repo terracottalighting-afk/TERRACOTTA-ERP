@@ -13396,13 +13396,14 @@ async function deleteVendorPurchaseOrderLineAction(formData: FormData) {
 async function submitVendorPurchaseOrderForReviewAction(formData: FormData) {
   "use server";
   const purchaseOrderId = textValue(formData, "purchase_order_id");
-  const fail = (message: string) => redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  const fail = (message: string) => ({ error: message });
+  if (!purchaseOrderId) return fail("The purchase order could not be identified.");
   const supabase = createSupabaseUntypedAdminClient();
   const { count, error: lineError } = await supabase.from("vendor_purchase_order_line").select("id", { count: "exact", head: true }).eq("vendor_purchase_order_id", purchaseOrderId);
-  if (lineError || !count) fail(lineError?.message ?? "Add at least one product before sending this PO for review.");
+  if (lineError || !count) return fail(lineError?.message ?? "Add at least one product before sending this PO for review.");
   const { error } = await supabase.from("vendor_purchase_order").update({ status: "ready_for_review" }).eq("id", purchaseOrderId).eq("status", "draft");
-  if (error) fail(error.message);
-  redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}`);
+  if (error) return fail(error.message);
+  return { destination: `/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}` };
 }
 
 async function reviewVendorPurchaseOrderAction(formData: FormData) {

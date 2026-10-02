@@ -13414,7 +13414,20 @@ async function reviewVendorPurchaseOrderAction(formData: FormData) {
   if (!purchaseOrderId || !["approve", "reject"].includes(decision)) return fail("Choose approve or reject.");
   const reviewNotes = textValue(formData, "review_notes") || null;
   if (decision === "reject" && !reviewNotes) return fail("Add review notes when rejecting a purchase order.");
-  const { error } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").update({ status: decision === "approve" ? "for_vendor_confirmation" : "draft", review_notes: reviewNotes, reviewed_at: new Date().toISOString() }).eq("id", purchaseOrderId).eq("status", "ready_for_review");
+  const supabase = createSupabaseUntypedAdminClient();
+  const nextLineStatus = decision === "approve" ? "pending_vendor_confirmation" : "pending_approval";
+  const statusChangedAt = new Date().toISOString();
+  const { data: reviewableOrder, error: reviewableOrderError } = await supabase.from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).eq("status", "ready_for_review").maybeSingle();
+  if (reviewableOrderError || !reviewableOrder) return fail(reviewableOrderError?.message ?? "This purchase order is no longer awaiting review.");
+  const { data: lines, error: linesError } = await supabase.from("vendor_purchase_order_line").select("id").eq("vendor_purchase_order_id", purchaseOrderId);
+  if (linesError) return fail(linesError.message);
+  const { error: lineStatusError } = await supabase.from("vendor_purchase_order_line").update({ production_status: nextLineStatus, production_status_changed_at: statusChangedAt }).eq("vendor_purchase_order_id", purchaseOrderId);
+  if (lineStatusError) return fail(lineStatusError.message);
+  if (lines?.length) {
+    const { error: eventError } = await supabase.from("vendor_purchase_order_line_production_event").insert(lines.map((line) => ({ vendor_purchase_order_line_id: line.id, production_status: nextLineStatus, changed_at: statusChangedAt })));
+    if (eventError) return fail(eventError.message);
+  }
+  const { error } = await supabase.from("vendor_purchase_order").update({ status: decision === "approve" ? "for_vendor_confirmation" : "draft", review_notes: reviewNotes, reviewed_at: statusChangedAt }).eq("id", purchaseOrderId).eq("status", "ready_for_review");
   if (error) return fail(error.message);
   return { destination: `/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}` };
 }

@@ -5,7 +5,7 @@ import { PurchaseOrderStatus } from "./purchase-order-status";
 type Order = { id: string; vendor_id: string; vendor_po_number: string; vendor_name: string; currency: string; status: string };
 type Line = { id: string; sku: string; name: string; vendor_item_number: string; quantity_ordered: number; quantity_exited_factory: number; production_status: string; production_status_changed_at: string | null };
 
-const productionStatusLabel = (status: string) => ({ pending_approval: "Pending Approval", in_production: "In Production", complete: "Complete", qa_pass: "QA Pass", qa_failed: "QA Failed", exit_factory: "Exit Factory" }[status] ?? status);
+const productionStatusLabel = (status: string) => ({ pending_approval: "Pending Approval", pending_vendor_confirmation: "Pending Vendor Confirmation", in_production: "In Production", complete: "Complete", qa_pass: "QA Pass", qa_failed: "QA Failed", exit_factory: "Exit Factory" }[status] ?? status);
 
 export function PurchaseOrderProductionUpdate({ error, lines, order, saveAction }: { error?: string; lines: Line[]; order: Order | null; saveAction: (formData: FormData) => Promise<void> }) {
   if (!order) return <section className="dashboard-panel"><div className="form-alert">Purchase order was not found.</div><Link className="secondary-action secondary-action--light" href="/?module=purchasing">Back to Purchasing</Link></section>;

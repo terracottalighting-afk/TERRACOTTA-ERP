@@ -30,6 +30,8 @@ import { PurchaseOrderEditor } from "@/components/purchasing/purchase-order-edit
 import { PurchaseOrderLinesEditor } from "@/components/purchasing/purchase-order-lines-editor";
 import { PurchaseOrderReview } from "@/components/purchasing/purchase-order-review";
 import { PurchaseOrderProductionUpdate } from "@/components/purchasing/purchase-order-production-update";
+import { ContainerEditor } from "@/components/purchasing/container-editor";
+import { ContainerWorkspace } from "@/components/purchasing/container-workspace";
 import { VendorPurchaseOrderDocumentPage } from "@/components/purchasing/vendor-purchase-order-document-page";
 import { VendorDashboard, type VendorDashboardData } from "@/components/purchasing/vendor-dashboard";
 import { VendorEditor } from "@/components/purchasing/vendor-editor";
@@ -213,6 +215,8 @@ export type SearchParams = Promise<{
   shipment_edit?: string;
   packing_list?: string;
   purchase_order?: string;
+  container?: string;
+  container_po?: string;
   po_edit?: string;
   po_line?: string;
   po_vendor_confirmation?: string;
@@ -13216,6 +13220,89 @@ async function getPurchasingDashboard() {
   };
 }
 
+async function getContainerWorkspace(containerId: string, selectedPurchaseOrderId?: string) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const [{ data: container, error: containerError }, { data: orders, error: ordersError }, { data: containerLines, error: containerLinesError }] = await Promise.all([
+    supabase.from("import_container").select("id, container_number, booking_number, shipping_agency, shipping_agent_contact_email, vessel_name, expected_loading_date, actual_loading_date, etd, actual_vessel_departure_date, arrival_port, eta, arrival_date, tariff_broker_agency, broker_contact_name, broker_contact_email, container_status").eq("id", containerId).maybeSingle(),
+    supabase.from("vendor_purchase_order").select("id, vendor_po_number, vendor_name_snapshot, status").order("po_date", { ascending: false }),
+    supabase.from("import_container_line").select("id, vendor_purchase_order_line_id, product_id, quantity_packed").eq("import_container_id", containerId).eq("is_active", true),
+  ]);
+  if (containerError || ordersError || containerLinesError) throw new Error(containerError?.message ?? ordersError?.message ?? containerLinesError?.message);
+  if (!container) return null;
+
+  const activeOrders = (orders ?? []).filter((order) => !["closed", "cancelled"].includes(order.status));
+  const selectedOrder = activeOrders.find((order) => order.id === selectedPurchaseOrderId) ?? null;
+  const selectedLinesResult = selectedOrder ? await supabase.from("vendor_purchase_order_line").select("id, product_id, product_sku_snapshot, product_name_snapshot, quantity_ordered, quantity_exited_factory, production_status, unit_cost").eq("vendor_purchase_order_id", selectedOrder.id).order("created_at") : { data: [], error: null };
+  if (selectedLinesResult.error) throw new Error(selectedLinesResult.error.message);
+  const productIds = [...new Set((containerLines ?? []).map((line) => line.product_id))];
+  const productsResult = productIds.length ? await supabase.from("product").select("id, sku, name").in("id", productIds) : { data: [], error: null };
+  if (productsResult.error) throw new Error(productsResult.error.message);
+  const productById = new Map((productsResult.data ?? []).map((product) => [product.id, product]));
+
+  return {
+    container,
+    containerLines: (containerLines ?? []).map((line) => ({ id: line.id, sku: productById.get(line.product_id)?.sku ?? "Unknown", name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: Number(line.quantity_packed) })),
+    activeOrders,
+    selectedOrder,
+    selectedLines: (selectedLinesResult.data ?? []).filter((line) => line.production_status !== "cancelled" && Number(line.quantity_ordered) > Number(line.quantity_exited_factory ?? 0)).map((line) => ({ id: line.id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, quantity_available: Number(line.quantity_ordered) - Number(line.quantity_exited_factory ?? 0), unit_cost: Number(line.unit_cost) })),
+  };
+}
+
+async function createContainerAction(formData: FormData) {
+  "use server";
+  const containerNumber = textValue(formData, "container_number");
+  const fail = (message: string) => ({ error: message });
+  if (!containerNumber) return fail("Enter a container number.");
+  const { data, error } = await createSupabaseUntypedAdminClient().from("import_container").insert({
+    container_number: containerNumber,
+    booking_number: textValue(formData, "booking_number") || null,
+    shipping_agency: textValue(formData, "shipping_agency") || null,
+    shipping_agent_contact_email: textValue(formData, "shipping_agent_contact_email") || null,
+    vessel_name: textValue(formData, "vessel_name") || null,
+    expected_loading_date: textValue(formData, "expected_loading_date") || null,
+    actual_loading_date: textValue(formData, "actual_loading_date") || null,
+    etd: textValue(formData, "expected_vessel_departure_date") || null,
+    actual_vessel_departure_date: textValue(formData, "actual_vessel_departure_date") || null,
+    arrival_port: textValue(formData, "arrival_port") || null,
+    eta: textValue(formData, "expected_arrival_date") || null,
+    arrival_date: textValue(formData, "actual_arrival_date") || null,
+    tariff_broker_agency: textValue(formData, "tariff_broker_agency") || null,
+    broker_contact_name: textValue(formData, "broker_contact_name") || null,
+    broker_contact_email: textValue(formData, "broker_contact_email") || null,
+  }).select("id").single();
+  if (error || !data) return fail(error?.message ?? "The container could not be created.");
+  return { destination: `/?module=container&container=${data.id}` };
+}
+
+async function addContainerProductAction(formData: FormData) {
+  "use server";
+  const containerId = textValue(formData, "container_id");
+  const purchaseOrderId = textValue(formData, "purchase_order_id");
+  const lineId = textValue(formData, "purchase_order_line_id");
+  const quantity = Number(textValue(formData, "quantity_packed"));
+  const fail = (message: string) => ({ error: message });
+  if (!containerId || !purchaseOrderId || !lineId || !Number.isFinite(quantity) || quantity <= 0) return fail("Enter a quantity greater than zero.");
+  const supabase = createSupabaseUntypedAdminClient();
+  const [{ data: container, error: containerError }, { data: order, error: orderError }, { data: line, error: lineError }] = await Promise.all([
+    supabase.from("import_container").select("id, container_status").eq("id", containerId).maybeSingle(),
+    supabase.from("vendor_purchase_order").select("id, status").eq("id", purchaseOrderId).maybeSingle(),
+    supabase.from("vendor_purchase_order_line").select("id, product_id, quantity_ordered, quantity_exited_factory, production_status").eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId).maybeSingle(),
+  ]);
+  if (containerError || !container || ["closed", "cancelled"].includes(container?.container_status ?? "")) return fail(containerError?.message ?? "This container is no longer open for loading.");
+  if (orderError || !order || ["closed", "cancelled"].includes(order.status)) return fail(orderError?.message ?? "This purchase order is not available for container loading.");
+  if (lineError || !line || line.production_status === "cancelled") return fail(lineError?.message ?? "This product line is not available for container loading.");
+  const available = Number(line.quantity_ordered) - Number(line.quantity_exited_factory ?? 0);
+  if (quantity > available) return fail(`Only ${available} units remain available for this product line.`);
+  const { data: existingLine, error: existingLineError } = await supabase.from("import_container_line").select("id, quantity_packed").eq("import_container_id", containerId).eq("vendor_purchase_order_line_id", lineId).eq("is_active", true).maybeSingle();
+  if (existingLineError) return fail(existingLineError.message);
+  const lineWrite = existingLine ? supabase.from("import_container_line").update({ quantity_packed: Number(existingLine.quantity_packed) + quantity }).eq("id", existingLine.id) : supabase.from("import_container_line").insert({ import_container_id: containerId, vendor_purchase_order_line_id: lineId, product_id: line.product_id, quantity_packed: quantity });
+  const { error: lineWriteError } = await lineWrite;
+  if (lineWriteError) return fail(lineWriteError.message);
+  const { error: exitedQuantityError } = await supabase.from("vendor_purchase_order_line").update({ quantity_exited_factory: Number(line.quantity_exited_factory ?? 0) + quantity }).eq("id", lineId);
+  if (exitedQuantityError) return fail(exitedQuantityError.message);
+  return { destination: `/?module=container&container=${containerId}&container_po=${purchaseOrderId}` };
+}
+
 async function getActivePurchaseOrderVendors() {
   const { data, error } = await createSupabaseUntypedAdminClient()
     .from("vendor")
@@ -15545,7 +15632,12 @@ export async function ErpRouter({
           />
         ) : activeModule === "purchasing" ? (
           <PurchasingDashboard dashboard={await getPurchasingDashboard()} />
-        ) : activeModule === "create-vendor-purchase-order" ? (
+        ) : activeModule === "create-container" ? (
+          <ContainerEditor error={params.error} saveAction={createContainerAction} />
+        ) : activeModule === "container" ? await (async () => {
+          const workspace = params.container ? await getContainerWorkspace(params.container, params.container_po) : null;
+          return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} />;
+        })() : activeModule === "create-vendor-purchase-order" ? (
           <PurchaseOrderEditor
             error={params.error}
             saveAction={createVendorPurchaseOrderAction}

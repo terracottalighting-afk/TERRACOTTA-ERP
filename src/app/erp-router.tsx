@@ -13273,7 +13273,6 @@ async function createVendorPurchaseOrderAction(formData: FormData) {
     notes: textValue(formData, "notes") || null,
   }).select("id").single();
   if (error || !purchaseOrder) fail(error?.message ?? "Purchase order could not be created.");
-  revalidatePath("/");
   redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrder!.id}`);
 }
 

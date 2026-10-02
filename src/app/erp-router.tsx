@@ -13410,13 +13410,13 @@ async function reviewVendorPurchaseOrderAction(formData: FormData) {
   "use server";
   const purchaseOrderId = textValue(formData, "purchase_order_id");
   const decision = textValue(formData, "decision");
-  const fail = (message: string) => redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
-  if (!purchaseOrderId || !["approve", "reject"].includes(decision)) fail("Choose approve or reject.");
+  const fail = (message: string) => ({ error: message });
+  if (!purchaseOrderId || !["approve", "reject"].includes(decision)) return fail("Choose approve or reject.");
   const reviewNotes = textValue(formData, "review_notes") || null;
-  if (decision === "reject" && !reviewNotes) fail("Add review notes when rejecting a purchase order.");
+  if (decision === "reject" && !reviewNotes) return fail("Add review notes when rejecting a purchase order.");
   const { error } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").update({ status: decision === "approve" ? "for_vendor_confirmation" : "draft", review_notes: reviewNotes, reviewed_at: new Date().toISOString() }).eq("id", purchaseOrderId).eq("status", "ready_for_review");
-  if (error) fail(error.message);
-  redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}`);
+  if (error) return fail(error.message);
+  return { destination: `/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}` };
 }
 
 async function confirmVendorPurchaseOrderAction(formData: FormData) {

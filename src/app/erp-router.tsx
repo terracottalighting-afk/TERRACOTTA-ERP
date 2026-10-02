@@ -13439,35 +13439,35 @@ async function reviewVendorPurchaseOrderAction(formData: FormData) {
 async function confirmVendorPurchaseOrderAction(formData: FormData) {
   "use server";
   const purchaseOrderId = textValue(formData, "purchase_order_id");
-  const fail = (message: string) => redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  const fail = (message: string) => ({ error: message });
   const expectedReadyDate = textValue(formData, "expected_ready_date");
   const expectedShipDate = textValue(formData, "expected_ship_date");
   const expectedAvailableDate = textValue(formData, "expected_available_date");
-  if (!purchaseOrderId || !expectedReadyDate || !expectedShipDate || !expectedAvailableDate) fail("Enter the confirmed ready, ship, and available dates.");
+  if (!purchaseOrderId || !expectedReadyDate || !expectedShipDate || !expectedAvailableDate) return fail("Enter the confirmed ready, ship, and available dates.");
   const supabase = createSupabaseUntypedAdminClient();
   const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("vendor_po_number").eq("id", purchaseOrderId).eq("status", "for_vendor_confirmation").maybeSingle();
-  if (orderError || !order) fail(orderError?.message ?? "This PO is no longer awaiting vendor confirmation.");
+  if (orderError || !order) return fail(orderError?.message ?? "This PO is no longer awaiting vendor confirmation.");
   const { data: lines, error: linesError } = await supabase.from("vendor_purchase_order_line").select("id, product_id, quantity_ordered").eq("vendor_purchase_order_id", purchaseOrderId);
-  if (linesError || !lines?.length) fail(linesError?.message ?? "This purchase order has no products to confirm.");
+  if (linesError || !lines?.length) return fail(linesError?.message ?? "This purchase order has no products to confirm.");
   const lineIds = lines!.map((line) => line.id);
   const { data: existingIncoming, error: existingIncomingError } = await supabase.from("incoming_inventory").select("id, vendor_purchase_order_line_id").in("vendor_purchase_order_line_id", lineIds).in("status", ["expected", "in_transit"]);
-  if (existingIncomingError) fail(existingIncomingError.message);
+  if (existingIncomingError) return fail(existingIncomingError.message);
   const existingLineIds = new Set((existingIncoming ?? []).flatMap((row) => row.vendor_purchase_order_line_id ? [row.vendor_purchase_order_line_id] : []));
   const { error: incomingUpdateError } = await supabase.from("incoming_inventory").update({ expected_date: expectedAvailableDate }).in("vendor_purchase_order_line_id", lineIds).in("status", ["expected", "in_transit"]);
-  if (incomingUpdateError) fail(incomingUpdateError.message);
+  if (incomingUpdateError) return fail(incomingUpdateError.message);
   const incomingRows = lines!.filter((line) => !existingLineIds.has(line.id)).map((line) => ({ product_id: line.product_id, vendor_purchase_order_line_id: line.id, expected_quantity: line.quantity_ordered, expected_date: expectedAvailableDate, status: "expected", source_reference: `Vendor PO ${order!.vendor_po_number}` }));
   if (incomingRows.length) {
     const { error: incomingInsertError } = await supabase.from("incoming_inventory").insert(incomingRows);
-    if (incomingInsertError) fail(incomingInsertError.message);
+    if (incomingInsertError) return fail(incomingInsertError.message);
   }
   const productionStartedAt = new Date().toISOString();
   const { error: productionLineError } = await supabase.from("vendor_purchase_order_line").update({ production_status: "in_production", production_status_changed_at: productionStartedAt }).eq("vendor_purchase_order_id", purchaseOrderId);
-  if (productionLineError) fail(productionLineError.message);
+  if (productionLineError) return fail(productionLineError.message);
   const { error: productionEventError } = await supabase.from("vendor_purchase_order_line_production_event").insert(lines!.map((line) => ({ vendor_purchase_order_line_id: line.id, production_status: "in_production", changed_at: productionStartedAt })));
-  if (productionEventError) fail(productionEventError.message);
+  if (productionEventError) return fail(productionEventError.message);
   const { error } = await supabase.from("vendor_purchase_order").update({ expected_ready_date: expectedReadyDate, expected_ship_date: expectedShipDate, expected_available_date: expectedAvailableDate, status: "in_production", vendor_confirmed_at: productionStartedAt }).eq("id", purchaseOrderId).eq("status", "for_vendor_confirmation");
-  if (error) fail(error.message);
-  redirect(`/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}`);
+  if (error) return fail(error.message);
+  return { destination: `/?module=vendor-purchase-order-review&purchase_order=${purchaseOrderId}` };
 }
 
 async function updateVendorPurchaseOrderLineProductionAction(formData: FormData) {

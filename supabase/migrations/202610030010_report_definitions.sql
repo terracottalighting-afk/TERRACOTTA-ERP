@@ -10,6 +10,12 @@ create table if not exists public.report_definition (
   constraint report_definition_name_not_blank check (btrim(name) <> '')
 );
 
+alter table public.report_definition
+  add column if not exists description text,
+  add column if not exists sort_order integer not null default 100,
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists updated_at timestamptz not null default now();
+
 insert into public.report_definition (report_type, name, description, sort_order)
 values
   ('container_invoice', 'Container Invoice', 'Commercial vendor invoice generated from the products loaded in a container.', 10),

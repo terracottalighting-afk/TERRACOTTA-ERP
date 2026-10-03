@@ -225,6 +225,7 @@ export type SearchParams = Promise<{
   container_tab?: string;
   container_edit_mode?: string;
   container_edit?: string;
+  export_type?: string;
   loading_vendor?: string;
   container_po?: string;
   po_edit?: string;
@@ -13302,7 +13303,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   const poLineIds = [...new Set((containerLines ?? []).map((line) => line.vendor_purchase_order_line_id))];
   const [productsResult, purchaseOrderLinesResult, catalogBoxesResult] = await Promise.all([
     productIds.length ? supabase.from("product").select("id, sku, name").in("id", productIds) : Promise.resolve({ data: [], error: null }),
-    poLineIds.length ? supabase.from("vendor_purchase_order_line").select("id, vendor_product_id, vendor_purchase_order_id").in("id", poLineIds) : Promise.resolve({ data: [], error: null }),
+    poLineIds.length ? supabase.from("vendor_purchase_order_line").select("id, vendor_product_id, vendor_purchase_order_id, unit_cost").in("id", poLineIds) : Promise.resolve({ data: [], error: null }),
     productIds.length ? supabase.from("product_packing_box").select("product_id, box_label, box_width, box_length, box_height, box_sequence").in("product_id", productIds).eq("is_active", true).order("box_sequence") : Promise.resolve({ data: [], error: null }),
   ]);
   if (productsResult.error || purchaseOrderLinesResult.error || catalogBoxesResult.error) throw new Error(productsResult.error?.message ?? purchaseOrderLinesResult.error?.message ?? catalogBoxesResult.error?.message);
@@ -13332,7 +13333,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
       const validBoxes = boxes.filter((box) => box.width > 0 && box.depth > 0 && box.height > 0);
       const unitCbm = validBoxes.length ? validBoxes.reduce((sum, box) => sum + box.width * box.depth * box.height / 61023.744, 0) : null;
       const quantityPacked = Number(line.quantity_packed);
-      return { id: line.id, vendor_id: purchaseOrder?.vendor_id ?? "unknown", vendor_email: purchaseOrder ? vendorById.get(purchaseOrder.vendor_id)?.email ?? null : null, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: productById.get(line.product_id)?.sku ?? "Unknown", name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: quantityPacked, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: quantityPacked * validBoxes.length };
+      return { id: line.id, vendor_id: purchaseOrder?.vendor_id ?? "unknown", vendor_email: purchaseOrder ? vendorById.get(purchaseOrder.vendor_id)?.email ?? null : null, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: productById.get(line.product_id)?.sku ?? "Unknown", name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: quantityPacked, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: quantityPacked * validBoxes.length, unit_cost: Number(purchaseOrderLine?.unit_cost ?? 0) };
     }),
     documents: documents.flat(),
     activeOrders,
@@ -15935,7 +15936,7 @@ export async function ErpRouter({
           return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} documents={workspace?.documents ?? []} initialTab={params.container_tab === "products" || params.container_tab === "documents" ? params.container_tab : "profile"} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} uploadDocumentAction={uploadContainerDocumentAction} />;
         })() : activeModule === "container-loading-sheets" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
-          return <ContainerLoadingSheetPage container={workspace?.container ?? null} lines={workspace?.containerLines ?? []} selectedVendorId={params.loading_vendor} />;
+          return <ContainerLoadingSheetPage container={workspace?.container ?? null} exportType={params.export_type} lines={workspace?.containerLines ?? []} selectedVendorId={params.loading_vendor} />;
         })() : activeModule === "purchasing-agency" ? (
           <PurchasingAgencyEditor agency={params.purchasing_agency ? await getPurchasingAgency(params.purchasing_agency) : null} defaultBusinessType={params.agency_type === "customs_broker" ? "customs_broker" : "shipping"} error={params.error} saveAction={savePurchasingAgencyAction} deleteAction={deletePurchasingAgencyAction} />
         ) : activeModule === "create-vendor-purchase-order" ? (

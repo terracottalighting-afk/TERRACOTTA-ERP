@@ -121,7 +121,7 @@ import {
 } from "@/lib/formatters";
 import { productPartRoleOptions } from "@/lib/product-part-roles";
 import { configuredContainerStatusOptions, containerStatusCode, DEFAULT_CONTAINER_STATUSES, DEFAULT_IMPORT_TARIFF_RATE_PERCENT, DEFAULT_VENDOR_PRODUCTION_COMMITMENT } from "@/lib/purchasing";
-import { DEFAULT_REPORT_FIELD_MAPPINGS, REPORT_FIELD_OPTIONS, type ReportFieldMapping, type ReportTypeCode } from "@/lib/report-settings";
+import { DEFAULT_REPORT_FIELD_MAPPINGS, REPORT_DATA_SOURCE_OPTIONS, REPORT_FIELD_OPTIONS, type ReportFieldMapping, type ReportTypeCode } from "@/lib/report-settings";
 import {
   EmptyState,
   Metric,
@@ -2251,6 +2251,30 @@ async function saveReportSettingsAction(formData: FormData) {
       ? await supabase.from("report_field_mapping").update(values).eq("id", mappingIds[index]).eq("report_type", reportType)
       : await supabase.from("report_field_mapping").upsert(values, { onConflict: "report_type,field_code" });
     if (error) redirect(errorUrl(error.message));
+  }
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=reports");
+}
+
+async function createReportMappingAction(formData: FormData) {
+  "use server";
+  const reportType = textValue(formData, "report_type") as ReportTypeCode;
+  const displayLabel = textValue(formData, "display_label");
+  const dataSource = textValue(formData, "data_source");
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
+  if (!(reportType in REPORT_FIELD_OPTIONS)) redirect(errorUrl("Choose a supported report type."));
+  if (!displayLabel || displayLabel.length > 80) redirect(errorUrl("Enter a report field label of 80 characters or fewer."));
+  if (!REPORT_DATA_SOURCE_OPTIONS.some((source) => source.code === dataSource)) redirect(errorUrl("Choose an approved product data source."));
+
+  const fieldCode = displayLabel.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!/^[a-z][a-z0-9_]*$/.test(fieldCode)) redirect(errorUrl("Enter a report field label that includes at least one letter."));
+
+  const { error } = await createSupabaseUntypedAdminClient()
+    .from("report_field_mapping")
+    .insert({ report_type: reportType, field_code: fieldCode, display_label: displayLabel, data_source: dataSource, sort_order: 1000 });
+  if (error) {
+    if (error.code === "23505") redirect(errorUrl("A mapping with this report field label already exists for this report."));
+    redirect(errorUrl(error.message));
   }
   revalidatePath("/");
   redirect("/?module=admin&admin_tab=reports");
@@ -16144,7 +16168,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} saveReportSettingsAction={saveReportSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
+          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} saveReportSettingsAction={saveReportSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

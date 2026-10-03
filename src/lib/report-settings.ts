@@ -9,6 +9,14 @@ export type ReportFieldMapping = {
   sort_order: number;
 };
 
+export const REPORT_DATA_SOURCE_OPTIONS = [
+  { code: "product_hs_code", name: "Product > HS Code" },
+  { code: "product_category_name", name: "Product > Category" },
+  { code: "product_name", name: "Product > Product Name" },
+  { code: "product_sku", name: "Product > SKU" },
+  { code: "product_pieces_per_carton", name: "Product > Pieces Per Carton" },
+] as const;
+
 export const REPORT_TYPE_OPTIONS: { code: ReportTypeCode; name: string; description: string }[] = [
   { code: "container_invoice", name: "Container Invoice", description: "Commercial vendor invoice generated from the products loaded in a container." },
   { code: "container_packing_list", name: "Container Packing List", description: "Container and vendor packing lists used for loading, shipping, and customs." },
@@ -16,11 +24,11 @@ export const REPORT_TYPE_OPTIONS: { code: ReportTypeCode; name: string; descript
 
 export const REPORT_FIELD_OPTIONS: Record<ReportTypeCode, { code: string; label: string; sources: { code: string; name: string }[] }[]> = {
   container_invoice: [
-    { code: "hs_code", label: "HS", sources: [{ code: "product_hs_code", name: "Product > HS Code" }] },
-    { code: "description", label: "Description", sources: [{ code: "product_category_name", name: "Product > Category" }, { code: "product_name", name: "Product > Product Name" }] },
+    { code: "hs_code", label: "HS", sources: [REPORT_DATA_SOURCE_OPTIONS[0]] },
+    { code: "description", label: "Description", sources: [REPORT_DATA_SOURCE_OPTIONS[1], REPORT_DATA_SOURCE_OPTIONS[2]] },
   ],
   container_packing_list: [
-    { code: "hs_code", label: "HS", sources: [{ code: "product_hs_code", name: "Product > HS Code" }] },
+    { code: "hs_code", label: "HS", sources: [REPORT_DATA_SOURCE_OPTIONS[0]] },
   ],
 };
 

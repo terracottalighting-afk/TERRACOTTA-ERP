@@ -2570,6 +2570,44 @@ dd {
   padding: 14px;
 }
 
+.report-settings-guide {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 14px;
+}
+
+.report-settings-guide div {
+  align-items: center;
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  display: flex;
+  gap: 10px;
+  min-height: 52px;
+  padding: 10px 12px;
+}
+
+.report-settings-guide strong {
+  align-items: center;
+  background: var(--accent);
+  color: #fff;
+  display: inline-flex;
+  flex: 0 0 24px;
+  height: 24px;
+  justify-content: center;
+}
+
+.report-settings-guide span {
+  color: var(--foreground);
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .report-settings-guide {
+    grid-template-columns: 1fr;
+  }
+}
+
 .product-settings-subtabs {
   border-bottom: 1px solid var(--line);
   display: flex;

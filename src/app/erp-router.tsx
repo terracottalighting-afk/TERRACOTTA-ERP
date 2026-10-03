@@ -121,6 +121,7 @@ import {
 } from "@/lib/formatters";
 import { productPartRoleOptions } from "@/lib/product-part-roles";
 import { configuredContainerStatusOptions, containerStatusCode, DEFAULT_CONTAINER_STATUSES, DEFAULT_IMPORT_TARIFF_RATE_PERCENT, DEFAULT_VENDOR_PRODUCTION_COMMITMENT } from "@/lib/purchasing";
+import { DEFAULT_REPORT_FIELD_MAPPINGS, REPORT_FIELD_OPTIONS, type ReportFieldMapping, type ReportTypeCode } from "@/lib/report-settings";
 import {
   EmptyState,
   Metric,
@@ -2216,6 +2217,56 @@ async function savePurchasingSettingsAction(formData: FormData) {
   if (error) redirect(errorUrl(error.message));
   revalidatePath("/");
   redirect("/?module=admin&admin_tab=purchasing");
+}
+
+async function getReportFieldMappings(reportType?: ReportTypeCode): Promise<ReportFieldMapping[]> {
+  const query = createSupabaseUntypedAdminClient()
+    .from("report_field_mapping")
+    .select("id, report_type, field_code, display_label, data_source, sort_order")
+    .order("sort_order");
+  const { data, error } = reportType ? await query.eq("report_type", reportType) : await query;
+  if (error) throw new Error(error.message);
+  return (data ?? []) as ReportFieldMapping[];
+}
+
+async function saveReportSettingsAction(formData: FormData) {
+  "use server";
+  const reportType = textValue(formData, "report_type") as ReportTypeCode;
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
+  if (!(reportType in REPORT_FIELD_OPTIONS)) redirect(errorUrl("Choose a supported report type."));
+
+  const fieldCodes = formData.getAll("field_code").map(String);
+  const dataSources = formData.getAll("data_source").map(String);
+  const labels = formData.getAll("display_label").map((value) => String(value).trim());
+  const mappingIds = formData.getAll("mapping_id").map(String);
+  const fieldOptions = REPORT_FIELD_OPTIONS[reportType];
+  if (fieldCodes.length !== fieldOptions.length || dataSources.length !== fieldOptions.length || labels.length !== fieldOptions.length) redirect(errorUrl("Complete every report field mapping."));
+
+  const supabase = createSupabaseUntypedAdminClient();
+  for (let index = 0; index < fieldCodes.length; index += 1) {
+    const field = fieldOptions.find((option) => option.code === fieldCodes[index]);
+    if (!field || !labels[index] || labels[index].length > 80 || !field.sources.some((source) => source.code === dataSources[index])) redirect(errorUrl("Choose an approved data source and a report label for every field."));
+    const values = { report_type: reportType, field_code: field.code, display_label: labels[index], data_source: dataSources[index], sort_order: index + 1 };
+    const { error } = mappingIds[index]
+      ? await supabase.from("report_field_mapping").update(values).eq("id", mappingIds[index]).eq("report_type", reportType)
+      : await supabase.from("report_field_mapping").upsert(values, { onConflict: "report_type,field_code" });
+    if (error) redirect(errorUrl(error.message));
+  }
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=reports");
+}
+
+function reportMappingSource(mappings: ReportFieldMapping[], reportType: ReportTypeCode, fieldCode: string) {
+  return mappings.find((mapping) => mapping.report_type === reportType && mapping.field_code === fieldCode)?.data_source
+    ?? DEFAULT_REPORT_FIELD_MAPPINGS.find((mapping) => mapping.report_type === reportType && mapping.field_code === fieldCode)?.data_source
+    ?? "";
+}
+
+function reportLineText(line: { category_name: string | null; hs_code: string | null; name: string }, source: string) {
+  if (source === "product_category_name") return line.category_name || "Not set";
+  if (source === "product_hs_code") return line.hs_code || "Not set";
+  if (source === "product_name") return line.name;
+  return "Not set";
 }
 
 async function resolveShipmentCarrier(formData: FormData) {
@@ -13317,16 +13368,23 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   if (selectedLinesResult.error) throw new Error(selectedLinesResult.error.message);
   const productIds = [...new Set((containerLines ?? []).map((line) => line.product_id))];
   const poLineIds = [...new Set((containerLines ?? []).map((line) => line.vendor_purchase_order_line_id))];
-  const [productsResult, purchaseOrderLinesResult, catalogBoxesResult] = await Promise.all([
-    productIds.length ? supabase.from("product").select("id, sku, name, pieces_per_carton").in("id", productIds) : Promise.resolve({ data: [], error: null }),
+  const [productsResult, purchaseOrderLinesResult, catalogBoxesResult, categoriesResult, productSpecsResult] = await Promise.all([
+    productIds.length ? supabase.from("product").select("id, sku, name, product_category_id, pieces_per_carton").in("id", productIds) : Promise.resolve({ data: [], error: null }),
     poLineIds.length ? supabase.from("vendor_purchase_order_line").select("id, vendor_product_id, vendor_purchase_order_id, vendor_item_number_snapshot, unit_cost").in("id", poLineIds) : Promise.resolve({ data: [], error: null }),
     productIds.length ? supabase.from("product_packing_box").select("product_id, box_label, box_width, box_length, box_height, box_sequence").in("product_id", productIds).eq("is_active", true).order("box_sequence") : Promise.resolve({ data: [], error: null }),
+    supabase.from("product_category").select("id, name"),
+    productIds.length ? supabase.from("product_spec_attribute").select("product_id, attribute_name, attribute_value").in("product_id", productIds).eq("is_active", true) : Promise.resolve({ data: [], error: null }),
   ]);
-  if (productsResult.error || purchaseOrderLinesResult.error || catalogBoxesResult.error) throw new Error(productsResult.error?.message ?? purchaseOrderLinesResult.error?.message ?? catalogBoxesResult.error?.message);
+  if (productsResult.error || purchaseOrderLinesResult.error || catalogBoxesResult.error || categoriesResult.error || productSpecsResult.error) throw new Error(productsResult.error?.message ?? purchaseOrderLinesResult.error?.message ?? catalogBoxesResult.error?.message ?? categoriesResult.error?.message ?? productSpecsResult.error?.message);
   const vendorProductIds = [...new Set((purchaseOrderLinesResult.data ?? []).map((line) => line.vendor_product_id).filter((id): id is string => Boolean(id)))];
   const vendorBoxesResult = vendorProductIds.length ? await supabase.from("vendor_product_packing_box").select("vendor_product_id, box_label, box_width_inches, box_depth_inches, box_height_inches, box_sequence").in("vendor_product_id", vendorProductIds).eq("is_active", true).order("box_sequence") : { data: [], error: null };
   if (vendorBoxesResult.error) throw new Error(vendorBoxesResult.error.message);
   const productById = new Map((productsResult.data ?? []).map((product) => [product.id, product]));
+  const categoryById = new Map((categoriesResult.data ?? []).map((category) => [category.id, category.name]));
+  const hsCodeByProductId = new Map<string, string>();
+  for (const spec of productSpecsResult.data ?? []) {
+    if (spec.attribute_name.toLowerCase().replace(/[^a-z0-9]/g, "") === "hscode") hsCodeByProductId.set(spec.product_id, spec.attribute_value);
+  }
   const purchaseOrderLineById = new Map((purchaseOrderLinesResult.data ?? []).map((line) => [line.id, line]));
   const catalogBoxesByProductId = new Map<string, { label: string | null; width: number; depth: number; height: number }[]>();
   for (const box of catalogBoxesResult.data ?? []) catalogBoxesByProductId.set(box.product_id, [...(catalogBoxesByProductId.get(box.product_id) ?? []), { label: box.box_label, width: Number(box.box_width ?? 0), depth: Number(box.box_length ?? 0), height: Number(box.box_height ?? 0) }]);
@@ -13355,7 +13413,8 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
       const piecesPerCarton = Number(productById.get(line.product_id)?.pieces_per_carton ?? 1);
       const calculatedCartonCount = Math.ceil(quantityPacked / piecesPerCarton) * validBoxes.length;
       const cartonCount = line.carton_count === null ? calculatedCartonCount : Number(line.carton_count);
-      return { id: line.id, vendor_id: purchaseOrder?.vendor_id ?? "unknown", vendor_email: purchaseOrder ? vendorById.get(purchaseOrder.vendor_id)?.email ?? null : null, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: productById.get(line.product_id)?.sku ?? "Unknown", factory_sku: purchaseOrderLine?.vendor_item_number_snapshot ?? null, name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: quantityPacked, pieces_per_carton: piecesPerCarton, carton_count: cartonCount, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: cartonCount, unit_cost: Number(purchaseOrderLine?.unit_cost ?? 0) };
+      const product = productById.get(line.product_id);
+      return { id: line.id, vendor_id: purchaseOrder?.vendor_id ?? "unknown", vendor_email: purchaseOrder ? vendorById.get(purchaseOrder.vendor_id)?.email ?? null : null, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: product?.sku ?? "Unknown", factory_sku: purchaseOrderLine?.vendor_item_number_snapshot ?? null, name: product?.name ?? "Product unavailable", category_name: product?.product_category_id ? categoryById.get(product.product_category_id) ?? null : null, hs_code: hsCodeByProductId.get(line.product_id) ?? null, quantity_packed: quantityPacked, pieces_per_carton: piecesPerCarton, carton_count: cartonCount, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: cartonCount, unit_cost: Number(purchaseOrderLine?.unit_cost ?? 0) };
     }),
     documents: documents.flat(),
     vendorInvoices: (vendorInvoices ?? []).map((invoice) => ({ ...invoice, lines: (vendorInvoiceLines ?? []).filter((line) => line.container_vendor_invoice_id === invoice.id).map((line) => ({ ...line, carton_count: line.carton_count === null ? null : Number(line.carton_count), pieces_per_carton: line.pieces_per_carton === null ? null : Number(line.pieces_per_carton), quantity: Number(line.quantity), unit_price: Number(line.unit_price) })) })),
@@ -13476,10 +13535,13 @@ async function createContainerVendorInvoiceAction(formData: FormData) {
   if (!workspace?.container || !vendorLines.length) redirect(`${detailUrl}&error=${encodeURIComponent("No loaded products were found for this vendor.")}`);
   const existing = workspace.vendorInvoices.find((invoice) => invoice.vendor_id === vendorId);
   if (existing) redirect(`${detailUrl}&container_invoice=${existing.id}`);
+  const invoiceMappings = await getReportFieldMappings("container_invoice");
+  const hsSource = reportMappingSource(invoiceMappings, "container_invoice", "hs_code");
+  const descriptionSource = reportMappingSource(invoiceMappings, "container_invoice", "description");
   const supabase = createSupabaseUntypedAdminClient();
   const { data: invoice, error: invoiceError } = await supabase.from("container_vendor_invoice").insert({ import_container_id: containerId, vendor_id: vendorId, vendor_name_snapshot: vendorLines[0].vendor_name, vendor_email_snapshot: vendorLines[0].vendor_email }).select("id").single();
   if (invoiceError || !invoice) redirect(`${detailUrl}&error=${encodeURIComponent(invoiceError?.message ?? "Vendor invoice could not be created.")}`);
-  const { error: linesError } = await supabase.from("container_vendor_invoice_line").insert(vendorLines.map((line, index) => ({ container_vendor_invoice_id: invoice.id, import_container_line_id: line.id, line_type: "product", po_number: line.po_number, sku: line.sku, factory_sku: line.factory_sku, description: line.name, quantity: line.quantity_packed, pieces_per_carton: line.pieces_per_carton, carton_count: line.carton_count, unit_price: line.unit_cost, sort_order: index + 1 })));
+  const { error: linesError } = await supabase.from("container_vendor_invoice_line").insert(vendorLines.map((line, index) => ({ container_vendor_invoice_id: invoice.id, import_container_line_id: line.id, line_type: "product", po_number: line.po_number, sku: line.sku, factory_sku: line.factory_sku, hs_code: reportLineText(line, hsSource), description: reportLineText(line, descriptionSource), quantity: line.quantity_packed, pieces_per_carton: line.pieces_per_carton, carton_count: line.carton_count, unit_price: line.unit_cost, sort_order: index + 1 })));
   if (linesError) redirect(`${detailUrl}&error=${encodeURIComponent(linesError.message)}`);
   revalidatePath("/");
   redirect(`${detailUrl}&container_invoice=${invoice.id}`);
@@ -16015,10 +16077,10 @@ export async function ErpRouter({
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} vendors={await getContainerLoadingSiteVendors()} />;
         })() : activeModule === "container-detail" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
-          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} createVendorInvoiceAction={createContainerVendorInvoiceAction} deleteDocumentAction={deleteContainerDocumentAction} documents={workspace?.documents ?? []} initialTab={params.container_tab === "products" || params.container_tab === "documents" || params.container_tab === "vendor_invoices" ? params.container_tab : "profile"} selectedInvoiceId={params.container_invoice} saveVendorInvoiceAction={saveContainerVendorInvoiceAction} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} uploadDocumentAction={uploadContainerDocumentAction} vendorInvoices={workspace?.vendorInvoices ?? []} />;
+          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} createVendorInvoiceAction={createContainerVendorInvoiceAction} deleteDocumentAction={deleteContainerDocumentAction} documents={workspace?.documents ?? []} initialTab={params.container_tab === "products" || params.container_tab === "documents" || params.container_tab === "vendor_invoices" ? params.container_tab : "profile"} reportMappings={await getReportFieldMappings("container_invoice")} selectedInvoiceId={params.container_invoice} saveVendorInvoiceAction={saveContainerVendorInvoiceAction} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} uploadDocumentAction={uploadContainerDocumentAction} vendorInvoices={workspace?.vendorInvoices ?? []} />;
         })() : activeModule === "container-loading-sheets" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
-          return <ContainerLoadingSheetPage container={workspace?.container ?? null} exportType={params.export_type} lines={workspace?.containerLines ?? []} selectedVendorId={params.loading_vendor} />;
+          return <ContainerLoadingSheetPage container={workspace?.container ?? null} exportType={params.export_type} lines={workspace?.containerLines ?? []} reportMappings={await getReportFieldMappings("container_packing_list")} selectedVendorId={params.loading_vendor} />;
         })() : activeModule === "purchasing-agency" ? (
           <PurchasingAgencyEditor agency={params.purchasing_agency ? await getPurchasingAgency(params.purchasing_agency) : null} defaultBusinessType={params.agency_type === "customs_broker" ? "customs_broker" : "shipping"} error={params.error} saveAction={savePurchasingAgencyAction} deleteAction={deletePurchasingAgencyAction} />
         ) : activeModule === "create-vendor-purchase-order" ? (
@@ -16082,7 +16144,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
+          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} saveReportSettingsAction={saveReportSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

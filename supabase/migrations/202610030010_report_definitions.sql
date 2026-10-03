@@ -11,6 +11,7 @@ create table if not exists public.report_definition (
 );
 
 alter table public.report_definition
+  alter column report_type type text using report_type::text,
   add column if not exists description text,
   add column if not exists sort_order integer not null default 100,
   add column if not exists created_at timestamptz not null default now(),

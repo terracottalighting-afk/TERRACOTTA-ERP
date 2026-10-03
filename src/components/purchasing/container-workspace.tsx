@@ -27,7 +27,7 @@ export function ContainerWorkspace({ activeOrders, addProductAction, agencies, c
 
   const workspaceHref = `/?module=container&container=${container.id}`;
   const addLine = (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); const formData = new FormData(event.currentTarget); startTransition(async () => { setError(null); const result = await addProductAction(formData); if (result.error) setError(result.error); else if (result.destination) window.location.assign(result.destination); }); };
-  const sectionHref = (section: "shipping" | "schedule" | "broker" | "loading_site") => `${workspaceHref}&container_edit=${section}`;
+  const sectionHref = (section: "shipping" | "schedule" | "broker" | "loading_site") => `${workspaceHref}&container_edit_mode=1&container_edit=${section}`;
   const dateValue = (value: string | null) => value ?? "";
   const brokerAgencies = agencies.filter((agency) => agency.business_type === "customs_broker");
   const loadingVendor = vendors.find((vendor) => vendor.id === loadingVendorId);

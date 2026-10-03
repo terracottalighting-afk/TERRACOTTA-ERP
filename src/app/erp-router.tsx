@@ -222,6 +222,7 @@ export type SearchParams = Promise<{
   purchasing_tab?: string;
   agency_type?: string;
   container?: string;
+  container_tab?: string;
   container_edit_mode?: string;
   container_edit?: string;
   loading_vendor?: string;
@@ -13443,10 +13444,10 @@ async function finalizeContainerAction(formData: FormData) {
 async function uploadContainerDocumentAction(formData: FormData) {
   "use server";
   const containerId = textValue(formData, "container_id");
-  const baseUrl = `/?module=container&container=${containerId}`;
+  const baseUrl = textValue(formData, "return_to_detail") === "1" ? `/?module=container-detail&container=${containerId}&container_tab=documents` : `/?module=container&container=${containerId}`;
   const file = formData.get("container_document_file");
   const documentType = textValue(formData, "document_type");
-  const allowedTypes = ["bill_of_lading", "isf_info", "arrival_notice", "sea_freight_invoice", "trucking_invoice", "customs_invoice", "delivery_order", "other"];
+  const allowedTypes = ["container_booking_so", "bill_of_lading", "isf_info", "arrival_notice", "sea_freight_invoice", "trucking_invoice", "trucking_order_sheet", "customs_invoice", "entry_summary", "delivery_order", "other"];
   if (!containerId || !(file instanceof File) || file.size === 0 || !allowedTypes.includes(documentType)) redirect(`${baseUrl}&error=${encodeURIComponent("Choose a document file and a valid document type.")}`);
   const supabase = createSupabaseUntypedAdminClient();
   const { data: container, error: containerError } = await supabase.from("import_container").select("id").eq("id", containerId).maybeSingle();
@@ -13474,7 +13475,7 @@ async function deleteContainerDocumentAction(formData: FormData) {
   "use server";
   const containerId = textValue(formData, "container_id");
   const documentId = textValue(formData, "container_document_id");
-  const baseUrl = `/?module=container&container=${containerId}`;
+  const baseUrl = textValue(formData, "return_to_detail") === "1" ? `/?module=container-detail&container=${containerId}&container_tab=documents` : `/?module=container&container=${containerId}`;
   if (!containerId || !documentId) redirect(`/?module=purchasing&error=${encodeURIComponent("Container document could not be identified.")}`);
   const supabase = createSupabaseUntypedAdminClient();
   const { data: document, error: documentError } = await supabase.from("container_document").select("id, file_id, attachment:file_id(storage_bucket, storage_path)").eq("id", documentId).eq("import_container_id", containerId).maybeSingle();
@@ -15931,7 +15932,7 @@ export async function ErpRouter({
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} vendors={await getContainerLoadingSiteVendors()} />;
         })() : activeModule === "container-detail" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
-          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} documents={workspace?.documents ?? []} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} />;
+          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} documents={workspace?.documents ?? []} initialTab={params.container_tab === "products" || params.container_tab === "documents" ? params.container_tab : "profile"} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} uploadDocumentAction={uploadContainerDocumentAction} />;
         })() : activeModule === "container-loading-sheets" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerLoadingSheetPage container={workspace?.container ?? null} lines={workspace?.containerLines ?? []} selectedVendorId={params.loading_vendor} />;

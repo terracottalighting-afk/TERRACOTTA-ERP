@@ -221,6 +221,7 @@ export type SearchParams = Promise<{
   purchasing_tab?: string;
   agency_type?: string;
   container?: string;
+  container_edit_mode?: string;
   container_edit?: string;
   container_po?: string;
   po_edit?: string;
@@ -15805,7 +15806,7 @@ export async function ErpRouter({
           <ContainerEditor agencies={await getContainerAgencies()} error={params.error} saveAction={createContainerAction} />
         ) : activeModule === "container" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container, params.container_po) : null;
-          if (workspace?.container && workspace.container.container_status !== "draft") redirect(`/?module=container-detail&container=${workspace.container.id}`);
+          if (workspace?.container && workspace.container.container_status !== "draft" && params.container_edit_mode !== "1") redirect(`/?module=container-detail&container=${workspace.container.id}`);
           const editingSection = ["shipping", "schedule", "broker"].includes(params.container_edit ?? "") ? params.container_edit as "shipping" | "schedule" | "broker" : undefined;
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} uploadDocumentAction={uploadContainerDocumentAction} />;
         })() : activeModule === "container-detail" ? await (async () => {

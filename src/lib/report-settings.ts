@@ -30,6 +30,14 @@ export type ReportMappingObject = {
   sources: ReportMappingSource[];
 };
 
+export type ReportMappingObjectSourceSetting = {
+  id: string;
+  object_code: ReportMappingObjectCode;
+  source_code: string;
+  source_label: string;
+  sort_order: number;
+};
+
 // These are the durable fields available to container reports. Product specification
 // attributes are added from the live catalog below because they are user-defined.
 export const REPORT_MAPPING_OBJECTS: ReportMappingObject[] = [
@@ -77,9 +85,9 @@ export function productSpecificationSource(attributeName: string): ReportMapping
 export function reportMappingObjectSources(objectCode: ReportMappingObjectCode, productSpecificationAttributes: string[] = []): ReportMappingSource[] {
   const object = REPORT_MAPPING_OBJECTS.find((item) => item.code === objectCode);
   if (!object) return [];
-  return objectCode === "product"
-    ? [...object.sources, ...productSpecificationAttributes.map(productSpecificationSource)]
-    : object.sources;
+  if (objectCode !== "product") return object.sources;
+  const standardNames = new Set(object.sources.map((source) => source.name.toLowerCase()));
+  return [...object.sources, ...productSpecificationAttributes.filter((attribute) => !standardNames.has(attribute.toLowerCase())).map(productSpecificationSource)];
 }
 
 export function reportDataSourceLabel(dataSource: string): string {

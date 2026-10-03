@@ -2266,24 +2266,55 @@ async function createReportMappingAction(formData: FormData) {
   if (!(reportType in REPORT_FIELD_OPTIONS)) redirect(errorUrl("Choose a supported report type."));
   if (!displayLabel || displayLabel.length > 80) redirect(errorUrl("Enter a report field label of 80 characters or fewer."));
   if (!REPORT_MAPPING_OBJECTS.some((object) => object.code === mappingObject)) redirect(errorUrl("Choose a supported mapping object."));
-  const staticSource = reportMappingObjectSources(mappingObject).some((source) => source.code === dataSource);
-  const productSpecificationName = dataSource.startsWith("product_spec:") ? dataSource.slice("product_spec:".length).trim() : "";
-  if (!staticSource && (!productSpecificationName || mappingObject !== "product" || productSpecificationName.length > 120)) redirect(errorUrl("Choose an approved source attribute."));
-  if (productSpecificationName) {
-    const { data, error } = await createSupabaseUntypedAdminClient().from("product_spec_attribute").select("id").eq("attribute_name", productSpecificationName).eq("is_active", true).limit(1);
-    if (error) redirect(errorUrl(error.message));
-    if (!data?.length) redirect(errorUrl("The selected product specification attribute is no longer available."));
-  }
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: configuredSource, error: configuredSourceError } = await supabase.from("report_mapping_object_source").select("id").eq("object_code", mappingObject).eq("source_code", dataSource).maybeSingle();
+  if (configuredSourceError) redirect(errorUrl(configuredSourceError.message));
+  if (!configuredSource) redirect(errorUrl("Add and save this source attribute under Mapping Object Lists before using it in a report."));
 
   const fieldCode = displayLabel.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   if (!/^[a-z][a-z0-9_]*$/.test(fieldCode)) redirect(errorUrl("Enter a report field label that includes at least one letter."));
 
-  const { error } = await createSupabaseUntypedAdminClient()
+  const { error } = await supabase
     .from("report_field_mapping")
     .insert({ report_type: reportType, field_code: fieldCode, display_label: displayLabel, data_source: dataSource, sort_order: 1000 });
   if (error) {
     if (error.code === "23505") redirect(errorUrl("A mapping with this report field label already exists for this report."));
     redirect(errorUrl(error.message));
+  }
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=reports");
+}
+
+async function saveMappingObjectSourcesAction(formData: FormData) {
+  "use server";
+  const mappingObject = textValue(formData, "mapping_object") as ReportMappingObjectCode;
+  const sourceCodes = [...new Set(formData.getAll("source_code").map(String).map((value) => value.trim()).filter(Boolean))];
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
+  if (!REPORT_MAPPING_OBJECTS.some((object) => object.code === mappingObject)) redirect(errorUrl("Choose a supported mapping object."));
+  if (!sourceCodes.length) redirect(errorUrl("Add at least one source attribute before saving the object mapping."));
+
+  const staticSources = reportMappingObjectSources(mappingObject);
+  const sourceLabels = new Map(staticSources.map((source) => [source.code, source.name]));
+  const productSpecificationNames = sourceCodes.filter((source) => source.startsWith("product_spec:")).map((source) => source.slice("product_spec:".length).trim());
+  if (sourceCodes.some((source) => !sourceLabels.has(source) && !source.startsWith("product_spec:")) || (productSpecificationNames.length && mappingObject !== "product") || productSpecificationNames.some((name) => !name || name.length > 120)) redirect(errorUrl("One or more selected source attributes are not available for this object."));
+
+  const supabase = createSupabaseUntypedAdminClient();
+  if (productSpecificationNames.length) {
+    const { data, error } = await supabase.from("product_spec_attribute").select("attribute_name").in("attribute_name", productSpecificationNames).eq("is_active", true);
+    if (error) redirect(errorUrl(error.message));
+    const availableNames = new Set((data ?? []).map((row) => row.attribute_name));
+    if (productSpecificationNames.some((name) => !availableNames.has(name))) redirect(errorUrl("One or more selected product specification attributes are no longer available."));
+    for (const name of productSpecificationNames) sourceLabels.set(`product_spec:${name}`, name);
+  }
+
+  const { data: currentSources, error: currentSourcesError } = await supabase.from("report_mapping_object_source").select("id, source_code").eq("object_code", mappingObject);
+  if (currentSourcesError) redirect(errorUrl(currentSourcesError.message));
+  const { error: upsertError } = await supabase.from("report_mapping_object_source").upsert(sourceCodes.map((sourceCode, index) => ({ object_code: mappingObject, source_code: sourceCode, source_label: sourceLabels.get(sourceCode)!, sort_order: index + 1 })), { onConflict: "object_code,source_code" });
+  if (upsertError) redirect(errorUrl(upsertError.message));
+  const removedIds = (currentSources ?? []).filter((source) => !sourceCodes.includes(source.source_code)).map((source) => source.id);
+  if (removedIds.length) {
+    const { error } = await supabase.from("report_mapping_object_source").delete().in("id", removedIds);
+    if (error) redirect(errorUrl(error.message));
   }
   revalidatePath("/");
   redirect("/?module=admin&admin_tab=reports");
@@ -16177,7 +16208,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} saveReportSettingsAction={saveReportSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
+          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveMappingObjectSourcesAction={saveMappingObjectSourcesAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} saveReportSettingsAction={saveReportSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

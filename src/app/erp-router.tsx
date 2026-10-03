@@ -13217,9 +13217,8 @@ async function getPurchasingDashboard() {
   if (vendorsResult.error) throw new Error(vendorsResult.error.message);
   if (purchaseOrdersResult.error) throw new Error(purchaseOrdersResult.error.message);
   if (containersResult.error) throw new Error(containersResult.error.message);
-  if (agenciesResult.error) throw new Error(agenciesResult.error.message);
   return {
-    agencies: agenciesResult.data ?? [],
+    agencies: agenciesResult.error ? [] : agenciesResult.data ?? [],
     containers: (containersResult.data ?? []).map((container) => ({ ...container, freight_amount: 0 })),
     purchaseOrders: purchaseOrdersResult.data ?? [],
     vendors: vendorsResult.data ?? [],

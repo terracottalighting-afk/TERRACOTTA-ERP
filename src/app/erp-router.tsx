@@ -13257,7 +13257,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   const poLineIds = [...new Set((containerLines ?? []).map((line) => line.vendor_purchase_order_line_id))];
   const [productsResult, purchaseOrderLinesResult, catalogBoxesResult] = await Promise.all([
     productIds.length ? supabase.from("product").select("id, sku, name").in("id", productIds) : Promise.resolve({ data: [], error: null }),
-    poLineIds.length ? supabase.from("vendor_purchase_order_line").select("id, vendor_product_id").in("id", poLineIds) : Promise.resolve({ data: [], error: null }),
+    poLineIds.length ? supabase.from("vendor_purchase_order_line").select("id, vendor_product_id, vendor_purchase_order_id").in("id", poLineIds) : Promise.resolve({ data: [], error: null }),
     productIds.length ? supabase.from("product_packing_box").select("product_id, box_label, box_width, box_length, box_height, box_sequence").in("product_id", productIds).eq("is_active", true).order("box_sequence") : Promise.resolve({ data: [], error: null }),
   ]);
   if (productsResult.error || purchaseOrderLinesResult.error || catalogBoxesResult.error) throw new Error(productsResult.error?.message ?? purchaseOrderLinesResult.error?.message ?? catalogBoxesResult.error?.message);
@@ -13280,12 +13280,14 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   return {
     container,
     containerLines: (containerLines ?? []).map((line) => {
-      const vendorProductId = purchaseOrderLineById.get(line.vendor_purchase_order_line_id)?.vendor_product_id;
+      const purchaseOrderLine = purchaseOrderLineById.get(line.vendor_purchase_order_line_id);
+      const vendorProductId = purchaseOrderLine?.vendor_product_id;
+      const purchaseOrder = (orders ?? []).find((order) => order.id === purchaseOrderLine?.vendor_purchase_order_id);
       const boxes = (vendorProductId ? vendorBoxesByVendorProductId.get(vendorProductId) : undefined) || catalogBoxesByProductId.get(line.product_id) || [];
       const validBoxes = boxes.filter((box) => box.width > 0 && box.depth > 0 && box.height > 0);
       const unitCbm = validBoxes.length ? validBoxes.reduce((sum, box) => sum + box.width * box.depth * box.height / 61023.744, 0) : null;
       const quantityPacked = Number(line.quantity_packed);
-      return { id: line.id, sku: productById.get(line.product_id)?.sku ?? "Unknown", name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: quantityPacked, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: quantityPacked * validBoxes.length };
+      return { id: line.id, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: productById.get(line.product_id)?.sku ?? "Unknown", name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: quantityPacked, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: quantityPacked * validBoxes.length };
     }),
     documents: documents.flat(),
     activeOrders,

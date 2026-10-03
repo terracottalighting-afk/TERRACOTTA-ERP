@@ -13252,9 +13252,22 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   const selectedLinesResult = selectedOrder ? await supabase.from("vendor_purchase_order_line").select("id, product_id, product_sku_snapshot, product_name_snapshot, quantity_ordered, quantity_exited_factory, production_status, unit_cost").eq("vendor_purchase_order_id", selectedOrder.id).order("created_at") : { data: [], error: null };
   if (selectedLinesResult.error) throw new Error(selectedLinesResult.error.message);
   const productIds = [...new Set((containerLines ?? []).map((line) => line.product_id))];
-  const productsResult = productIds.length ? await supabase.from("product").select("id, sku, name").in("id", productIds) : { data: [], error: null };
-  if (productsResult.error) throw new Error(productsResult.error.message);
+  const poLineIds = [...new Set((containerLines ?? []).map((line) => line.vendor_purchase_order_line_id))];
+  const [productsResult, purchaseOrderLinesResult, catalogBoxesResult] = await Promise.all([
+    productIds.length ? supabase.from("product").select("id, sku, name").in("id", productIds) : Promise.resolve({ data: [], error: null }),
+    poLineIds.length ? supabase.from("vendor_purchase_order_line").select("id, vendor_product_id").in("id", poLineIds) : Promise.resolve({ data: [], error: null }),
+    productIds.length ? supabase.from("product_packing_box").select("product_id, box_label, box_width, box_length, box_height, box_sequence").in("product_id", productIds).eq("is_active", true).order("box_sequence") : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (productsResult.error || purchaseOrderLinesResult.error || catalogBoxesResult.error) throw new Error(productsResult.error?.message ?? purchaseOrderLinesResult.error?.message ?? catalogBoxesResult.error?.message);
+  const vendorProductIds = [...new Set((purchaseOrderLinesResult.data ?? []).map((line) => line.vendor_product_id).filter((id): id is string => Boolean(id)))];
+  const vendorBoxesResult = vendorProductIds.length ? await supabase.from("vendor_product_packing_box").select("vendor_product_id, box_label, box_width_inches, box_depth_inches, box_height_inches, box_sequence").in("vendor_product_id", vendorProductIds).eq("is_active", true).order("box_sequence") : { data: [], error: null };
+  if (vendorBoxesResult.error) throw new Error(vendorBoxesResult.error.message);
   const productById = new Map((productsResult.data ?? []).map((product) => [product.id, product]));
+  const purchaseOrderLineById = new Map((purchaseOrderLinesResult.data ?? []).map((line) => [line.id, line]));
+  const catalogBoxesByProductId = new Map<string, { label: string | null; width: number; depth: number; height: number }[]>();
+  for (const box of catalogBoxesResult.data ?? []) catalogBoxesByProductId.set(box.product_id, [...(catalogBoxesByProductId.get(box.product_id) ?? []), { label: box.box_label, width: Number(box.box_width ?? 0), depth: Number(box.box_length ?? 0), height: Number(box.box_height ?? 0) }]);
+  const vendorBoxesByVendorProductId = new Map<string, { label: string | null; width: number; depth: number; height: number }[]>();
+  for (const box of vendorBoxesResult.data ?? []) vendorBoxesByVendorProductId.set(box.vendor_product_id, [...(vendorBoxesByVendorProductId.get(box.vendor_product_id) ?? []), { label: box.box_label, width: Number(box.box_width_inches ?? 0), depth: Number(box.box_depth_inches ?? 0), height: Number(box.box_height_inches ?? 0) }]);
   const documents = await Promise.all((documentRows ?? []).flatMap(async (document) => {
     const attachment = Array.isArray(document.attachment) ? document.attachment[0] : document.attachment;
     if (!attachment) return [];
@@ -13264,7 +13277,14 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
 
   return {
     container,
-    containerLines: (containerLines ?? []).map((line) => ({ id: line.id, sku: productById.get(line.product_id)?.sku ?? "Unknown", name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: Number(line.quantity_packed) })),
+    containerLines: (containerLines ?? []).map((line) => {
+      const vendorProductId = purchaseOrderLineById.get(line.vendor_purchase_order_line_id)?.vendor_product_id;
+      const boxes = (vendorProductId ? vendorBoxesByVendorProductId.get(vendorProductId) : undefined) || catalogBoxesByProductId.get(line.product_id) || [];
+      const validBoxes = boxes.filter((box) => box.width > 0 && box.depth > 0 && box.height > 0);
+      const unitCbm = validBoxes.length ? validBoxes.reduce((sum, box) => sum + box.width * box.depth * box.height / 61023.744, 0) : null;
+      const quantityPacked = Number(line.quantity_packed);
+      return { id: line.id, sku: productById.get(line.product_id)?.sku ?? "Unknown", name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: quantityPacked, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: quantityPacked * validBoxes.length };
+    }),
     documents: documents.flat(),
     activeOrders,
     selectedOrder,

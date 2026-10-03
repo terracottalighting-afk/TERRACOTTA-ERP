@@ -13285,7 +13285,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   const [{ data: container, error: containerError }, { data: orders, error: ordersError }, { data: containerLines, error: containerLinesError }, { data: documentRows, error: documentRowsError }, { data: vendorInvoices, error: vendorInvoicesError }] = await Promise.all([
     supabase.from("import_container").select("id, container_number, booking_number, shipping_agency, shipping_agent_contact_name, shipping_agent_contact_email, vessel_name, expected_loading_date, actual_loading_date, etd, actual_vessel_departure_date, arrival_port, eta, arrival_date, tariff_broker_agency, broker_contact_name, broker_contact_email, consolidation_loading_vendor_id, consolidation_loading_site, consolidation_loading_address, container_status").eq("id", containerId).maybeSingle(),
     supabase.from("vendor_purchase_order").select("id, vendor_id, vendor_po_number, vendor_name_snapshot, status").order("po_date", { ascending: false }),
-    supabase.from("import_container_line").select("id, vendor_purchase_order_line_id, product_id, quantity_packed").eq("import_container_id", containerId).eq("is_active", true),
+    supabase.from("import_container_line").select("id, vendor_purchase_order_line_id, product_id, quantity_packed, carton_count").eq("import_container_id", containerId).eq("is_active", true),
     supabase.from("container_document").select("id, document_type, display_name, uploaded_at, attachment:file_id(id, original_file_name, storage_bucket, storage_path)").eq("import_container_id", containerId).eq("is_active", true).order("uploaded_at", { ascending: false }),
     supabase.from("container_vendor_invoice").select("id, vendor_id, vendor_name_snapshot, vendor_invoice_number, invoice_date, currency, notes").eq("import_container_id", containerId).order("created_at"),
   ]);
@@ -13305,7 +13305,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   const poLineIds = [...new Set((containerLines ?? []).map((line) => line.vendor_purchase_order_line_id))];
   const [productsResult, purchaseOrderLinesResult, catalogBoxesResult] = await Promise.all([
     productIds.length ? supabase.from("product").select("id, sku, name").in("id", productIds) : Promise.resolve({ data: [], error: null }),
-    poLineIds.length ? supabase.from("vendor_purchase_order_line").select("id, vendor_product_id, vendor_purchase_order_id, unit_cost").in("id", poLineIds) : Promise.resolve({ data: [], error: null }),
+    poLineIds.length ? supabase.from("vendor_purchase_order_line").select("id, vendor_product_id, vendor_purchase_order_id, vendor_item_number_snapshot, unit_cost").in("id", poLineIds) : Promise.resolve({ data: [], error: null }),
     productIds.length ? supabase.from("product_packing_box").select("product_id, box_label, box_width, box_length, box_height, box_sequence").in("product_id", productIds).eq("is_active", true).order("box_sequence") : Promise.resolve({ data: [], error: null }),
   ]);
   if (productsResult.error || purchaseOrderLinesResult.error || catalogBoxesResult.error) throw new Error(productsResult.error?.message ?? purchaseOrderLinesResult.error?.message ?? catalogBoxesResult.error?.message);
@@ -13325,7 +13325,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
     return [{ id: document.id, document_type: document.document_type, display_name: document.display_name, original_file_name: attachment.original_file_name, uploaded_at: document.uploaded_at, signed_url: data?.signedUrl ?? null }];
   }));
   const invoiceIds = (vendorInvoices ?? []).map((invoice) => invoice.id);
-  const { data: vendorInvoiceLines, error: vendorInvoiceLinesError } = invoiceIds.length ? await supabase.from("container_vendor_invoice_line").select("id, container_vendor_invoice_id, line_type, sku, description, quantity, unit_price, notes, sort_order").in("container_vendor_invoice_id", invoiceIds).order("sort_order") : { data: [], error: null };
+  const { data: vendorInvoiceLines, error: vendorInvoiceLinesError } = invoiceIds.length ? await supabase.from("container_vendor_invoice_line").select("id, container_vendor_invoice_id, line_type, po_number, sku, factory_sku, hs_code, description, quantity, pieces_per_carton, carton_count, unit_price, notes, sort_order").in("container_vendor_invoice_id", invoiceIds).order("sort_order") : { data: [], error: null };
   if (vendorInvoiceLinesError) throw new Error(vendorInvoiceLinesError.message);
 
   return {
@@ -13338,10 +13338,10 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
       const validBoxes = boxes.filter((box) => box.width > 0 && box.depth > 0 && box.height > 0);
       const unitCbm = validBoxes.length ? validBoxes.reduce((sum, box) => sum + box.width * box.depth * box.height / 61023.744, 0) : null;
       const quantityPacked = Number(line.quantity_packed);
-      return { id: line.id, vendor_id: purchaseOrder?.vendor_id ?? "unknown", vendor_email: purchaseOrder ? vendorById.get(purchaseOrder.vendor_id)?.email ?? null : null, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: productById.get(line.product_id)?.sku ?? "Unknown", name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: quantityPacked, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: quantityPacked * validBoxes.length, unit_cost: Number(purchaseOrderLine?.unit_cost ?? 0) };
+      return { id: line.id, vendor_id: purchaseOrder?.vendor_id ?? "unknown", vendor_email: purchaseOrder ? vendorById.get(purchaseOrder.vendor_id)?.email ?? null : null, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: productById.get(line.product_id)?.sku ?? "Unknown", factory_sku: purchaseOrderLine?.vendor_item_number_snapshot ?? null, name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: quantityPacked, carton_count: line.carton_count === null ? validBoxes.length * quantityPacked : Number(line.carton_count), packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: quantityPacked * validBoxes.length, unit_cost: Number(purchaseOrderLine?.unit_cost ?? 0) };
     }),
     documents: documents.flat(),
-    vendorInvoices: (vendorInvoices ?? []).map((invoice) => ({ ...invoice, lines: (vendorInvoiceLines ?? []).filter((line) => line.container_vendor_invoice_id === invoice.id).map((line) => ({ ...line, quantity: Number(line.quantity), unit_price: Number(line.unit_price) })) })),
+    vendorInvoices: (vendorInvoices ?? []).map((invoice) => ({ ...invoice, lines: (vendorInvoiceLines ?? []).filter((line) => line.container_vendor_invoice_id === invoice.id).map((line) => ({ ...line, carton_count: line.carton_count === null ? null : Number(line.carton_count), pieces_per_carton: line.pieces_per_carton === null ? null : Number(line.pieces_per_carton), quantity: Number(line.quantity), unit_price: Number(line.unit_price) })) })),
     activeOrders,
     selectedOrder,
     selectedLines: (selectedLinesResult.data ?? []).filter((line) => line.production_status !== "cancelled" && Number(line.quantity_ordered) > Number(line.quantity_exited_factory ?? 0)).map((line) => ({ id: line.id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, quantity_available: Number(line.quantity_ordered) - Number(line.quantity_exited_factory ?? 0), unit_cost: Number(line.unit_cost) })),
@@ -13462,7 +13462,7 @@ async function createContainerVendorInvoiceAction(formData: FormData) {
   const supabase = createSupabaseUntypedAdminClient();
   const { data: invoice, error: invoiceError } = await supabase.from("container_vendor_invoice").insert({ import_container_id: containerId, vendor_id: vendorId, vendor_name_snapshot: vendorLines[0].vendor_name, vendor_email_snapshot: vendorLines[0].vendor_email }).select("id").single();
   if (invoiceError || !invoice) redirect(`${detailUrl}&error=${encodeURIComponent(invoiceError?.message ?? "Vendor invoice could not be created.")}`);
-  const { error: linesError } = await supabase.from("container_vendor_invoice_line").insert(vendorLines.map((line, index) => ({ container_vendor_invoice_id: invoice.id, import_container_line_id: line.id, line_type: "product", sku: line.sku, description: line.name, quantity: line.quantity_packed, unit_price: line.unit_cost, sort_order: index + 1 })));
+  const { error: linesError } = await supabase.from("container_vendor_invoice_line").insert(vendorLines.map((line, index) => ({ container_vendor_invoice_id: invoice.id, import_container_line_id: line.id, line_type: "product", po_number: line.po_number, sku: line.sku, factory_sku: line.factory_sku, description: line.name, quantity: line.quantity_packed, carton_count: line.carton_count, unit_price: line.unit_cost, sort_order: index + 1 })));
   if (linesError) redirect(`${detailUrl}&error=${encodeURIComponent(linesError.message)}`);
   revalidatePath("/");
   redirect(`${detailUrl}&container_invoice=${invoice.id}`);
@@ -13478,18 +13478,26 @@ async function saveContainerVendorInvoiceAction(formData: FormData) {
   const { error: headerError } = await supabase.from("container_vendor_invoice").update({ vendor_invoice_number: textValue(formData, "vendor_invoice_number") || null, invoice_date: textValue(formData, "invoice_date") || null, notes: textValue(formData, "notes") || null }).eq("id", invoiceId).eq("import_container_id", containerId);
   if (headerError) redirect(`${detailUrl}&error=${encodeURIComponent(headerError.message)}`);
   const lineIds = formData.getAll("invoice_line_id").map(String);
+  const poNumbers = formData.getAll("po_number").map((value) => String(value).trim());
+  const skus = formData.getAll("sku").map((value) => String(value).trim());
+  const factorySkus = formData.getAll("factory_sku").map((value) => String(value).trim());
+  const hsCodes = formData.getAll("hs_code").map((value) => String(value).trim());
+  const descriptions = formData.getAll("description").map((value) => String(value).trim());
+  const quantities = formData.getAll("quantity").map((value) => Number(value));
+  const piecesPerCarton = formData.getAll("pieces_per_carton").map((value) => Number(value));
+  const cartonCounts = formData.getAll("carton_count").map((value) => Number(value));
   const unitPrices = formData.getAll("unit_price").map((value) => Number(value));
   for (let index = 0; index < lineIds.length; index += 1) {
-    if (!lineIds[index] || !Number.isFinite(unitPrices[index]) || unitPrices[index] < 0) redirect(`${detailUrl}&error=${encodeURIComponent("Every product unit price must be zero or greater.")}`);
-    const { error } = await supabase.from("container_vendor_invoice_line").update({ unit_price: unitPrices[index] }).eq("id", lineIds[index]).eq("container_vendor_invoice_id", invoiceId).eq("line_type", "product");
+    if (!lineIds[index] || !poNumbers[index] || !skus[index] || !descriptions[index] || !Number.isFinite(quantities[index]) || quantities[index] <= 0 || !Number.isFinite(unitPrices[index]) || unitPrices[index] < 0) redirect(`${detailUrl}&error=${encodeURIComponent("Complete every product invoice row with a PO number, SKU, description, quantity, and valid price.")}`);
+    const { error } = await supabase.from("container_vendor_invoice_line").update({ po_number: poNumbers[index], sku: skus[index], factory_sku: factorySkus[index] || null, hs_code: hsCodes[index] || null, description: descriptions[index], quantity: quantities[index], pieces_per_carton: Number.isFinite(piecesPerCarton[index]) ? piecesPerCarton[index] : null, carton_count: Number.isFinite(cartonCounts[index]) ? cartonCounts[index] : null, unit_price: unitPrices[index] }).eq("id", lineIds[index]).eq("container_vendor_invoice_id", invoiceId).eq("line_type", "product");
     if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
   }
   const { error: removeMiscError } = await supabase.from("container_vendor_invoice_line").delete().eq("container_vendor_invoice_id", invoiceId).eq("line_type", "misc");
   if (removeMiscError) redirect(`${detailUrl}&error=${encodeURIComponent(removeMiscError.message)}`);
-  const descriptions = formData.getAll("misc_description").map((value) => String(value).trim());
+  const miscDescriptions = formData.getAll("misc_description").map((value) => String(value).trim());
   const amounts = formData.getAll("misc_amount").map((value) => Number(value));
   const notes = formData.getAll("misc_notes").map((value) => String(value).trim());
-  const miscRows = descriptions.map((description, index) => ({ description, amount: amounts[index], notes: notes[index] })).filter((row) => row.description || Number.isFinite(row.amount) || row.notes);
+  const miscRows = miscDescriptions.map((description, index) => ({ description, amount: amounts[index], notes: notes[index] })).filter((row) => row.description || Number.isFinite(row.amount) || row.notes);
   if (miscRows.some((row) => !row.description || !row.notes || !Number.isFinite(row.amount) || row.amount < 0)) redirect(`${detailUrl}&error=${encodeURIComponent("Each miscellaneous charge needs a description, amount, and note.")}`);
   if (miscRows.length) {
     const { error } = await supabase.from("container_vendor_invoice_line").insert(miscRows.map((row, index) => ({ container_vendor_invoice_id: invoiceId, line_type: "misc", description: row.description, quantity: 1, unit_price: row.amount, notes: row.notes, sort_order: 1000 + index })));

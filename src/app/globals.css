@@ -1109,6 +1109,29 @@ input {
   color: #b42318;
 }
 
+.container-arrival-callout {
+  align-items: baseline;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+  padding: 14px 0;
+}
+
+.container-arrival-callout span {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.container-arrival-callout strong {
+  color: #087c68;
+  font-size: 23px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
 .order-entry-form {
   max-width: 1280px;
 }

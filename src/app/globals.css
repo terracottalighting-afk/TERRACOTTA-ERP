@@ -3407,6 +3407,7 @@ tfoot td {
 
 .inline-action-form {
   display: inline;
+  margin-left: 12px;
 }
 
 .po-line-editor-row > td {

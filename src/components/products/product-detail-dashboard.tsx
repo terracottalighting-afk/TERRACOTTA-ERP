@@ -127,6 +127,7 @@ type ProductDetailDashboardProduct = {
   materials: string[];
   next_incoming_eta: string | null;
   no_box_needed: boolean;
+  pieces_per_carton: number;
   on_hand_quantity: number;
   packingBoxes: ProductPackingBox[];
   parts: ProductDetailPartRow[];
@@ -317,6 +318,10 @@ export function ProductDetailDashboard({
                 <div>
                   <dt>Box Required</dt>
                   <dd>{product.no_box_needed ? "No box needed" : "Packing box required"}</dd>
+                </div>
+                <div>
+                  <dt>Pieces Per Carton (Pcs/Ctn)</dt>
+                  <dd>{numberFormatter.format(product.pieces_per_carton)}</dd>
                 </div>
               </dl>
             </div>

@@ -55,6 +55,7 @@ type ProductEditProduct = {
   material_ids: string[];
   name: string;
   no_box_needed: boolean;
+  pieces_per_carton: number;
   packingBoxes: {
     box_height: number | null;
     box_label: string | null;
@@ -374,6 +375,10 @@ export function AddProductForm({
             <label>
               Default Vendor Item No.
               <input name="default_vendor_item_number" />
+            </label>
+            <label>
+              Pieces Per Carton (Pcs/Ctn)
+              <input defaultValue={1} min="0.001" name="pieces_per_carton" required step="0.001" type="number" />
             </label>
             <label className="checkbox-label">
               <input name="no_box_needed" type="checkbox" />
@@ -1590,6 +1595,17 @@ export async function EditProductProfileForm({
               <input
                 defaultValue={product.default_vendor_item_number ?? ""}
                 name="default_vendor_item_number"
+              />
+            </label>
+            <label>
+              Pieces Per Carton (Pcs/Ctn)
+              <input
+                defaultValue={product.pieces_per_carton}
+                min="0.001"
+                name="pieces_per_carton"
+                required
+                step="0.001"
+                type="number"
               />
             </label>
             <label className="checkbox-label">

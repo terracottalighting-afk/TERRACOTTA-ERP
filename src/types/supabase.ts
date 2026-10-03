@@ -6849,6 +6849,7 @@ export type Database = {
           name: string
           no_box_needed: boolean
           notes: string | null
+          pieces_per_carton: number
           primary_showroom_exclusion_reason: string | null
           product_category_id: string | null
           sellability_status: Database["public"]["Enums"]["product_sellability_status"]
@@ -6878,6 +6879,7 @@ export type Database = {
           name: string
           no_box_needed?: boolean
           notes?: string | null
+          pieces_per_carton?: number
           primary_showroom_exclusion_reason?: string | null
           product_category_id?: string | null
           sellability_status?: Database["public"]["Enums"]["product_sellability_status"]
@@ -6907,6 +6909,7 @@ export type Database = {
           name?: string
           no_box_needed?: boolean
           notes?: string | null
+          pieces_per_carton?: number
           primary_showroom_exclusion_reason?: string | null
           product_category_id?: string | null
           sellability_status?: Database["public"]["Enums"]["product_sellability_status"]

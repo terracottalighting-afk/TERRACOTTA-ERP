@@ -775,6 +775,7 @@ type ProductDetail = {
   materials: string[];
   next_incoming_eta: string | null;
   no_box_needed: boolean;
+  pieces_per_carton: number;
   on_hand_quantity: number;
   packingBoxes: ProductPackingBoxDetail[];
   parts: ProductComponentPartItem[];
@@ -7093,7 +7094,12 @@ async function updateProductProfileAction(formData: FormData) {
     : "all";
   const priceRaw = optionalText("default_price");
   const defaultPrice = priceRaw ? Number(priceRaw) : null;
+  const piecesPerCarton = Number(formData.get("pieces_per_carton") ?? 1);
   const description = optionalText("description");
+
+  if (!Number.isFinite(piecesPerCarton) || piecesPerCarton <= 0) {
+    redirect(`/?module=edit-product-profile&product=${productId}&error=${encodeURIComponent("Pieces per carton must be greater than zero.")}`);
+  }
 
   const { error } = await supabase
     .from("product")
@@ -7114,6 +7120,7 @@ async function updateProductProfileAction(formData: FormData) {
         : null,
       name,
       no_box_needed: formData.get("no_box_needed") === "on",
+      pieces_per_carton: piecesPerCarton,
       primary_showroom_exclusion_reason:
         formData.get("counts_toward_primary_showroom_default") === "no"
           ? optionalText("primary_showroom_exclusion_reason")
@@ -7230,7 +7237,12 @@ async function createProductAction(formData: FormData) {
     : "all";
   const priceRaw = optionalText("default_price");
   const defaultPrice = priceRaw ? Number(priceRaw) : null;
+  const piecesPerCarton = Number(formData.get("pieces_per_carton") ?? 1);
   const description = optionalText("description");
+
+  if (!Number.isFinite(piecesPerCarton) || piecesPerCarton <= 0) {
+    redirect(`/?module=add-product&error=${encodeURIComponent("Pieces per carton must be greater than zero.")}`);
+  }
 
   const { data, error } = await supabase
     .from("product")
@@ -7251,6 +7263,7 @@ async function createProductAction(formData: FormData) {
         : null,
       name,
       no_box_needed: formData.get("no_box_needed") === "on",
+      pieces_per_carton: piecesPerCarton,
       primary_showroom_exclusion_reason:
         formData.get("counts_toward_primary_showroom_default") === "no"
           ? optionalText("primary_showroom_exclusion_reason")
@@ -10554,7 +10567,7 @@ async function getProductDetail(
   const { data: product, error: productError } = await supabase
     .from("product")
     .select(
-      "id, sku, name, description, collection, status, sellability_status, customer_eligibility_tag, counts_toward_primary_showroom_default, primary_showroom_exclusion_reason, default_price, currency, default_vendor_item_number, no_box_needed, brand_id, product_category_id, signature_suite_id, brand(name), product_category(name), product_signature_suite(name)",
+      "id, sku, name, description, collection, status, sellability_status, customer_eligibility_tag, counts_toward_primary_showroom_default, primary_showroom_exclusion_reason, default_price, currency, default_vendor_item_number, no_box_needed, pieces_per_carton, brand_id, product_category_id, signature_suite_id, brand(name), product_category(name), product_signature_suite(name)",
     )
     .eq("id", productId)
     .maybeSingle();
@@ -11112,6 +11125,7 @@ async function getProductDetail(
     materials: (materialsResult.data ?? []).flatMap((productMaterial) => productMaterial.material ?? []).map((material) => material.material_name),
     next_incoming_eta: summaryResult.data?.next_incoming_eta ?? null,
     no_box_needed: product.no_box_needed,
+    pieces_per_carton: Number(product.pieces_per_carton),
     on_hand_quantity: calculatedOnHandQuantity,
     packingBoxes,
     parts,
@@ -13304,7 +13318,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   const productIds = [...new Set((containerLines ?? []).map((line) => line.product_id))];
   const poLineIds = [...new Set((containerLines ?? []).map((line) => line.vendor_purchase_order_line_id))];
   const [productsResult, purchaseOrderLinesResult, catalogBoxesResult] = await Promise.all([
-    productIds.length ? supabase.from("product").select("id, sku, name").in("id", productIds) : Promise.resolve({ data: [], error: null }),
+    productIds.length ? supabase.from("product").select("id, sku, name, pieces_per_carton").in("id", productIds) : Promise.resolve({ data: [], error: null }),
     poLineIds.length ? supabase.from("vendor_purchase_order_line").select("id, vendor_product_id, vendor_purchase_order_id, vendor_item_number_snapshot, unit_cost").in("id", poLineIds) : Promise.resolve({ data: [], error: null }),
     productIds.length ? supabase.from("product_packing_box").select("product_id, box_label, box_width, box_length, box_height, box_sequence").in("product_id", productIds).eq("is_active", true).order("box_sequence") : Promise.resolve({ data: [], error: null }),
   ]);
@@ -13338,7 +13352,10 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
       const validBoxes = boxes.filter((box) => box.width > 0 && box.depth > 0 && box.height > 0);
       const unitCbm = validBoxes.length ? validBoxes.reduce((sum, box) => sum + box.width * box.depth * box.height / 61023.744, 0) : null;
       const quantityPacked = Number(line.quantity_packed);
-      return { id: line.id, vendor_id: purchaseOrder?.vendor_id ?? "unknown", vendor_email: purchaseOrder ? vendorById.get(purchaseOrder.vendor_id)?.email ?? null : null, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: productById.get(line.product_id)?.sku ?? "Unknown", factory_sku: purchaseOrderLine?.vendor_item_number_snapshot ?? null, name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: quantityPacked, carton_count: line.carton_count === null ? validBoxes.length * quantityPacked : Number(line.carton_count), packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: quantityPacked * validBoxes.length, unit_cost: Number(purchaseOrderLine?.unit_cost ?? 0) };
+      const piecesPerCarton = Number(productById.get(line.product_id)?.pieces_per_carton ?? 1);
+      const calculatedCartonCount = Math.ceil(quantityPacked / piecesPerCarton) * validBoxes.length;
+      const cartonCount = line.carton_count === null ? calculatedCartonCount : Number(line.carton_count);
+      return { id: line.id, vendor_id: purchaseOrder?.vendor_id ?? "unknown", vendor_email: purchaseOrder ? vendorById.get(purchaseOrder.vendor_id)?.email ?? null : null, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: productById.get(line.product_id)?.sku ?? "Unknown", factory_sku: purchaseOrderLine?.vendor_item_number_snapshot ?? null, name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: quantityPacked, pieces_per_carton: piecesPerCarton, carton_count: cartonCount, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: cartonCount, unit_cost: Number(purchaseOrderLine?.unit_cost ?? 0) };
     }),
     documents: documents.flat(),
     vendorInvoices: (vendorInvoices ?? []).map((invoice) => ({ ...invoice, lines: (vendorInvoiceLines ?? []).filter((line) => line.container_vendor_invoice_id === invoice.id).map((line) => ({ ...line, carton_count: line.carton_count === null ? null : Number(line.carton_count), pieces_per_carton: line.pieces_per_carton === null ? null : Number(line.pieces_per_carton), quantity: Number(line.quantity), unit_price: Number(line.unit_price) })) })),
@@ -13462,7 +13479,7 @@ async function createContainerVendorInvoiceAction(formData: FormData) {
   const supabase = createSupabaseUntypedAdminClient();
   const { data: invoice, error: invoiceError } = await supabase.from("container_vendor_invoice").insert({ import_container_id: containerId, vendor_id: vendorId, vendor_name_snapshot: vendorLines[0].vendor_name, vendor_email_snapshot: vendorLines[0].vendor_email }).select("id").single();
   if (invoiceError || !invoice) redirect(`${detailUrl}&error=${encodeURIComponent(invoiceError?.message ?? "Vendor invoice could not be created.")}`);
-  const { error: linesError } = await supabase.from("container_vendor_invoice_line").insert(vendorLines.map((line, index) => ({ container_vendor_invoice_id: invoice.id, import_container_line_id: line.id, line_type: "product", po_number: line.po_number, sku: line.sku, factory_sku: line.factory_sku, description: line.name, quantity: line.quantity_packed, carton_count: line.carton_count, unit_price: line.unit_cost, sort_order: index + 1 })));
+  const { error: linesError } = await supabase.from("container_vendor_invoice_line").insert(vendorLines.map((line, index) => ({ container_vendor_invoice_id: invoice.id, import_container_line_id: line.id, line_type: "product", po_number: line.po_number, sku: line.sku, factory_sku: line.factory_sku, description: line.name, quantity: line.quantity_packed, pieces_per_carton: line.pieces_per_carton, carton_count: line.carton_count, unit_price: line.unit_cost, sort_order: index + 1 })));
   if (linesError) redirect(`${detailUrl}&error=${encodeURIComponent(linesError.message)}`);
   revalidatePath("/");
   redirect(`${detailUrl}&container_invoice=${invoice.id}`);

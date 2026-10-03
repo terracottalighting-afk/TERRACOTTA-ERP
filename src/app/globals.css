@@ -1054,6 +1054,16 @@ input {
   min-height: 40px;
 }
 
+.container-status-form {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.container-status-form select {
+  min-height: 40px;
+}
+
 .order-entry-form {
   max-width: 1280px;
 }

@@ -120,7 +120,7 @@ import {
   timestampLabel,
 } from "@/lib/formatters";
 import { productPartRoleOptions } from "@/lib/product-part-roles";
-import { DEFAULT_IMPORT_TARIFF_RATE_PERCENT, DEFAULT_VENDOR_PRODUCTION_COMMITMENT } from "@/lib/purchasing";
+import { configuredContainerStatusOptions, containerStatusCode, DEFAULT_CONTAINER_STATUSES, DEFAULT_IMPORT_TARIFF_RATE_PERCENT, DEFAULT_VENDOR_PRODUCTION_COMMITMENT } from "@/lib/purchasing";
 import {
   EmptyState,
   Metric,
@@ -2164,15 +2164,19 @@ async function savePurchasingSettingsAction(formData: FormData) {
   const tariffRateText = textValue(formData, "import_tariff_rate_percent");
   const tariffRatePercent = Number(tariffRateText);
   const commitment = textValue(formData, "vendor_production_commitment");
+  const containerStatuses = textValue(formData, "container_statuses").split(",").map((status) => status.trim()).filter(Boolean);
   const errorUrl = (message: string) => `/?module=admin&admin_tab=purchasing&error=${encodeURIComponent(message)}`;
 
   if (!tariffRateText || !Number.isFinite(tariffRatePercent) || tariffRatePercent < 0 || tariffRatePercent > 100) {
     redirect(errorUrl("Enter an import tariff rate between 0% and 100%."));
   }
   if (!commitment) redirect(errorUrl("Enter the vendor production commitment."));
+  if (!containerStatuses.length) redirect(errorUrl("Enter at least one container status."));
+  if (containerStatuses.some((status) => !/^[a-z0-9][a-z0-9 /&()-]*$/i.test(status))) redirect(errorUrl("Container statuses may use letters, numbers, spaces, and / & ( ) - only."));
+  if (new Set(containerStatuses.map(containerStatusCode)).size !== containerStatuses.length) redirect(errorUrl("Container statuses must be unique."));
 
   const supabase = createSupabaseUntypedAdminClient();
-  const [tariffResult, commitmentResult] = await Promise.all([
+  const [tariffResult, commitmentResult, containerStatusResult] = await Promise.all([
     supabase.from("system_setting").upsert({
       category: "purchasing",
       default_value_json: 39,
@@ -2193,8 +2197,18 @@ async function savePurchasingSettingsAction(formData: FormData) {
       validation_json: { minLength: 1, type: "string" },
       value_type: "string",
     }, { onConflict: "setting_key" }),
+    supabase.from("system_setting").upsert({
+      category: "purchasing",
+      default_value_json: DEFAULT_CONTAINER_STATUSES,
+      description: "Comma-separated statuses available when updating a container.",
+      setting_key: "purchasing_container_statuses",
+      setting_label: "Container Statuses",
+      setting_value: containerStatuses,
+      validation_json: { items: { type: "string" }, minItems: 1, type: "array" },
+      value_type: "json",
+    }, { onConflict: "setting_key" }),
   ]);
-  const error = tariffResult.error ?? commitmentResult.error;
+  const error = tariffResult.error ?? commitmentResult.error ?? containerStatusResult.error;
   if (error) redirect(errorUrl(error.message));
   revalidatePath("/");
   redirect("/?module=admin&admin_tab=purchasing");
@@ -13258,6 +13272,11 @@ async function resolveContainerLoadingSite(vendorId: string) {
   return { consolidation_loading_address: vendorAddressLabel(vendor) || null, consolidation_loading_site: vendor.name, consolidation_loading_vendor_id: vendor.id };
 }
 
+async function getContainerStatusOptions() {
+  const { data, error } = await createSupabaseUntypedAdminClient().from("system_setting").select("setting_value").eq("setting_key", "purchasing_container_statuses").maybeSingle();
+  return error ? configuredContainerStatusOptions(DEFAULT_CONTAINER_STATUSES) : configuredContainerStatusOptions(data?.setting_value);
+}
+
 async function getContainerWorkspace(containerId: string, selectedPurchaseOrderId?: string) {
   const supabase = createSupabaseUntypedAdminClient();
   const [{ data: container, error: containerError }, { data: orders, error: ordersError }, { data: containerLines, error: containerLinesError }, { data: documentRows, error: documentRowsError }] = await Promise.all([
@@ -13380,6 +13399,20 @@ async function updateContainerHeaderAction(formData: FormData) {
   } : loadingSite!;
   const { error } = await createSupabaseUntypedAdminClient().from("import_container").update(values).eq("id", containerId);
   if (error) redirect(`${baseUrl}&error=${encodeURIComponent(error.message)}`);
+  redirect(baseUrl);
+}
+
+async function updateContainerStatusAction(formData: FormData) {
+  "use server";
+  const containerId = textValue(formData, "container_id");
+  const containerStatus = textValue(formData, "container_status");
+  const baseUrl = `/?module=container-detail&container=${containerId}`;
+  if (!containerId) redirect(`/?module=purchasing&error=${encodeURIComponent("Container could not be identified.")}`);
+  const options = await getContainerStatusOptions();
+  if (!options.some((option) => option.code === containerStatus)) redirect(`${baseUrl}&error=${encodeURIComponent("Select a valid configured container status.")}`);
+  const { error } = await createSupabaseUntypedAdminClient().from("import_container").update({ container_status: containerStatus }).eq("id", containerId);
+  if (error) redirect(`${baseUrl}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
   redirect(baseUrl);
 }
 
@@ -15889,7 +15922,7 @@ export async function ErpRouter({
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} vendors={await getContainerLoadingSiteVendors()} />;
         })() : activeModule === "container-detail" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
-          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} documents={workspace?.documents ?? []} />;
+          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} documents={workspace?.documents ?? []} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} />;
         })() : activeModule === "container-loading-sheets" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerLoadingSheetPage container={workspace?.container ?? null} lines={workspace?.containerLines ?? []} selectedVendorId={params.loading_vendor} />;

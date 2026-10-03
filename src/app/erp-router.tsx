@@ -13249,7 +13249,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   if (containerError || ordersError || containerLinesError || documentRowsError) throw new Error(containerError?.message ?? ordersError?.message ?? containerLinesError?.message ?? documentRowsError?.message);
   if (!container) return null;
 
-  const activeOrders = (orders ?? []).filter((order) => !["closed", "cancelled"].includes(order.status));
+  const activeOrders = (orders ?? []).filter((order) => !["draft", "closed", "cancelled"].includes(order.status));
   const selectedOrder = activeOrders.find((order) => order.id === selectedPurchaseOrderId) ?? null;
   const selectedLinesResult = selectedOrder ? await supabase.from("vendor_purchase_order_line").select("id, product_id, product_sku_snapshot, product_name_snapshot, quantity_ordered, quantity_exited_factory, production_status, unit_cost").eq("vendor_purchase_order_id", selectedOrder.id).order("created_at") : { data: [], error: null };
   if (selectedLinesResult.error) throw new Error(selectedLinesResult.error.message);
@@ -13461,7 +13461,7 @@ async function addContainerProductAction(formData: FormData) {
     supabase.from("vendor_purchase_order_line").select("id, product_id, quantity_ordered, quantity_exited_factory, production_status").eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId).maybeSingle(),
   ]);
   if (containerError || !container || ["closed", "cancelled"].includes(container?.container_status ?? "")) return fail(containerError?.message ?? "This container is no longer open for loading.");
-  if (orderError || !order || ["closed", "cancelled"].includes(order.status)) return fail(orderError?.message ?? "This purchase order is not available for container loading.");
+  if (orderError || !order || ["draft", "closed", "cancelled"].includes(order.status)) return fail(orderError?.message ?? "This purchase order is not available for container loading.");
   if (lineError || !line || line.production_status === "cancelled") return fail(lineError?.message ?? "This product line is not available for container loading.");
   const available = Number(line.quantity_ordered) - Number(line.quantity_exited_factory ?? 0);
   if (quantity > available) return fail(`Only ${available} units remain available for this product line.`);

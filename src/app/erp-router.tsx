@@ -33,6 +33,7 @@ import { PurchaseOrderProductionUpdate } from "@/components/purchasing/purchase-
 import { ContainerEditor } from "@/components/purchasing/container-editor";
 import { ContainerWorkspace } from "@/components/purchasing/container-workspace";
 import { ContainerSummary } from "@/components/purchasing/container-summary";
+import { ContainerLoadingSheetPage } from "@/components/purchasing/container-loading-sheet-page";
 import { PurchasingAgencyEditor } from "@/components/purchasing/purchasing-agency-editor";
 import { VendorPurchaseOrderDocumentPage } from "@/components/purchasing/vendor-purchase-order-document-page";
 import { VendorDashboard, type VendorDashboardData } from "@/components/purchasing/vendor-dashboard";
@@ -223,6 +224,7 @@ export type SearchParams = Promise<{
   container?: string;
   container_edit_mode?: string;
   container_edit?: string;
+  loading_vendor?: string;
   container_po?: string;
   po_edit?: string;
   po_line?: string;
@@ -13242,12 +13244,17 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   const supabase = createSupabaseUntypedAdminClient();
   const [{ data: container, error: containerError }, { data: orders, error: ordersError }, { data: containerLines, error: containerLinesError }, { data: documentRows, error: documentRowsError }] = await Promise.all([
     supabase.from("import_container").select("id, container_number, booking_number, shipping_agency, shipping_agent_contact_name, shipping_agent_contact_email, vessel_name, expected_loading_date, actual_loading_date, etd, actual_vessel_departure_date, arrival_port, eta, arrival_date, tariff_broker_agency, broker_contact_name, broker_contact_email, container_status").eq("id", containerId).maybeSingle(),
-    supabase.from("vendor_purchase_order").select("id, vendor_po_number, vendor_name_snapshot, status").order("po_date", { ascending: false }),
+    supabase.from("vendor_purchase_order").select("id, vendor_id, vendor_po_number, vendor_name_snapshot, status").order("po_date", { ascending: false }),
     supabase.from("import_container_line").select("id, vendor_purchase_order_line_id, product_id, quantity_packed").eq("import_container_id", containerId).eq("is_active", true),
     supabase.from("container_document").select("id, document_type, display_name, uploaded_at, attachment:file_id(id, original_file_name, storage_bucket, storage_path)").eq("import_container_id", containerId).eq("is_active", true).order("uploaded_at", { ascending: false }),
   ]);
   if (containerError || ordersError || containerLinesError || documentRowsError) throw new Error(containerError?.message ?? ordersError?.message ?? containerLinesError?.message ?? documentRowsError?.message);
   if (!container) return null;
+
+  const vendorIds = [...new Set((orders ?? []).map((order) => order.vendor_id))];
+  const vendorsResult = vendorIds.length ? await supabase.from("vendor").select("id, email").in("id", vendorIds) : { data: [], error: null };
+  if (vendorsResult.error) throw new Error(vendorsResult.error.message);
+  const vendorById = new Map((vendorsResult.data ?? []).map((vendor) => [vendor.id, vendor]));
 
   const activeOrders = (orders ?? []).filter((order) => !["draft", "closed", "cancelled"].includes(order.status));
   const selectedOrder = activeOrders.find((order) => order.id === selectedPurchaseOrderId) ?? null;
@@ -13287,7 +13294,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
       const validBoxes = boxes.filter((box) => box.width > 0 && box.depth > 0 && box.height > 0);
       const unitCbm = validBoxes.length ? validBoxes.reduce((sum, box) => sum + box.width * box.depth * box.height / 61023.744, 0) : null;
       const quantityPacked = Number(line.quantity_packed);
-      return { id: line.id, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: productById.get(line.product_id)?.sku ?? "Unknown", name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: quantityPacked, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: quantityPacked * validBoxes.length };
+      return { id: line.id, vendor_id: purchaseOrder?.vendor_id ?? "unknown", vendor_email: purchaseOrder ? vendorById.get(purchaseOrder.vendor_id)?.email ?? null : null, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: productById.get(line.product_id)?.sku ?? "Unknown", name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: quantityPacked, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: quantityPacked * validBoxes.length };
     }),
     documents: documents.flat(),
     activeOrders,
@@ -15860,6 +15867,9 @@ export async function ErpRouter({
         })() : activeModule === "container-detail" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} documents={workspace?.documents ?? []} />;
+        })() : activeModule === "container-loading-sheets" ? await (async () => {
+          const workspace = params.container ? await getContainerWorkspace(params.container) : null;
+          return <ContainerLoadingSheetPage container={workspace?.container ?? null} lines={workspace?.containerLines ?? []} selectedVendorId={params.loading_vendor} />;
         })() : activeModule === "purchasing-agency" ? (
           <PurchasingAgencyEditor agency={params.purchasing_agency ? await getPurchasingAgency(params.purchasing_agency) : null} defaultBusinessType={params.agency_type === "customs_broker" ? "customs_broker" : "shipping"} error={params.error} saveAction={savePurchasingAgencyAction} deleteAction={deletePurchasingAgencyAction} />
         ) : activeModule === "create-vendor-purchase-order" ? (

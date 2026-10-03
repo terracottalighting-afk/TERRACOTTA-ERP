@@ -217,6 +217,7 @@ export type SearchParams = Promise<{
   packing_list?: string;
   purchase_order?: string;
   purchasing_agency?: string;
+  purchasing_tab?: string;
   agency_type?: string;
   container?: string;
   container_po?: string;
@@ -13296,7 +13297,7 @@ async function savePurchasingAgencyAction(formData: FormData) {
   const supabase = createSupabaseUntypedAdminClient();
   const result = agencyId ? await supabase.from("purchasing_agency").update(values).eq("id", agencyId).select("id").single() : await supabase.from("purchasing_agency").insert(values).select("id").single();
   if (result.error || !result.data) return fail(result.error?.message ?? "The agency could not be saved.");
-  return { destination: `/?module=purchasing-agency&purchasing_agency=${result.data.id}` };
+  return { destination: "/?module=purchasing&purchasing_tab=agencies" };
 }
 
 async function deletePurchasingAgencyAction(formData: FormData) {
@@ -13305,7 +13306,7 @@ async function deletePurchasingAgencyAction(formData: FormData) {
   if (!agencyId) return { error: "The agency could not be identified." };
   const { error } = await createSupabaseUntypedAdminClient().from("purchasing_agency").delete().eq("id", agencyId);
   if (error) return { error: error.message };
-  return { destination: "/?module=purchasing" };
+  return { destination: "/?module=purchasing&purchasing_tab=agencies" };
 }
 
 async function addContainerProductAction(formData: FormData) {
@@ -15665,7 +15666,7 @@ export async function ErpRouter({
             saveAction={recordInvoicePaymentAction}
           />
         ) : activeModule === "purchasing" ? (
-          <PurchasingDashboard dashboard={await getPurchasingDashboard()} />
+          <PurchasingDashboard dashboard={await getPurchasingDashboard()} selectedTab={params.purchasing_tab} />
         ) : activeModule === "create-container" ? (
           <ContainerEditor error={params.error} saveAction={createContainerAction} />
         ) : activeModule === "container" ? await (async () => {

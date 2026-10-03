@@ -32,6 +32,7 @@ import { PurchaseOrderReview } from "@/components/purchasing/purchase-order-revi
 import { PurchaseOrderProductionUpdate } from "@/components/purchasing/purchase-order-production-update";
 import { ContainerEditor } from "@/components/purchasing/container-editor";
 import { ContainerWorkspace } from "@/components/purchasing/container-workspace";
+import { PurchasingAgencyEditor } from "@/components/purchasing/purchasing-agency-editor";
 import { VendorPurchaseOrderDocumentPage } from "@/components/purchasing/vendor-purchase-order-document-page";
 import { VendorDashboard, type VendorDashboardData } from "@/components/purchasing/vendor-dashboard";
 import { VendorEditor } from "@/components/purchasing/vendor-editor";
@@ -215,6 +216,8 @@ export type SearchParams = Promise<{
   shipment_edit?: string;
   packing_list?: string;
   purchase_order?: string;
+  purchasing_agency?: string;
+  agency_type?: string;
   container?: string;
   container_po?: string;
   po_edit?: string;
@@ -13205,15 +13208,18 @@ async function getPrimaryShowroomDashboard(
 
 async function getPurchasingDashboard() {
   const supabase = createSupabaseUntypedAdminClient();
-  const [vendorsResult, purchaseOrdersResult, containersResult] = await Promise.all([
+  const [vendorsResult, purchaseOrdersResult, containersResult, agenciesResult] = await Promise.all([
     supabase.from("vendor").select("id, vendor_number, name, contact_name, email, status").order("name", { ascending: true }),
     supabase.from("vendor_purchase_order").select("id, vendor_po_number, vendor_name_snapshot, po_date, expected_ready_date, total_amount, status").order("po_date", { ascending: false }),
     supabase.from("import_container").select("id, container_number, shipping_agency, etd, eta, arrival_date, container_status").order("created_at", { ascending: false }),
+    supabase.from("purchasing_agency").select("id, business_type, agency_name, contact_name, contact_email, contact_phone").order("agency_name"),
   ]);
   if (vendorsResult.error) throw new Error(vendorsResult.error.message);
   if (purchaseOrdersResult.error) throw new Error(purchaseOrdersResult.error.message);
   if (containersResult.error) throw new Error(containersResult.error.message);
+  if (agenciesResult.error) throw new Error(agenciesResult.error.message);
   return {
+    agencies: agenciesResult.data ?? [],
     containers: (containersResult.data ?? []).map((container) => ({ ...container, freight_amount: 0 })),
     purchaseOrders: purchaseOrdersResult.data ?? [],
     vendors: vendorsResult.data ?? [],
@@ -13272,6 +13278,35 @@ async function createContainerAction(formData: FormData) {
   }).select("id").single();
   if (error || !data) return fail(error?.message ?? "The container could not be created.");
   return { destination: `/?module=container&container=${data.id}` };
+}
+
+async function getPurchasingAgency(agencyId: string) {
+  const { data, error } = await createSupabaseUntypedAdminClient().from("purchasing_agency").select("id, business_type, agency_name, address, contact_name, contact_email, contact_phone, bank_name, bank_swift_code, bank_ach_routing_number, bank_account_number").eq("id", agencyId).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+async function savePurchasingAgencyAction(formData: FormData) {
+  "use server";
+  const agencyId = textValue(formData, "agency_id");
+  const businessType = textValue(formData, "business_type");
+  const agencyName = textValue(formData, "agency_name");
+  const fail = (message: string) => ({ error: message });
+  if (!agencyName || !["shipping", "customs_broker"].includes(businessType)) return fail("Enter an agency name and select a valid business type.");
+  const values = { business_type: businessType, agency_name: agencyName, address: textValue(formData, "address") || null, contact_name: textValue(formData, "contact_name") || null, contact_email: textValue(formData, "contact_email") || null, contact_phone: textValue(formData, "contact_phone") || null, bank_name: textValue(formData, "bank_name") || null, bank_swift_code: textValue(formData, "bank_swift_code") || null, bank_ach_routing_number: textValue(formData, "bank_ach_routing_number") || null, bank_account_number: textValue(formData, "bank_account_number") || null };
+  const supabase = createSupabaseUntypedAdminClient();
+  const result = agencyId ? await supabase.from("purchasing_agency").update(values).eq("id", agencyId).select("id").single() : await supabase.from("purchasing_agency").insert(values).select("id").single();
+  if (result.error || !result.data) return fail(result.error?.message ?? "The agency could not be saved.");
+  return { destination: `/?module=purchasing-agency&purchasing_agency=${result.data.id}` };
+}
+
+async function deletePurchasingAgencyAction(formData: FormData) {
+  "use server";
+  const agencyId = textValue(formData, "agency_id");
+  if (!agencyId) return { error: "The agency could not be identified." };
+  const { error } = await createSupabaseUntypedAdminClient().from("purchasing_agency").delete().eq("id", agencyId);
+  if (error) return { error: error.message };
+  return { destination: "/?module=purchasing" };
 }
 
 async function addContainerProductAction(formData: FormData) {
@@ -15637,7 +15672,9 @@ export async function ErpRouter({
         ) : activeModule === "container" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container, params.container_po) : null;
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} />;
-        })() : activeModule === "create-vendor-purchase-order" ? (
+        })() : activeModule === "purchasing-agency" ? (
+          <PurchasingAgencyEditor agency={params.purchasing_agency ? await getPurchasingAgency(params.purchasing_agency) : null} defaultBusinessType={params.agency_type === "customs_broker" ? "customs_broker" : "shipping"} error={params.error} saveAction={savePurchasingAgencyAction} deleteAction={deletePurchasingAgencyAction} />
+        ) : activeModule === "create-vendor-purchase-order" ? (
           <PurchaseOrderEditor
             error={params.error}
             saveAction={createVendorPurchaseOrderAction}

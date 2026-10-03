@@ -2303,6 +2303,7 @@ async function deleteReportMappingAction(formData: FormData) {
 async function createReportDefinitionAction(formData: FormData) {
   "use server";
   const name = textValue(formData, "report_name");
+  const settingTypeCode = textValue(formData, "setting_type_code");
   const fieldLabels = formData.getAll("field_label").map((value) => String(value).trim()).filter(Boolean);
   const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
   if (!name || name.length > 80) redirect(errorUrl("Enter a report name of 80 characters or fewer."));
@@ -2313,16 +2314,50 @@ async function createReportDefinitionAction(formData: FormData) {
   if (!/^[a-z][a-z0-9_]*$/.test(reportType)) redirect(errorUrl("Enter a report name that includes at least one letter."));
 
   const supabase = createSupabaseUntypedAdminClient();
+  const { data: settingType, error: settingTypeError } = await supabase.from("report_setting_type").select("id").eq("type_code", settingTypeCode).maybeSingle();
+  if (settingTypeError) redirect(errorUrl(settingTypeError.message));
+  if (!settingType) redirect(errorUrl("Choose a saved Report Type before adding a report."));
   const { data: existing, error: existingError } = await supabase.from("report_definition").select("id").eq("report_type", reportType).maybeSingle();
   if (existingError) redirect(errorUrl(existingError.message));
   if (existing) redirect(errorUrl("A report with this name already exists."));
-  const { error: definitionError } = await supabase.from("report_definition").insert({ report_code: reportType, report_type: reportType, name, sort_order: 1000 });
+  const { error: definitionError } = await supabase.from("report_definition").insert({ report_code: reportType, report_type: reportType, setting_type_code: settingTypeCode, name, sort_order: 1000 });
   if (definitionError) redirect(errorUrl(definitionError.message));
   const { error: fieldError } = await supabase.from("report_field_mapping").insert(fieldLabels.map((label, index) => ({ report_type: reportType, field_code: fieldCodes[index], display_label: label, data_source: "unmapped", sort_order: index + 1 })));
   if (fieldError) {
     await supabase.from("report_definition").delete().eq("report_type", reportType);
     redirect(errorUrl(fieldError.message));
   }
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=reports");
+}
+
+async function createReportSettingTypeAction(formData: FormData) {
+  "use server";
+  const name = textValue(formData, "report_type_name");
+  const description = textValue(formData, "report_type_description") || null;
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
+  if (!name || name.length > 80) redirect(errorUrl("Enter a Report Type name of 80 characters or fewer."));
+  if (description && description.length > 240) redirect(errorUrl("Enter a Report Type description of 240 characters or fewer."));
+  const typeCode = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!/^[a-z][a-z0-9_]*$/.test(typeCode)) redirect(errorUrl("Enter a Report Type name that includes at least one letter."));
+  const supabase = createSupabaseUntypedAdminClient();
+  const { error } = await supabase.from("report_setting_type").insert({ type_code: typeCode, name, description, sort_order: 1000 });
+  if (error) redirect(errorUrl(error.code === "23505" ? "A Report Type with this name already exists." : error.message));
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=reports");
+}
+
+async function setReportDefinitionTypeAction(formData: FormData) {
+  "use server";
+  const reportType = textValue(formData, "report_type") as ReportTypeCode;
+  const settingTypeCode = textValue(formData, "setting_type_code");
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: settingType, error: settingTypeError } = await supabase.from("report_setting_type").select("id").eq("type_code", settingTypeCode).maybeSingle();
+  if (settingTypeError) redirect(errorUrl(settingTypeError.message));
+  if (!settingType) redirect(errorUrl("Choose a saved Report Type."));
+  const { error } = await supabase.from("report_definition").update({ setting_type_code: settingTypeCode }).eq("report_type", reportType);
+  if (error) redirect(errorUrl(error.message));
   revalidatePath("/");
   redirect("/?module=admin&admin_tab=reports");
 }
@@ -16250,7 +16285,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard addReportAction={createReportDefinitionAction} assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} deleteReportMappingAction={deleteReportMappingAction} editReportMappingAction={editReportMappingAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveMappingObjectSourcesAction={saveMappingObjectSourcesAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
+          <AdminDashboard addReportAction={createReportDefinitionAction} addReportTypeAction={createReportSettingTypeAction} assignReportTypeAction={setReportDefinitionTypeAction} assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} deleteReportMappingAction={deleteReportMappingAction} editReportMappingAction={editReportMappingAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveMappingObjectSourcesAction={saveMappingObjectSourcesAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

@@ -4,6 +4,15 @@ export type ReportTypeCode = string;
 export type ReportDefinition = {
   id: string;
   report_type: string;
+  setting_type_code: string | null;
+  name: string;
+  description: string | null;
+  sort_order: number;
+};
+
+export type ReportSettingType = {
+  id: string;
+  type_code: string;
   name: string;
   description: string | null;
   sort_order: number;

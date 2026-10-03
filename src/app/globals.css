@@ -3410,6 +3410,18 @@ tfoot td {
   margin-left: 12px;
 }
 
+.report-type-assignment {
+  align-items: end;
+  display: flex;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.report-type-assignment label {
+  display: grid;
+  gap: 5px;
+}
+
 .po-line-editor-row > td {
   background: #f8fbfa;
   padding: 0;

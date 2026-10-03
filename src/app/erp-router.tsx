@@ -2285,6 +2285,39 @@ async function createReportMappingAction(formData: FormData) {
   redirect("/?module=admin&admin_tab=reports");
 }
 
+async function editReportMappingAction(formData: FormData) {
+  "use server";
+  const mappingId = textValue(formData, "mapping_id");
+  const reportType = textValue(formData, "report_type") as ReportTypeCode;
+  const displayLabel = textValue(formData, "display_label");
+  const mappingObject = textValue(formData, "mapping_object") as ReportMappingObjectCode;
+  const dataSource = textValue(formData, "data_source");
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
+  if (!mappingId || !(reportType in REPORT_FIELD_OPTIONS)) redirect(errorUrl("Choose a saved report mapping."));
+  if (!displayLabel || displayLabel.length > 80) redirect(errorUrl("Enter a report field label of 80 characters or fewer."));
+  if (!REPORT_MAPPING_OBJECTS.some((object) => object.code === mappingObject)) redirect(errorUrl("Choose a supported mapping object."));
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: configuredSource, error: configuredSourceError } = await supabase.from("report_mapping_object_source").select("id").eq("object_code", mappingObject).eq("source_code", dataSource).maybeSingle();
+  if (configuredSourceError) redirect(errorUrl(configuredSourceError.message));
+  if (!configuredSource) redirect(errorUrl("Add and save this source attribute under Mapping Object Lists before using it in a report."));
+  const { error } = await supabase.from("report_field_mapping").update({ data_source: dataSource, display_label: displayLabel }).eq("id", mappingId).eq("report_type", reportType);
+  if (error) redirect(errorUrl(error.message));
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=reports");
+}
+
+async function deleteReportMappingAction(formData: FormData) {
+  "use server";
+  const mappingId = textValue(formData, "mapping_id");
+  const reportType = textValue(formData, "report_type") as ReportTypeCode;
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
+  if (!mappingId || !(reportType in REPORT_FIELD_OPTIONS)) redirect(errorUrl("Choose a saved report mapping."));
+  const { error } = await createSupabaseUntypedAdminClient().from("report_field_mapping").delete().eq("id", mappingId).eq("report_type", reportType);
+  if (error) redirect(errorUrl(error.message));
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=reports");
+}
+
 async function saveMappingObjectSourcesAction(formData: FormData) {
   "use server";
   const mappingObject = textValue(formData, "mapping_object") as ReportMappingObjectCode;
@@ -16208,7 +16241,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveMappingObjectSourcesAction={saveMappingObjectSourcesAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} saveReportSettingsAction={saveReportSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
+          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} deleteReportMappingAction={deleteReportMappingAction} editReportMappingAction={editReportMappingAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveMappingObjectSourcesAction={saveMappingObjectSourcesAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} saveReportSettingsAction={saveReportSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

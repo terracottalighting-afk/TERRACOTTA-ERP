@@ -101,6 +101,14 @@ export function reportDataSourceLabel(dataSource: string): string {
   return dataSource;
 }
 
+export function reportMappingObjectForSource(dataSource: string): ReportMappingObjectCode {
+  if (dataSource.startsWith("product_spec:")) return "product";
+  for (const object of REPORT_MAPPING_OBJECTS) {
+    if (object.sources.some((source) => source.code === dataSource)) return object.code;
+  }
+  return "product";
+}
+
 export const REPORT_TYPE_OPTIONS: { code: ReportTypeCode; name: string; description: string }[] = [
   { code: "container_invoice", name: "Container Invoice", description: "Commercial vendor invoice generated from the products loaded in a container." },
   { code: "container_packing_list", name: "Container Packing List", description: "Container and vendor packing lists used for loading, shipping, and customs." },

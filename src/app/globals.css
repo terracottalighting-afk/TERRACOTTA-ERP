@@ -3405,6 +3405,10 @@ tfoot td {
   font-weight: 800;
 }
 
+.inline-action-form {
+  display: inline;
+}
+
 .po-line-editor-row > td {
   background: #f8fbfa;
   padding: 0;

@@ -121,7 +121,7 @@ import {
 } from "@/lib/formatters";
 import { productPartRoleOptions } from "@/lib/product-part-roles";
 import { configuredContainerStatusOptions, containerStatusCode, DEFAULT_CONTAINER_STATUSES, DEFAULT_IMPORT_TARIFF_RATE_PERCENT, DEFAULT_VENDOR_PRODUCTION_COMMITMENT } from "@/lib/purchasing";
-import { DEFAULT_REPORT_FIELD_MAPPINGS, REPORT_FIELD_OPTIONS, REPORT_MAPPING_OBJECTS, reportMappingObjectSources, type ReportFieldMapping, type ReportMappingObjectCode, type ReportTypeCode } from "@/lib/report-settings";
+import { DEFAULT_REPORT_FIELD_MAPPINGS, REPORT_MAPPING_OBJECTS, reportMappingObjectSources, type ReportFieldMapping, type ReportMappingObjectCode, type ReportTypeCode } from "@/lib/report-settings";
 import {
   EmptyState,
   Metric,
@@ -2229,33 +2229,6 @@ async function getReportFieldMappings(reportType?: ReportTypeCode): Promise<Repo
   return (data ?? []) as ReportFieldMapping[];
 }
 
-async function saveReportSettingsAction(formData: FormData) {
-  "use server";
-  const reportType = textValue(formData, "report_type") as ReportTypeCode;
-  const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
-  if (!(reportType in REPORT_FIELD_OPTIONS)) redirect(errorUrl("Choose a supported report type."));
-
-  const fieldCodes = formData.getAll("field_code").map(String);
-  const dataSources = formData.getAll("data_source").map(String);
-  const labels = formData.getAll("display_label").map((value) => String(value).trim());
-  const mappingIds = formData.getAll("mapping_id").map(String);
-  const fieldOptions = REPORT_FIELD_OPTIONS[reportType];
-  if (fieldCodes.length !== fieldOptions.length || dataSources.length !== fieldOptions.length || labels.length !== fieldOptions.length) redirect(errorUrl("Complete every report field mapping."));
-
-  const supabase = createSupabaseUntypedAdminClient();
-  for (let index = 0; index < fieldCodes.length; index += 1) {
-    const field = fieldOptions.find((option) => option.code === fieldCodes[index]);
-    if (!field || !labels[index] || labels[index].length > 80 || !field.sources.some((source) => source.code === dataSources[index])) redirect(errorUrl("Choose an approved data source and a report label for every field."));
-    const values = { report_type: reportType, field_code: field.code, display_label: labels[index], data_source: dataSources[index], sort_order: index + 1 };
-    const { error } = mappingIds[index]
-      ? await supabase.from("report_field_mapping").update(values).eq("id", mappingIds[index]).eq("report_type", reportType)
-      : await supabase.from("report_field_mapping").upsert(values, { onConflict: "report_type,field_code" });
-    if (error) redirect(errorUrl(error.message));
-  }
-  revalidatePath("/");
-  redirect("/?module=admin&admin_tab=reports");
-}
-
 async function createReportMappingAction(formData: FormData) {
   "use server";
   const reportType = textValue(formData, "report_type") as ReportTypeCode;
@@ -2263,10 +2236,12 @@ async function createReportMappingAction(formData: FormData) {
   const mappingObject = textValue(formData, "mapping_object") as ReportMappingObjectCode;
   const dataSource = textValue(formData, "data_source");
   const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
-  if (!(reportType in REPORT_FIELD_OPTIONS)) redirect(errorUrl("Choose a supported report type."));
   if (!displayLabel || displayLabel.length > 80) redirect(errorUrl("Enter a report field label of 80 characters or fewer."));
   if (!REPORT_MAPPING_OBJECTS.some((object) => object.code === mappingObject)) redirect(errorUrl("Choose a supported mapping object."));
   const supabase = createSupabaseUntypedAdminClient();
+  const { data: reportDefinition, error: reportDefinitionError } = await supabase.from("report_definition").select("id").eq("report_type", reportType).maybeSingle();
+  if (reportDefinitionError) redirect(errorUrl(reportDefinitionError.message));
+  if (!reportDefinition) redirect(errorUrl("Choose a saved report type."));
   const { data: configuredSource, error: configuredSourceError } = await supabase.from("report_mapping_object_source").select("id").eq("object_code", mappingObject).eq("source_code", dataSource).maybeSingle();
   if (configuredSourceError) redirect(errorUrl(configuredSourceError.message));
   if (!configuredSource) redirect(errorUrl("Add and save this source attribute under Mapping Object Lists before using it in a report."));
@@ -2293,10 +2268,13 @@ async function editReportMappingAction(formData: FormData) {
   const mappingObject = textValue(formData, "mapping_object") as ReportMappingObjectCode;
   const dataSource = textValue(formData, "data_source");
   const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
-  if (!mappingId || !(reportType in REPORT_FIELD_OPTIONS)) redirect(errorUrl("Choose a saved report mapping."));
+  if (!mappingId) redirect(errorUrl("Choose a saved report mapping."));
   if (!displayLabel || displayLabel.length > 80) redirect(errorUrl("Enter a report field label of 80 characters or fewer."));
   if (!REPORT_MAPPING_OBJECTS.some((object) => object.code === mappingObject)) redirect(errorUrl("Choose a supported mapping object."));
   const supabase = createSupabaseUntypedAdminClient();
+  const { data: reportDefinition, error: reportDefinitionError } = await supabase.from("report_definition").select("id").eq("report_type", reportType).maybeSingle();
+  if (reportDefinitionError) redirect(errorUrl(reportDefinitionError.message));
+  if (!reportDefinition) redirect(errorUrl("Choose a saved report type."));
   const { data: configuredSource, error: configuredSourceError } = await supabase.from("report_mapping_object_source").select("id").eq("object_code", mappingObject).eq("source_code", dataSource).maybeSingle();
   if (configuredSourceError) redirect(errorUrl(configuredSourceError.message));
   if (!configuredSource) redirect(errorUrl("Add and save this source attribute under Mapping Object Lists before using it in a report."));
@@ -2311,9 +2289,40 @@ async function deleteReportMappingAction(formData: FormData) {
   const mappingId = textValue(formData, "mapping_id");
   const reportType = textValue(formData, "report_type") as ReportTypeCode;
   const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
-  if (!mappingId || !(reportType in REPORT_FIELD_OPTIONS)) redirect(errorUrl("Choose a saved report mapping."));
-  const { error } = await createSupabaseUntypedAdminClient().from("report_field_mapping").delete().eq("id", mappingId).eq("report_type", reportType);
+  if (!mappingId) redirect(errorUrl("Choose a saved report mapping."));
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: reportDefinition, error: reportDefinitionError } = await supabase.from("report_definition").select("id").eq("report_type", reportType).maybeSingle();
+  if (reportDefinitionError) redirect(errorUrl(reportDefinitionError.message));
+  if (!reportDefinition) redirect(errorUrl("Choose a saved report type."));
+  const { error } = await supabase.from("report_field_mapping").delete().eq("id", mappingId).eq("report_type", reportType);
   if (error) redirect(errorUrl(error.message));
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=reports");
+}
+
+async function createReportDefinitionAction(formData: FormData) {
+  "use server";
+  const name = textValue(formData, "report_name");
+  const fieldLabels = formData.getAll("field_label").map((value) => String(value).trim()).filter(Boolean);
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
+  if (!name || name.length > 80) redirect(errorUrl("Enter a report name of 80 characters or fewer."));
+  if (!fieldLabels.length || fieldLabels.length > 40 || fieldLabels.some((label) => label.length > 80)) redirect(errorUrl("Add between one and 40 report field labels of 80 characters or fewer."));
+  const fieldCodes = fieldLabels.map((label) => label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""));
+  if (fieldCodes.some((code) => !/^[a-z][a-z0-9_]*$/.test(code)) || new Set(fieldCodes).size !== fieldCodes.length) redirect(errorUrl("Each report field label must be unique and include at least one letter."));
+  const reportType = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!/^[a-z][a-z0-9_]*$/.test(reportType)) redirect(errorUrl("Enter a report name that includes at least one letter."));
+
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: existing, error: existingError } = await supabase.from("report_definition").select("id").eq("report_type", reportType).maybeSingle();
+  if (existingError) redirect(errorUrl(existingError.message));
+  if (existing) redirect(errorUrl("A report with this name already exists."));
+  const { error: definitionError } = await supabase.from("report_definition").insert({ report_type: reportType, name, sort_order: 1000 });
+  if (definitionError) redirect(errorUrl(definitionError.message));
+  const { error: fieldError } = await supabase.from("report_field_mapping").insert(fieldLabels.map((label, index) => ({ report_type: reportType, field_code: fieldCodes[index], display_label: label, data_source: "unmapped", sort_order: index + 1 })));
+  if (fieldError) {
+    await supabase.from("report_definition").delete().eq("report_type", reportType);
+    redirect(errorUrl(fieldError.message));
+  }
   revalidatePath("/");
   redirect("/?module=admin&admin_tab=reports");
 }
@@ -16241,7 +16250,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} deleteReportMappingAction={deleteReportMappingAction} editReportMappingAction={editReportMappingAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveMappingObjectSourcesAction={saveMappingObjectSourcesAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} saveReportSettingsAction={saveReportSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
+          <AdminDashboard addReportAction={createReportDefinitionAction} assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} deleteReportMappingAction={deleteReportMappingAction} editReportMappingAction={editReportMappingAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveMappingObjectSourcesAction={saveMappingObjectSourcesAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

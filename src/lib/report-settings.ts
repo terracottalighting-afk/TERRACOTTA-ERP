@@ -1,4 +1,13 @@
-export type ReportTypeCode = "container_invoice" | "container_packing_list";
+export type BuiltInReportTypeCode = "container_invoice" | "container_packing_list";
+export type ReportTypeCode = string;
+
+export type ReportDefinition = {
+  id: string;
+  report_type: string;
+  name: string;
+  description: string | null;
+  sort_order: number;
+};
 
 export type ReportFieldMapping = {
   id: string;
@@ -91,6 +100,7 @@ export function reportMappingObjectSources(objectCode: ReportMappingObjectCode, 
 }
 
 export function reportDataSourceLabel(dataSource: string): string {
+  if (dataSource === "unmapped") return "Not mapped";
   const legacySource = REPORT_DATA_SOURCE_OPTIONS.find((source) => source.code === dataSource);
   if (legacySource) return legacySource.name;
   if (dataSource.startsWith("product_spec:")) return `Product > ${dataSource.slice("product_spec:".length)}`;
@@ -109,12 +119,12 @@ export function reportMappingObjectForSource(dataSource: string): ReportMappingO
   return "product";
 }
 
-export const REPORT_TYPE_OPTIONS: { code: ReportTypeCode; name: string; description: string }[] = [
+export const REPORT_TYPE_OPTIONS: { code: BuiltInReportTypeCode; name: string; description: string }[] = [
   { code: "container_invoice", name: "Container Invoice", description: "Commercial vendor invoice generated from the products loaded in a container." },
   { code: "container_packing_list", name: "Container Packing List", description: "Container and vendor packing lists used for loading, shipping, and customs." },
 ];
 
-export const REPORT_FIELD_OPTIONS: Record<ReportTypeCode, { code: string; label: string; sources: { code: string; name: string }[] }[]> = {
+export const REPORT_FIELD_OPTIONS: Record<BuiltInReportTypeCode, { code: string; label: string; sources: { code: string; name: string }[] }[]> = {
   container_invoice: [
     { code: "hs_code", label: "HS", sources: [REPORT_DATA_SOURCE_OPTIONS[0]] },
     { code: "description", label: "Description", sources: [REPORT_DATA_SOURCE_OPTIONS[1], REPORT_DATA_SOURCE_OPTIONS[2]] },

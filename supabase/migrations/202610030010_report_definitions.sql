@@ -18,10 +18,17 @@ alter table public.report_definition
   add column if not exists updated_at timestamptz not null default now();
 
 insert into public.report_definition (report_type, name, description, sort_order)
-values
-  ('container_invoice', 'Container Invoice', 'Commercial vendor invoice generated from the products loaded in a container.', 10),
-  ('container_packing_list', 'Container Packing List', 'Container and vendor packing lists used for loading, shipping, and customs.', 20)
-on conflict (report_type) do nothing;
+select definition.report_type, definition.name, definition.description, definition.sort_order
+from (
+  values
+    ('container_invoice', 'Container Invoice', 'Commercial vendor invoice generated from the products loaded in a container.', 10),
+    ('container_packing_list', 'Container Packing List', 'Container and vendor packing lists used for loading, shipping, and customs.', 20)
+) as definition(report_type, name, description, sort_order)
+where not exists (
+  select 1
+  from public.report_definition existing
+  where existing.report_type = definition.report_type
+);
 
 alter table public.report_field_mapping
   drop constraint if exists report_field_mapping_report_type_check;

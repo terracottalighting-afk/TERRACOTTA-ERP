@@ -32,6 +32,7 @@ import { PurchaseOrderReview } from "@/components/purchasing/purchase-order-revi
 import { PurchaseOrderProductionUpdate } from "@/components/purchasing/purchase-order-production-update";
 import { ContainerEditor } from "@/components/purchasing/container-editor";
 import { ContainerWorkspace } from "@/components/purchasing/container-workspace";
+import { ContainerSummary } from "@/components/purchasing/container-summary";
 import { PurchasingAgencyEditor } from "@/components/purchasing/purchasing-agency-editor";
 import { VendorPurchaseOrderDocumentPage } from "@/components/purchasing/vendor-purchase-order-document-page";
 import { VendorDashboard, type VendorDashboardData } from "@/components/purchasing/vendor-dashboard";
@@ -13349,6 +13350,21 @@ async function updateContainerHeaderAction(formData: FormData) {
   redirect(baseUrl);
 }
 
+async function finalizeContainerAction(formData: FormData) {
+  "use server";
+  const containerId = textValue(formData, "container_id");
+  const baseUrl = `/?module=container&container=${containerId}`;
+  if (!containerId) redirect(`/?module=purchasing&error=${encodeURIComponent("Container could not be identified.")}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { count, error: linesError } = await supabase.from("import_container_line").select("id", { count: "exact", head: true }).eq("import_container_id", containerId).eq("is_active", true);
+  if (linesError) redirect(`${baseUrl}&error=${encodeURIComponent(linesError.message)}`);
+  if (!count) redirect(`${baseUrl}&error=${encodeURIComponent("Load at least one product before saving the container.")}`);
+  const { error } = await supabase.from("import_container").update({ container_status: "booked" }).eq("id", containerId).eq("container_status", "draft");
+  if (error) redirect(`${baseUrl}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(`/?module=container-detail&container=${containerId}`);
+}
+
 async function uploadContainerDocumentAction(formData: FormData) {
   "use server";
   const containerId = textValue(formData, "container_id");
@@ -15789,8 +15805,12 @@ export async function ErpRouter({
           <ContainerEditor agencies={await getContainerAgencies()} error={params.error} saveAction={createContainerAction} />
         ) : activeModule === "container" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container, params.container_po) : null;
+          if (workspace?.container && workspace.container.container_status !== "draft") redirect(`/?module=container-detail&container=${workspace.container.id}`);
           const editingSection = ["shipping", "schedule", "broker"].includes(params.container_edit ?? "") ? params.container_edit as "shipping" | "schedule" | "broker" : undefined;
-          return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} uploadDocumentAction={uploadContainerDocumentAction} />;
+          return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} uploadDocumentAction={uploadContainerDocumentAction} />;
+        })() : activeModule === "container-detail" ? await (async () => {
+          const workspace = params.container ? await getContainerWorkspace(params.container) : null;
+          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} documents={workspace?.documents ?? []} />;
         })() : activeModule === "purchasing-agency" ? (
           <PurchasingAgencyEditor agency={params.purchasing_agency ? await getPurchasingAgency(params.purchasing_agency) : null} defaultBusinessType={params.agency_type === "customs_broker" ? "customs_broker" : "shipping"} error={params.error} saveAction={savePurchasingAgencyAction} deleteAction={deletePurchasingAgencyAction} />
         ) : activeModule === "create-vendor-purchase-order" ? (

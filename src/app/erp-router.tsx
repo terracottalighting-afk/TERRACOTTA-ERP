@@ -220,6 +220,7 @@ export type SearchParams = Promise<{
   purchasing_tab?: string;
   agency_type?: string;
   container?: string;
+  container_edit?: string;
   container_po?: string;
   po_edit?: string;
   po_line?: string;
@@ -13237,12 +13238,13 @@ async function getContainerAgencies() {
 
 async function getContainerWorkspace(containerId: string, selectedPurchaseOrderId?: string) {
   const supabase = createSupabaseUntypedAdminClient();
-  const [{ data: container, error: containerError }, { data: orders, error: ordersError }, { data: containerLines, error: containerLinesError }] = await Promise.all([
+  const [{ data: container, error: containerError }, { data: orders, error: ordersError }, { data: containerLines, error: containerLinesError }, { data: documentRows, error: documentRowsError }] = await Promise.all([
     supabase.from("import_container").select("id, container_number, booking_number, shipping_agency, shipping_agent_contact_name, shipping_agent_contact_email, vessel_name, expected_loading_date, actual_loading_date, etd, actual_vessel_departure_date, arrival_port, eta, arrival_date, tariff_broker_agency, broker_contact_name, broker_contact_email, container_status").eq("id", containerId).maybeSingle(),
     supabase.from("vendor_purchase_order").select("id, vendor_po_number, vendor_name_snapshot, status").order("po_date", { ascending: false }),
     supabase.from("import_container_line").select("id, vendor_purchase_order_line_id, product_id, quantity_packed").eq("import_container_id", containerId).eq("is_active", true),
+    supabase.from("container_document").select("id, document_type, display_name, uploaded_at, attachment:file_id(id, original_file_name, storage_bucket, storage_path)").eq("import_container_id", containerId).eq("is_active", true).order("uploaded_at", { ascending: false }),
   ]);
-  if (containerError || ordersError || containerLinesError) throw new Error(containerError?.message ?? ordersError?.message ?? containerLinesError?.message);
+  if (containerError || ordersError || containerLinesError || documentRowsError) throw new Error(containerError?.message ?? ordersError?.message ?? containerLinesError?.message ?? documentRowsError?.message);
   if (!container) return null;
 
   const activeOrders = (orders ?? []).filter((order) => !["closed", "cancelled"].includes(order.status));
@@ -13253,10 +13255,17 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   const productsResult = productIds.length ? await supabase.from("product").select("id, sku, name").in("id", productIds) : { data: [], error: null };
   if (productsResult.error) throw new Error(productsResult.error.message);
   const productById = new Map((productsResult.data ?? []).map((product) => [product.id, product]));
+  const documents = await Promise.all((documentRows ?? []).flatMap(async (document) => {
+    const attachment = Array.isArray(document.attachment) ? document.attachment[0] : document.attachment;
+    if (!attachment) return [];
+    const { data } = await supabase.storage.from(attachment.storage_bucket).createSignedUrl(attachment.storage_path, 60 * 60);
+    return [{ id: document.id, document_type: document.document_type, display_name: document.display_name, original_file_name: attachment.original_file_name, uploaded_at: document.uploaded_at, signed_url: data?.signedUrl ?? null }];
+  }));
 
   return {
     container,
     containerLines: (containerLines ?? []).map((line) => ({ id: line.id, sku: productById.get(line.product_id)?.sku ?? "Unknown", name: productById.get(line.product_id)?.name ?? "Product unavailable", quantity_packed: Number(line.quantity_packed) })),
+    documents: documents.flat(),
     activeOrders,
     selectedOrder,
     selectedLines: (selectedLinesResult.data ?? []).filter((line) => line.production_status !== "cancelled" && Number(line.quantity_ordered) > Number(line.quantity_exited_factory ?? 0)).map((line) => ({ id: line.id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, quantity_available: Number(line.quantity_ordered) - Number(line.quantity_exited_factory ?? 0), unit_cost: Number(line.unit_cost) })),
@@ -13288,6 +13297,66 @@ async function createContainerAction(formData: FormData) {
   }).select("id").single();
   if (error || !data) return fail(error?.message ?? "The container could not be created.");
   return { destination: `/?module=container&container=${data.id}` };
+}
+
+async function updateContainerHeaderAction(formData: FormData) {
+  "use server";
+  const containerId = textValue(formData, "container_id");
+  const section = textValue(formData, "section");
+  const baseUrl = `/?module=container&container=${containerId}`;
+  if (!containerId || !["shipping", "schedule", "broker"].includes(section)) redirect(`/?module=purchasing&error=${encodeURIComponent("Invalid container update request.")}`);
+  const values = section === "shipping" ? {
+    arrival_port: textValue(formData, "arrival_port") || null,
+    booking_number: textValue(formData, "booking_number") || null,
+    shipping_agency: textValue(formData, "shipping_agency") || null,
+    shipping_agent_contact_email: textValue(formData, "shipping_agent_contact_email") || null,
+    shipping_agent_contact_name: textValue(formData, "shipping_agent_contact_name") || null,
+    vessel_name: textValue(formData, "vessel_name") || null,
+  } : section === "schedule" ? {
+    actual_loading_date: textValue(formData, "actual_loading_date") || null,
+    actual_vessel_departure_date: textValue(formData, "actual_vessel_departure_date") || null,
+    arrival_date: textValue(formData, "actual_arrival_date") || null,
+    etd: textValue(formData, "expected_vessel_departure_date") || null,
+    eta: textValue(formData, "expected_arrival_date") || null,
+    expected_loading_date: textValue(formData, "expected_loading_date") || null,
+  } : {
+    broker_contact_email: textValue(formData, "broker_contact_email") || null,
+    broker_contact_name: textValue(formData, "broker_contact_name") || null,
+    tariff_broker_agency: textValue(formData, "tariff_broker_agency") || null,
+  };
+  const { error } = await createSupabaseUntypedAdminClient().from("import_container").update(values).eq("id", containerId);
+  if (error) redirect(`${baseUrl}&error=${encodeURIComponent(error.message)}`);
+  redirect(baseUrl);
+}
+
+async function uploadContainerDocumentAction(formData: FormData) {
+  "use server";
+  const containerId = textValue(formData, "container_id");
+  const baseUrl = `/?module=container&container=${containerId}`;
+  const file = formData.get("container_document_file");
+  const documentType = textValue(formData, "document_type");
+  const allowedTypes = ["bill_of_lading", "isf_info", "arrival_notice", "sea_freight_invoice", "trucking_invoice", "customs_invoice", "delivery_order", "other"];
+  if (!containerId || !(file instanceof File) || file.size === 0 || !allowedTypes.includes(documentType)) redirect(`${baseUrl}&error=${encodeURIComponent("Choose a document file and a valid document type.")}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: container, error: containerError } = await supabase.from("import_container").select("id").eq("id", containerId).maybeSingle();
+  if (containerError || !container) redirect(`${baseUrl}&error=${encodeURIComponent(containerError?.message ?? "Container not found.")}`);
+  const bucketName = "container-documents";
+  const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+  if (bucketsError) redirect(`${baseUrl}&error=${encodeURIComponent(bucketsError.message)}`);
+  if (!buckets?.some((bucket) => bucket.name === bucketName)) {
+    const { error } = await supabase.storage.createBucket(bucketName, { public: false });
+    if (error) redirect(`${baseUrl}&error=${encodeURIComponent(error.message)}`);
+  }
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storagePath = `container/${containerId}/${Date.now()}-${safeName}`;
+  const { error: uploadError } = await supabase.storage.from(bucketName).upload(storagePath, new Uint8Array(await file.arrayBuffer()), { contentType: file.type || "application/octet-stream", upsert: false });
+  if (uploadError) redirect(`${baseUrl}&error=${encodeURIComponent(uploadError.message)}`);
+  const { data: attachment, error: attachmentError } = await supabase.from("attachment").insert({ category: `container_${documentType}`, content_type: file.type || null, entity_id: containerId, entity_type: "import_container", file_size: file.size, original_file_name: file.name, storage_bucket: bucketName, storage_path: storagePath }).select("id").single();
+  if (attachmentError || !attachment) redirect(`${baseUrl}&error=${encodeURIComponent(attachmentError?.message ?? "Document record could not be created.")}`);
+  const { error: documentError } = await supabase.from("container_document").insert({ display_name: textValue(formData, "display_name") || null, document_type: documentType, file_id: attachment.id, import_container_id: containerId });
+  if (documentError) redirect(`${baseUrl}&error=${encodeURIComponent(documentError.message)}`);
+  revalidatePath("/");
+  redirect(baseUrl);
 }
 
 async function getPurchasingAgency(agencyId: string) {
@@ -15681,7 +15750,8 @@ export async function ErpRouter({
           <ContainerEditor agencies={await getContainerAgencies()} error={params.error} saveAction={createContainerAction} />
         ) : activeModule === "container" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container, params.container_po) : null;
-          return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} />;
+          const editingSection = ["shipping", "schedule", "broker"].includes(params.container_edit ?? "") ? params.container_edit as "shipping" | "schedule" | "broker" : undefined;
+          return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} uploadDocumentAction={uploadContainerDocumentAction} />;
         })() : activeModule === "purchasing-agency" ? (
           <PurchasingAgencyEditor agency={params.purchasing_agency ? await getPurchasingAgency(params.purchasing_agency) : null} defaultBusinessType={params.agency_type === "customs_broker" ? "customs_broker" : "shipping"} error={params.error} saveAction={savePurchasingAgencyAction} deleteAction={deletePurchasingAgencyAction} />
         ) : activeModule === "create-vendor-purchase-order" ? (

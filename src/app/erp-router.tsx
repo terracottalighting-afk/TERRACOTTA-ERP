@@ -2316,7 +2316,7 @@ async function createReportDefinitionAction(formData: FormData) {
   const { data: existing, error: existingError } = await supabase.from("report_definition").select("id").eq("report_type", reportType).maybeSingle();
   if (existingError) redirect(errorUrl(existingError.message));
   if (existing) redirect(errorUrl("A report with this name already exists."));
-  const { error: definitionError } = await supabase.from("report_definition").insert({ report_type: reportType, name, sort_order: 1000 });
+  const { error: definitionError } = await supabase.from("report_definition").insert({ report_code: reportType, report_type: reportType, name, sort_order: 1000 });
   if (definitionError) redirect(errorUrl(definitionError.message));
   const { error: fieldError } = await supabase.from("report_field_mapping").insert(fieldLabels.map((label, index) => ({ report_type: reportType, field_code: fieldCodes[index], display_label: label, data_source: "unmapped", sort_order: index + 1 })));
   if (fieldError) {

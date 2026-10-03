@@ -13472,7 +13472,53 @@ async function addContainerProductAction(formData: FormData) {
   if (lineWriteError) return fail(lineWriteError.message);
   const { error: exitedQuantityError } = await supabase.from("vendor_purchase_order_line").update({ quantity_exited_factory: Number(line.quantity_exited_factory ?? 0) + quantity }).eq("id", lineId);
   if (exitedQuantityError) return fail(exitedQuantityError.message);
-  return { destination: `/?module=container&container=${containerId}&container_po=${purchaseOrderId}` };
+  const editMode = container.container_status === "draft" ? "" : "&container_edit_mode=1";
+  return { destination: `/?module=container&container=${containerId}&container_po=${purchaseOrderId}${editMode}` };
+}
+
+async function updateContainerProductAction(formData: FormData) {
+  "use server";
+  const containerId = textValue(formData, "container_id");
+  const containerLineId = textValue(formData, "container_line_id");
+  const quantity = Number(textValue(formData, "quantity_packed"));
+  const baseUrl = `/?module=container&container=${containerId}`;
+  if (!containerId || !containerLineId || !Number.isFinite(quantity) || quantity <= 0) redirect(`${baseUrl}&error=${encodeURIComponent("Enter a quantity greater than zero.")}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: containerLine, error: containerLineError } = await supabase.from("import_container_line").select("id, vendor_purchase_order_line_id, quantity_packed").eq("id", containerLineId).eq("import_container_id", containerId).eq("is_active", true).maybeSingle();
+  if (containerLineError || !containerLine) redirect(`${baseUrl}&error=${encodeURIComponent(containerLineError?.message ?? "Container product line was not found.")}`);
+  const { data: purchaseOrderLine, error: purchaseOrderLineError } = await supabase.from("vendor_purchase_order_line").select("id, vendor_purchase_order_id, quantity_ordered, quantity_exited_factory").eq("id", containerLine.vendor_purchase_order_line_id).maybeSingle();
+  if (purchaseOrderLineError || !purchaseOrderLine) redirect(`${baseUrl}&error=${encodeURIComponent(purchaseOrderLineError?.message ?? "Purchase-order product line was not found.")}`);
+  const currentQuantity = Number(containerLine.quantity_packed);
+  const currentExited = Number(purchaseOrderLine.quantity_exited_factory ?? 0);
+  const maximumQuantity = Number(purchaseOrderLine.quantity_ordered) - (currentExited - currentQuantity);
+  if (quantity > maximumQuantity) redirect(`${baseUrl}&error=${encodeURIComponent(`Only ${maximumQuantity} units can be loaded for this product line.`)}`);
+  const { error: containerLineUpdateError } = await supabase.from("import_container_line").update({ quantity_packed: quantity }).eq("id", containerLine.id);
+  if (containerLineUpdateError) redirect(`${baseUrl}&error=${encodeURIComponent(containerLineUpdateError.message)}`);
+  const { error: purchaseOrderLineUpdateError } = await supabase.from("vendor_purchase_order_line").update({ quantity_exited_factory: currentExited - currentQuantity + quantity }).eq("id", purchaseOrderLine.id);
+  if (purchaseOrderLineUpdateError) redirect(`${baseUrl}&error=${encodeURIComponent(purchaseOrderLineUpdateError.message)}`);
+  if (quantity < currentQuantity) await supabase.from("vendor_purchase_order").update({ status: "open" }).eq("id", purchaseOrderLine.vendor_purchase_order_id).in("status", ["closed", "in_production", "open"]);
+  revalidatePath("/");
+  redirect(`${baseUrl}&container_edit_mode=1`);
+}
+
+async function deleteContainerProductAction(formData: FormData) {
+  "use server";
+  const containerId = textValue(formData, "container_id");
+  const containerLineId = textValue(formData, "container_line_id");
+  const baseUrl = `/?module=container&container=${containerId}`;
+  if (!containerId || !containerLineId) redirect(`${baseUrl}&error=${encodeURIComponent("Container product line could not be identified.")}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: containerLine, error: containerLineError } = await supabase.from("import_container_line").select("id, vendor_purchase_order_line_id, quantity_packed").eq("id", containerLineId).eq("import_container_id", containerId).eq("is_active", true).maybeSingle();
+  if (containerLineError || !containerLine) redirect(`${baseUrl}&error=${encodeURIComponent(containerLineError?.message ?? "Container product line was not found.")}`);
+  const { data: purchaseOrderLine, error: purchaseOrderLineError } = await supabase.from("vendor_purchase_order_line").select("id, vendor_purchase_order_id, quantity_exited_factory").eq("id", containerLine.vendor_purchase_order_line_id).maybeSingle();
+  if (purchaseOrderLineError || !purchaseOrderLine) redirect(`${baseUrl}&error=${encodeURIComponent(purchaseOrderLineError?.message ?? "Purchase-order product line was not found.")}`);
+  const { error: deactivateError } = await supabase.from("import_container_line").update({ is_active: false }).eq("id", containerLine.id);
+  if (deactivateError) redirect(`${baseUrl}&error=${encodeURIComponent(deactivateError.message)}`);
+  const { error: purchaseOrderLineUpdateError } = await supabase.from("vendor_purchase_order_line").update({ quantity_exited_factory: Math.max(0, Number(purchaseOrderLine.quantity_exited_factory ?? 0) - Number(containerLine.quantity_packed)) }).eq("id", purchaseOrderLine.id);
+  if (purchaseOrderLineUpdateError) redirect(`${baseUrl}&error=${encodeURIComponent(purchaseOrderLineUpdateError.message)}`);
+  await supabase.from("vendor_purchase_order").update({ status: "open" }).eq("id", purchaseOrderLine.vendor_purchase_order_id).in("status", ["closed", "in_production", "open"]);
+  revalidatePath("/");
+  redirect(`${baseUrl}&container_edit_mode=1`);
 }
 
 async function getActivePurchaseOrderVendors() {
@@ -15810,7 +15856,7 @@ export async function ErpRouter({
           const workspace = params.container ? await getContainerWorkspace(params.container, params.container_po) : null;
           if (workspace?.container && workspace.container.container_status !== "draft" && params.container_edit_mode !== "1") redirect(`/?module=container-detail&container=${workspace.container.id}`);
           const editingSection = ["shipping", "schedule", "broker"].includes(params.container_edit ?? "") ? params.container_edit as "shipping" | "schedule" | "broker" : undefined;
-          return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} uploadDocumentAction={uploadContainerDocumentAction} />;
+          return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} />;
         })() : activeModule === "container-detail" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} documents={workspace?.documents ?? []} />;

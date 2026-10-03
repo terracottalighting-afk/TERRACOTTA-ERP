@@ -13359,6 +13359,25 @@ async function uploadContainerDocumentAction(formData: FormData) {
   redirect(baseUrl);
 }
 
+async function deleteContainerDocumentAction(formData: FormData) {
+  "use server";
+  const containerId = textValue(formData, "container_id");
+  const documentId = textValue(formData, "container_document_id");
+  const baseUrl = `/?module=container&container=${containerId}`;
+  if (!containerId || !documentId) redirect(`/?module=purchasing&error=${encodeURIComponent("Container document could not be identified.")}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: document, error: documentError } = await supabase.from("container_document").select("id, file_id, attachment:file_id(storage_bucket, storage_path)").eq("id", documentId).eq("import_container_id", containerId).maybeSingle();
+  if (documentError || !document) redirect(`${baseUrl}&error=${encodeURIComponent(documentError?.message ?? "Container document was not found.")}`);
+  const attachment = Array.isArray(document.attachment) ? document.attachment[0] : document.attachment;
+  const { error: deleteDocumentError } = await supabase.from("container_document").delete().eq("id", document.id);
+  if (deleteDocumentError) redirect(`${baseUrl}&error=${encodeURIComponent(deleteDocumentError.message)}`);
+  if (attachment) await supabase.storage.from(attachment.storage_bucket).remove([attachment.storage_path]);
+  const { error: deleteAttachmentError } = await supabase.from("attachment").delete().eq("id", document.file_id);
+  if (deleteAttachmentError) redirect(`${baseUrl}&error=${encodeURIComponent(deleteAttachmentError.message)}`);
+  revalidatePath("/");
+  redirect(baseUrl);
+}
+
 async function getPurchasingAgency(agencyId: string) {
   const { data, error } = await createSupabaseUntypedAdminClient().from("purchasing_agency").select("id, business_type, agency_name, address, contact_name, contact_email, contact_phone, bank_name, bank_swift_code, bank_ach_routing_number, bank_account_number").eq("id", agencyId).maybeSingle();
   if (error) throw new Error(error.message);
@@ -15751,7 +15770,7 @@ export async function ErpRouter({
         ) : activeModule === "container" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container, params.container_po) : null;
           const editingSection = ["shipping", "schedule", "broker"].includes(params.container_edit ?? "") ? params.container_edit as "shipping" | "schedule" | "broker" : undefined;
-          return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} uploadDocumentAction={uploadContainerDocumentAction} />;
+          return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} uploadDocumentAction={uploadContainerDocumentAction} />;
         })() : activeModule === "purchasing-agency" ? (
           <PurchasingAgencyEditor agency={params.purchasing_agency ? await getPurchasingAgency(params.purchasing_agency) : null} defaultBusinessType={params.agency_type === "customs_broker" ? "customs_broker" : "shipping"} error={params.error} saveAction={savePurchasingAgencyAction} deleteAction={deletePurchasingAgencyAction} />
         ) : activeModule === "create-vendor-purchase-order" ? (

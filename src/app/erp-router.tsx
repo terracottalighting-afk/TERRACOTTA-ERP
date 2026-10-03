@@ -121,7 +121,7 @@ import {
 } from "@/lib/formatters";
 import { productPartRoleOptions } from "@/lib/product-part-roles";
 import { configuredContainerStatusOptions, containerStatusCode, DEFAULT_CONTAINER_STATUSES, DEFAULT_IMPORT_TARIFF_RATE_PERCENT, DEFAULT_VENDOR_PRODUCTION_COMMITMENT } from "@/lib/purchasing";
-import { DEFAULT_REPORT_FIELD_MAPPINGS, REPORT_DATA_SOURCE_OPTIONS, REPORT_FIELD_OPTIONS, type ReportFieldMapping, type ReportTypeCode } from "@/lib/report-settings";
+import { DEFAULT_REPORT_FIELD_MAPPINGS, REPORT_FIELD_OPTIONS, REPORT_MAPPING_OBJECTS, reportMappingObjectSources, type ReportFieldMapping, type ReportMappingObjectCode, type ReportTypeCode } from "@/lib/report-settings";
 import {
   EmptyState,
   Metric,
@@ -2260,11 +2260,20 @@ async function createReportMappingAction(formData: FormData) {
   "use server";
   const reportType = textValue(formData, "report_type") as ReportTypeCode;
   const displayLabel = textValue(formData, "display_label");
+  const mappingObject = textValue(formData, "mapping_object") as ReportMappingObjectCode;
   const dataSource = textValue(formData, "data_source");
   const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
   if (!(reportType in REPORT_FIELD_OPTIONS)) redirect(errorUrl("Choose a supported report type."));
   if (!displayLabel || displayLabel.length > 80) redirect(errorUrl("Enter a report field label of 80 characters or fewer."));
-  if (!REPORT_DATA_SOURCE_OPTIONS.some((source) => source.code === dataSource)) redirect(errorUrl("Choose an approved product data source."));
+  if (!REPORT_MAPPING_OBJECTS.some((object) => object.code === mappingObject)) redirect(errorUrl("Choose a supported mapping object."));
+  const staticSource = reportMappingObjectSources(mappingObject).some((source) => source.code === dataSource);
+  const productSpecificationName = dataSource.startsWith("product_spec:") ? dataSource.slice("product_spec:".length).trim() : "";
+  if (!staticSource && (!productSpecificationName || mappingObject !== "product" || productSpecificationName.length > 120)) redirect(errorUrl("Choose an approved source attribute."));
+  if (productSpecificationName) {
+    const { data, error } = await createSupabaseUntypedAdminClient().from("product_spec_attribute").select("id").eq("attribute_name", productSpecificationName).eq("is_active", true).limit(1);
+    if (error) redirect(errorUrl(error.message));
+    if (!data?.length) redirect(errorUrl("The selected product specification attribute is no longer available."));
+  }
 
   const fieldCode = displayLabel.toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   if (!/^[a-z][a-z0-9_]*$/.test(fieldCode)) redirect(errorUrl("Enter a report field label that includes at least one letter."));

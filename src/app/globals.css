@@ -1064,6 +1064,51 @@ input {
   min-height: 40px;
 }
 
+.container-title-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.container-title-row h2 {
+  margin: 0;
+}
+
+.container-status-highlight {
+  border: 1px solid;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.container-status-highlight--active {
+  background: #e3f4ee;
+  border-color: #83cbb2;
+  color: #086b59;
+}
+
+.container-status-highlight--delivered {
+  background: #edf6ea;
+  border-color: #b7dec3;
+  color: #247343;
+}
+
+.container-status-highlight--draft {
+  background: #eef2f6;
+  border-color: #ccd6e0;
+  color: #41505e;
+}
+
+.container-status-highlight--cancelled {
+  background: #fde8e7;
+  border-color: #f2aaa6;
+  color: #b42318;
+}
+
 .order-entry-form {
   max-width: 1280px;
 }

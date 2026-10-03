@@ -13226,10 +13226,19 @@ async function getPurchasingDashboard() {
   };
 }
 
+async function getContainerAgencies() {
+  const { data, error } = await createSupabaseUntypedAdminClient()
+    .from("purchasing_agency")
+    .select("id, business_type, agency_name, contact_name, contact_email")
+    .order("agency_name");
+  if (error) return [];
+  return data ?? [];
+}
+
 async function getContainerWorkspace(containerId: string, selectedPurchaseOrderId?: string) {
   const supabase = createSupabaseUntypedAdminClient();
   const [{ data: container, error: containerError }, { data: orders, error: ordersError }, { data: containerLines, error: containerLinesError }] = await Promise.all([
-    supabase.from("import_container").select("id, container_number, booking_number, shipping_agency, shipping_agent_contact_email, vessel_name, expected_loading_date, actual_loading_date, etd, actual_vessel_departure_date, arrival_port, eta, arrival_date, tariff_broker_agency, broker_contact_name, broker_contact_email, container_status").eq("id", containerId).maybeSingle(),
+    supabase.from("import_container").select("id, container_number, booking_number, shipping_agency, shipping_agent_contact_name, shipping_agent_contact_email, vessel_name, expected_loading_date, actual_loading_date, etd, actual_vessel_departure_date, arrival_port, eta, arrival_date, tariff_broker_agency, broker_contact_name, broker_contact_email, container_status").eq("id", containerId).maybeSingle(),
     supabase.from("vendor_purchase_order").select("id, vendor_po_number, vendor_name_snapshot, status").order("po_date", { ascending: false }),
     supabase.from("import_container_line").select("id, vendor_purchase_order_line_id, product_id, quantity_packed").eq("import_container_id", containerId).eq("is_active", true),
   ]);
@@ -13263,6 +13272,7 @@ async function createContainerAction(formData: FormData) {
     container_number: containerNumber,
     booking_number: textValue(formData, "booking_number") || null,
     shipping_agency: textValue(formData, "shipping_agency") || null,
+    shipping_agent_contact_name: textValue(formData, "shipping_agent_contact_name") || null,
     shipping_agent_contact_email: textValue(formData, "shipping_agent_contact_email") || null,
     vessel_name: textValue(formData, "vessel_name") || null,
     expected_loading_date: textValue(formData, "expected_loading_date") || null,
@@ -15668,7 +15678,7 @@ export async function ErpRouter({
         ) : activeModule === "purchasing" ? (
           <PurchasingDashboard dashboard={await getPurchasingDashboard()} selectedTab={params.purchasing_tab} />
         ) : activeModule === "create-container" ? (
-          <ContainerEditor error={params.error} saveAction={createContainerAction} />
+          <ContainerEditor agencies={await getContainerAgencies()} error={params.error} saveAction={createContainerAction} />
         ) : activeModule === "container" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container, params.container_po) : null;
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} />;

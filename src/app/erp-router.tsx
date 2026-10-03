@@ -13240,10 +13240,28 @@ async function getContainerAgencies() {
   return data ?? [];
 }
 
+function vendorAddressLabel(vendor: { address_line_1: string | null; address_line_2: string | null; city: string | null; country: string | null; postal_code: string | null; state_province: string | null }) {
+  const cityLine = [vendor.city, vendor.state_province, vendor.postal_code].filter(Boolean).join(", ");
+  return [vendor.address_line_1, vendor.address_line_2, cityLine, vendor.country].filter(Boolean).join("\n");
+}
+
+async function getContainerLoadingSiteVendors() {
+  const { data, error } = await createSupabaseUntypedAdminClient().from("vendor").select("id, name, address_line_1, address_line_2, city, state_province, postal_code, country").eq("status", "active").order("name");
+  if (error) return [];
+  return (data ?? []).map((vendor) => ({ id: vendor.id, name: vendor.name, address: vendorAddressLabel(vendor) }));
+}
+
+async function resolveContainerLoadingSite(vendorId: string) {
+  if (!vendorId) return { consolidation_loading_address: null, consolidation_loading_site: null, consolidation_loading_vendor_id: null };
+  const { data: vendor, error } = await createSupabaseUntypedAdminClient().from("vendor").select("id, name, address_line_1, address_line_2, city, state_province, postal_code, country").eq("id", vendorId).eq("status", "active").maybeSingle();
+  if (error || !vendor) throw new Error(error?.message ?? "The selected loading-site vendor is not active.");
+  return { consolidation_loading_address: vendorAddressLabel(vendor) || null, consolidation_loading_site: vendor.name, consolidation_loading_vendor_id: vendor.id };
+}
+
 async function getContainerWorkspace(containerId: string, selectedPurchaseOrderId?: string) {
   const supabase = createSupabaseUntypedAdminClient();
   const [{ data: container, error: containerError }, { data: orders, error: ordersError }, { data: containerLines, error: containerLinesError }, { data: documentRows, error: documentRowsError }] = await Promise.all([
-    supabase.from("import_container").select("id, container_number, booking_number, shipping_agency, shipping_agent_contact_name, shipping_agent_contact_email, vessel_name, expected_loading_date, actual_loading_date, etd, actual_vessel_departure_date, arrival_port, eta, arrival_date, tariff_broker_agency, broker_contact_name, broker_contact_email, container_status").eq("id", containerId).maybeSingle(),
+    supabase.from("import_container").select("id, container_number, booking_number, shipping_agency, shipping_agent_contact_name, shipping_agent_contact_email, vessel_name, expected_loading_date, actual_loading_date, etd, actual_vessel_departure_date, arrival_port, eta, arrival_date, tariff_broker_agency, broker_contact_name, broker_contact_email, consolidation_loading_vendor_id, consolidation_loading_site, consolidation_loading_address, container_status").eq("id", containerId).maybeSingle(),
     supabase.from("vendor_purchase_order").select("id, vendor_id, vendor_po_number, vendor_name_snapshot, status").order("po_date", { ascending: false }),
     supabase.from("import_container_line").select("id, vendor_purchase_order_line_id, product_id, quantity_packed").eq("import_container_id", containerId).eq("is_active", true),
     supabase.from("container_document").select("id, document_type, display_name, uploaded_at, attachment:file_id(id, original_file_name, storage_bucket, storage_path)").eq("import_container_id", containerId).eq("is_active", true).order("uploaded_at", { ascending: false }),
@@ -13308,6 +13326,8 @@ async function createContainerAction(formData: FormData) {
   const containerNumber = textValue(formData, "container_number");
   const fail = (message: string) => ({ error: message });
   if (!containerNumber) return fail("Enter a container number.");
+  let loadingSite;
+  try { loadingSite = await resolveContainerLoadingSite(textValue(formData, "consolidation_loading_vendor_id")); } catch (error) { return fail(error instanceof Error ? error.message : "The loading site could not be saved."); }
   const { data, error } = await createSupabaseUntypedAdminClient().from("import_container").insert({
     container_number: containerNumber,
     booking_number: textValue(formData, "booking_number") || null,
@@ -13325,6 +13345,7 @@ async function createContainerAction(formData: FormData) {
     tariff_broker_agency: textValue(formData, "tariff_broker_agency") || null,
     broker_contact_name: textValue(formData, "broker_contact_name") || null,
     broker_contact_email: textValue(formData, "broker_contact_email") || null,
+    ...loadingSite,
   }).select("id").single();
   if (error || !data) return fail(error?.message ?? "The container could not be created.");
   return { destination: `/?module=container&container=${data.id}` };
@@ -13335,7 +13356,9 @@ async function updateContainerHeaderAction(formData: FormData) {
   const containerId = textValue(formData, "container_id");
   const section = textValue(formData, "section");
   const baseUrl = `/?module=container&container=${containerId}`;
-  if (!containerId || !["shipping", "schedule", "broker"].includes(section)) redirect(`/?module=purchasing&error=${encodeURIComponent("Invalid container update request.")}`);
+  if (!containerId || !["shipping", "schedule", "broker", "loading_site"].includes(section)) redirect(`/?module=purchasing&error=${encodeURIComponent("Invalid container update request.")}`);
+  let loadingSite;
+  try { loadingSite = section === "loading_site" ? await resolveContainerLoadingSite(textValue(formData, "consolidation_loading_vendor_id")) : null; } catch (error) { redirect(`${baseUrl}&error=${encodeURIComponent(error instanceof Error ? error.message : "The loading site could not be saved.")}`); }
   const values = section === "shipping" ? {
     arrival_port: textValue(formData, "arrival_port") || null,
     booking_number: textValue(formData, "booking_number") || null,
@@ -13350,11 +13373,11 @@ async function updateContainerHeaderAction(formData: FormData) {
     etd: textValue(formData, "expected_vessel_departure_date") || null,
     eta: textValue(formData, "expected_arrival_date") || null,
     expected_loading_date: textValue(formData, "expected_loading_date") || null,
-  } : {
+  } : section === "broker" ? {
     broker_contact_email: textValue(formData, "broker_contact_email") || null,
     broker_contact_name: textValue(formData, "broker_contact_name") || null,
     tariff_broker_agency: textValue(formData, "tariff_broker_agency") || null,
-  };
+  } : loadingSite!;
   const { error } = await createSupabaseUntypedAdminClient().from("import_container").update(values).eq("id", containerId);
   if (error) redirect(`${baseUrl}&error=${encodeURIComponent(error.message)}`);
   redirect(baseUrl);
@@ -15858,12 +15881,12 @@ export async function ErpRouter({
         ) : activeModule === "purchasing" ? (
           <PurchasingDashboard dashboard={await getPurchasingDashboard()} selectedTab={params.purchasing_tab} />
         ) : activeModule === "create-container" ? (
-          <ContainerEditor agencies={await getContainerAgencies()} error={params.error} saveAction={createContainerAction} />
+          <ContainerEditor agencies={await getContainerAgencies()} error={params.error} saveAction={createContainerAction} vendors={await getContainerLoadingSiteVendors()} />
         ) : activeModule === "container" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container, params.container_po) : null;
           if (workspace?.container && workspace.container.container_status !== "draft" && params.container_edit_mode !== "1") redirect(`/?module=container-detail&container=${workspace.container.id}`);
-          const editingSection = ["shipping", "schedule", "broker"].includes(params.container_edit ?? "") ? params.container_edit as "shipping" | "schedule" | "broker" : undefined;
-          return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} />;
+          const editingSection = ["shipping", "schedule", "broker", "loading_site"].includes(params.container_edit ?? "") ? params.container_edit as "shipping" | "schedule" | "broker" | "loading_site" : undefined;
+          return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} vendors={await getContainerLoadingSiteVendors()} />;
         })() : activeModule === "container-detail" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} documents={workspace?.documents ?? []} />;

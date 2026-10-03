@@ -3022,6 +3022,10 @@ tfoot td {
   text-align: right;
 }
 
+.preserve-lines {
+  white-space: pre-line;
+}
+
 .editable-table {
   min-width: 1320px;
 }

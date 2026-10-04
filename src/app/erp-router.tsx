@@ -224,6 +224,7 @@ export type SearchParams = Promise<{
   agency_type?: string;
   container?: string;
   container_invoice?: string;
+  container_invoice_view?: string;
   container_tab?: string;
   container_edit_mode?: string;
   container_edit?: string;
@@ -13556,6 +13557,14 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   const invoiceIds = (vendorInvoices ?? []).map((invoice) => invoice.id);
   const { data: vendorInvoiceLines, error: vendorInvoiceLinesError } = invoiceIds.length ? await supabase.from("container_vendor_invoice_line").select("id, container_vendor_invoice_id, line_type, po_number, sku, factory_sku, hs_code, description, quantity, pieces_per_carton, carton_count, unit_price, notes, sort_order").in("container_vendor_invoice_id", invoiceIds).order("sort_order") : { data: [], error: null };
   if (vendorInvoiceLinesError) throw new Error(vendorInvoiceLinesError.message);
+  const { data: vendorInvoiceDocumentRows, error: vendorInvoiceDocumentsError } = invoiceIds.length ? await supabase.from("container_vendor_invoice_document").select("id, container_vendor_invoice_id, display_name, uploaded_at, attachment:file_id(original_file_name, storage_bucket, storage_path)").in("container_vendor_invoice_id", invoiceIds).order("uploaded_at", { ascending: false }) : { data: [], error: null };
+  if (vendorInvoiceDocumentsError) throw new Error(vendorInvoiceDocumentsError.message);
+  const vendorInvoiceDocuments = await Promise.all((vendorInvoiceDocumentRows ?? []).flatMap(async (document) => {
+    const attachment = Array.isArray(document.attachment) ? document.attachment[0] : document.attachment;
+    if (!attachment) return [];
+    const { data } = await supabase.storage.from(attachment.storage_bucket).createSignedUrl(attachment.storage_path, 60 * 60);
+    return [{ id: document.id, container_vendor_invoice_id: document.container_vendor_invoice_id, display_name: document.display_name, original_file_name: attachment.original_file_name, uploaded_at: document.uploaded_at, signed_url: data?.signedUrl ?? null }];
+  }));
 
   return {
     container,
@@ -13574,7 +13583,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
       return { id: line.id, vendor_id: purchaseOrder?.vendor_id ?? "unknown", vendor_email: purchaseOrder ? vendorById.get(purchaseOrder.vendor_id)?.email ?? null : null, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: product?.sku ?? "Unknown", factory_sku: purchaseOrderLine?.vendor_item_number_snapshot ?? null, name: product?.name ?? "Product unavailable", category_name: product?.product_category_id ? categoryById.get(product.product_category_id) ?? null : null, hs_code: hsCodeByProductId.get(line.product_id) ?? null, quantity_packed: quantityPacked, pieces_per_carton: piecesPerCarton, carton_count: cartonCount, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: cartonCount, unit_cost: Number(purchaseOrderLine?.unit_cost ?? 0) };
     }),
     documents: documents.flat(),
-    vendorInvoices: (vendorInvoices ?? []).map((invoice) => ({ ...invoice, lines: (vendorInvoiceLines ?? []).filter((line) => line.container_vendor_invoice_id === invoice.id).map((line) => ({ ...line, carton_count: line.carton_count === null ? null : Number(line.carton_count), pieces_per_carton: line.pieces_per_carton === null ? null : Number(line.pieces_per_carton), quantity: Number(line.quantity), unit_price: Number(line.unit_price) })) })),
+    vendorInvoices: (vendorInvoices ?? []).map((invoice) => ({ ...invoice, documents: vendorInvoiceDocuments.flat().filter((document) => document.container_vendor_invoice_id === invoice.id).map(({ container_vendor_invoice_id: _invoiceId, ...document }) => document), lines: (vendorInvoiceLines ?? []).filter((line) => line.container_vendor_invoice_id === invoice.id).map((line) => ({ ...line, carton_count: line.carton_count === null ? null : Number(line.carton_count), pieces_per_carton: line.pieces_per_carton === null ? null : Number(line.pieces_per_carton), quantity: Number(line.quantity), unit_price: Number(line.unit_price) })) })),
     activeOrders,
     selectedOrder,
     selectedLines: (selectedLinesResult.data ?? []).filter((line) => line.production_status !== "cancelled" && Number(line.quantity_ordered) > Number(line.quantity_exited_factory ?? 0)).map((line) => ({ id: line.id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, quantity_available: Number(line.quantity_ordered) - Number(line.quantity_exited_factory ?? 0), unit_cost: Number(line.unit_cost) })),
@@ -13738,6 +13747,42 @@ async function saveContainerVendorInvoiceAction(formData: FormData) {
   if (miscRows.length) {
     const { error } = await supabase.from("container_vendor_invoice_line").insert(miscRows.map((row, index) => ({ container_vendor_invoice_id: invoiceId, line_type: "misc", description: row.description, quantity: 1, unit_price: row.amount, notes: row.notes, sort_order: 1000 + index })));
     if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
+  }
+  revalidatePath("/");
+  redirect(`${detailUrl}&container_invoice_view=1`);
+}
+
+async function uploadContainerVendorInvoiceDocumentAction(formData: FormData) {
+  "use server";
+  const containerId = textValue(formData, "container_id");
+  const invoiceId = textValue(formData, "container_vendor_invoice_id");
+  const file = formData.get("vendor_invoice_document_file");
+  const detailUrl = `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices&container_invoice=${invoiceId}`;
+  if (!containerId || !invoiceId || !(file instanceof File) || file.size === 0) redirect(`/?module=purchasing&error=${encodeURIComponent("Choose an original vendor invoice file to upload.")}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: invoice, error: invoiceError } = await supabase.from("container_vendor_invoice").select("id").eq("id", invoiceId).eq("import_container_id", containerId).maybeSingle();
+  if (invoiceError || !invoice) redirect(`${detailUrl}&error=${encodeURIComponent(invoiceError?.message ?? "Vendor invoice was not found.")}`);
+  const bucketName = "container-vendor-invoice-documents";
+  const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+  if (bucketsError) redirect(`${detailUrl}&error=${encodeURIComponent(bucketsError.message)}`);
+  if (!buckets?.some((bucket) => bucket.name === bucketName)) {
+    const { error } = await supabase.storage.createBucket(bucketName, { public: false });
+    if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
+  }
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storagePath = `container/${containerId}/vendor-invoice/${invoiceId}/${Date.now()}-${safeName}`;
+  const { error: uploadError } = await supabase.storage.from(bucketName).upload(storagePath, new Uint8Array(await file.arrayBuffer()), { contentType: file.type || "application/octet-stream", upsert: false });
+  if (uploadError) redirect(`${detailUrl}&error=${encodeURIComponent(uploadError.message)}`);
+  const { data: attachment, error: attachmentError } = await supabase.from("attachment").insert({ category: "container_vendor_invoice", content_type: file.type || null, entity_id: invoiceId, entity_type: "container_vendor_invoice", file_size: file.size, original_file_name: file.name, storage_bucket: bucketName, storage_path: storagePath }).select("id").single();
+  if (attachmentError || !attachment) {
+    await supabase.storage.from(bucketName).remove([storagePath]);
+    redirect(`${detailUrl}&error=${encodeURIComponent(attachmentError?.message ?? "Vendor invoice document could not be recorded.")}`);
+  }
+  const { error: documentError } = await supabase.from("container_vendor_invoice_document").insert({ container_vendor_invoice_id: invoiceId, display_name: textValue(formData, "display_name") || null, file_id: attachment.id });
+  if (documentError) {
+    await supabase.from("attachment").delete().eq("id", attachment.id);
+    await supabase.storage.from(bucketName).remove([storagePath]);
+    redirect(`${detailUrl}&error=${encodeURIComponent(documentError.message)}`);
   }
   revalidatePath("/");
   redirect(detailUrl);
@@ -16247,7 +16292,7 @@ export async function ErpRouter({
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} vendors={await getContainerLoadingSiteVendors()} />;
         })() : activeModule === "container-detail" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
-          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} createVendorInvoiceAction={createContainerVendorInvoiceAction} deleteDocumentAction={deleteContainerDocumentAction} deleteVendorInvoiceAction={deleteContainerVendorInvoiceAction} documents={workspace?.documents ?? []} initialTab={params.container_tab === "products" || params.container_tab === "documents" || params.container_tab === "vendor_invoices" ? params.container_tab : "profile"} reportMappings={await getReportFieldMappings("container_invoice")} selectedInvoiceId={params.container_invoice} saveVendorInvoiceAction={saveContainerVendorInvoiceAction} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} uploadDocumentAction={uploadContainerDocumentAction} vendorInvoices={workspace?.vendorInvoices ?? []} />;
+          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} createVendorInvoiceAction={createContainerVendorInvoiceAction} deleteDocumentAction={deleteContainerDocumentAction} deleteVendorInvoiceAction={deleteContainerVendorInvoiceAction} documents={workspace?.documents ?? []} initialTab={params.container_tab === "products" || params.container_tab === "documents" || params.container_tab === "vendor_invoices" ? params.container_tab : "profile"} invoiceReadOnly={params.container_invoice_view === "1"} reportMappings={await getReportFieldMappings("container_invoice")} selectedInvoiceId={params.container_invoice} saveVendorInvoiceAction={saveContainerVendorInvoiceAction} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} uploadDocumentAction={uploadContainerDocumentAction} uploadVendorInvoiceDocumentAction={uploadContainerVendorInvoiceDocumentAction} vendorInvoices={workspace?.vendorInvoices ?? []} />;
         })() : activeModule === "container-loading-sheets" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerLoadingSheetPage container={workspace?.container ?? null} exportType={params.export_type} lines={workspace?.containerLines ?? []} reportMappings={await getReportFieldMappings("container_packing_list")} selectedVendorId={params.loading_vendor} />;

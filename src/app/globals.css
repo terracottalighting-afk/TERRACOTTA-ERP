@@ -3422,6 +3422,34 @@ tfoot td {
   gap: 5px;
 }
 
+.report-count-popover {
+  display: inline-block;
+  position: relative;
+}
+
+.report-count-popover > span {
+  background: #1f2937;
+  color: #fff;
+  display: none;
+  font-size: 0.8rem;
+  left: 0;
+  min-width: 180px;
+  padding: 8px 10px;
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 10;
+}
+
+.report-count-popover > span span {
+  display: block;
+  padding: 2px 0;
+}
+
+.report-count-popover:focus-within > span,
+.report-count-popover:hover > span {
+  display: block;
+}
+
 .po-line-editor-row > td {
   background: #f8fbfa;
   padding: 0;

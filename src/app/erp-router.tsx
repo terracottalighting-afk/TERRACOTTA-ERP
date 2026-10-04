@@ -2347,6 +2347,22 @@ async function createReportSettingTypeAction(formData: FormData) {
   redirect("/?module=admin&admin_tab=reports");
 }
 
+async function editReportSettingTypeAction(formData: FormData) {
+  "use server";
+  const id = textValue(formData, "report_type_id");
+  const name = textValue(formData, "report_type_name");
+  const description = textValue(formData, "report_type_description") || null;
+  const errorUrl = (message: string) => `/?module=admin&admin_tab=reports&error=${encodeURIComponent(message)}`;
+  if (!id) redirect(errorUrl("Choose a saved Report Type."));
+  if (!name || name.length > 80) redirect(errorUrl("Enter a Report Type name of 80 characters or fewer."));
+  if (description && description.length > 240) redirect(errorUrl("Enter a Report Type description of 240 characters or fewer."));
+  const supabase = createSupabaseUntypedAdminClient();
+  const { error } = await supabase.from("report_setting_type").update({ name, description }).eq("id", id);
+  if (error) redirect(errorUrl(error.message));
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=reports");
+}
+
 async function setReportDefinitionTypeAction(formData: FormData) {
   "use server";
   const reportType = textValue(formData, "report_type") as ReportTypeCode;
@@ -16285,7 +16301,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard addReportAction={createReportDefinitionAction} addReportTypeAction={createReportSettingTypeAction} assignReportTypeAction={setReportDefinitionTypeAction} assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} deleteReportMappingAction={deleteReportMappingAction} editReportMappingAction={editReportMappingAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveMappingObjectSourcesAction={saveMappingObjectSourcesAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
+          <AdminDashboard addReportAction={createReportDefinitionAction} addReportTypeAction={createReportSettingTypeAction} assignReportTypeAction={setReportDefinitionTypeAction} assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} deleteReportMappingAction={deleteReportMappingAction} editReportMappingAction={editReportMappingAction} editReportTypeAction={editReportSettingTypeAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveMappingObjectSourcesAction={saveMappingObjectSourcesAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

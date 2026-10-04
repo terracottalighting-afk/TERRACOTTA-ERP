@@ -13743,6 +13743,19 @@ async function saveContainerVendorInvoiceAction(formData: FormData) {
   redirect(detailUrl);
 }
 
+async function deleteContainerVendorInvoiceAction(formData: FormData) {
+  "use server";
+  const containerId = textValue(formData, "container_id");
+  const invoiceId = textValue(formData, "container_vendor_invoice_id");
+  const detailUrl = `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices`;
+  if (!containerId || !invoiceId) redirect(`/?module=purchasing&error=${encodeURIComponent("Vendor invoice could not be identified.")}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { error } = await supabase.from("container_vendor_invoice").delete().eq("id", invoiceId).eq("import_container_id", containerId);
+  if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(detailUrl);
+}
+
 async function uploadContainerDocumentAction(formData: FormData) {
   "use server";
   const containerId = textValue(formData, "container_id");
@@ -16234,7 +16247,7 @@ export async function ErpRouter({
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} vendors={await getContainerLoadingSiteVendors()} />;
         })() : activeModule === "container-detail" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
-          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} createVendorInvoiceAction={createContainerVendorInvoiceAction} deleteDocumentAction={deleteContainerDocumentAction} documents={workspace?.documents ?? []} initialTab={params.container_tab === "products" || params.container_tab === "documents" || params.container_tab === "vendor_invoices" ? params.container_tab : "profile"} reportMappings={await getReportFieldMappings("container_invoice")} selectedInvoiceId={params.container_invoice} saveVendorInvoiceAction={saveContainerVendorInvoiceAction} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} uploadDocumentAction={uploadContainerDocumentAction} vendorInvoices={workspace?.vendorInvoices ?? []} />;
+          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} createVendorInvoiceAction={createContainerVendorInvoiceAction} deleteDocumentAction={deleteContainerDocumentAction} deleteVendorInvoiceAction={deleteContainerVendorInvoiceAction} documents={workspace?.documents ?? []} initialTab={params.container_tab === "products" || params.container_tab === "documents" || params.container_tab === "vendor_invoices" ? params.container_tab : "profile"} reportMappings={await getReportFieldMappings("container_invoice")} selectedInvoiceId={params.container_invoice} saveVendorInvoiceAction={saveContainerVendorInvoiceAction} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} uploadDocumentAction={uploadContainerDocumentAction} vendorInvoices={workspace?.vendorInvoices ?? []} />;
         })() : activeModule === "container-loading-sheets" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerLoadingSheetPage container={workspace?.container ?? null} exportType={params.export_type} lines={workspace?.containerLines ?? []} reportMappings={await getReportFieldMappings("container_packing_list")} selectedVendorId={params.loading_vendor} />;

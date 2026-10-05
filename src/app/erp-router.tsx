@@ -13510,7 +13510,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
     supabase.from("vendor_purchase_order").select("id, vendor_id, vendor_po_number, vendor_name_snapshot, status").order("po_date", { ascending: false }),
     supabase.from("import_container_line").select("id, vendor_purchase_order_line_id, product_id, quantity_packed, carton_count").eq("import_container_id", containerId).eq("is_active", true),
     supabase.from("container_document").select("id, document_type, display_name, uploaded_at, attachment:file_id(id, original_file_name, storage_bucket, storage_path)").eq("import_container_id", containerId).eq("is_active", true).order("uploaded_at", { ascending: false }),
-    supabase.from("container_vendor_invoice").select("id, vendor_id, vendor_name_snapshot, vendor_invoice_number, invoice_date, due_date, currency, notes, invoice_status, paid_date, paid_amount, payment_method, payment_reference, payment_notes").eq("import_container_id", containerId).order("created_at"),
+    supabase.from("container_vendor_invoice").select("id, vendor_id, vendor_name_snapshot, erp_invoice_number, vendor_invoice_number, invoice_date, due_date, currency, notes, invoice_status, paid_date, paid_amount, payment_method, payment_reference, payment_notes").eq("import_container_id", containerId).order("created_at"),
   ]);
   if (containerError || ordersError || containerLinesError || documentRowsError || vendorInvoicesError) throw new Error(containerError?.message ?? ordersError?.message ?? containerLinesError?.message ?? documentRowsError?.message ?? vendorInvoicesError?.message);
   if (!container) return null;

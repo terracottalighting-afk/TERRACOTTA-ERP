@@ -2143,6 +2143,11 @@ dd {
   padding: 12px 14px;
 }
 
+.container-document-groups {
+  display: grid;
+  gap: 12px;
+}
+
 .filter-grid {
   align-items: end;
   display: grid;

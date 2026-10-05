@@ -13723,7 +13723,7 @@ async function saveContainerVendorInvoiceAction(formData: FormData) {
   const { data: existingInvoice, error: existingInvoiceError } = await supabase.from("container_vendor_invoice").select("invoice_status").eq("id", invoiceId).eq("import_container_id", containerId).maybeSingle();
   if (existingInvoiceError || !existingInvoice) redirect(`${detailUrl}&error=${encodeURIComponent(existingInvoiceError?.message ?? "Vendor invoice was not found.")}`);
   if (existingInvoice.invoice_status === "paid") redirect(`${detailUrl}&container_invoice_view=1&error=${encodeURIComponent("Paid vendor invoices are read-only and cannot be edited.")}`);
-  const { error: headerError } = await supabase.from("container_vendor_invoice").update({ vendor_invoice_number: textValue(formData, "vendor_invoice_number") || null, invoice_date: textValue(formData, "invoice_date") || null, due_date: textValue(formData, "due_date") || null, notes: textValue(formData, "notes") || null }).eq("id", invoiceId).eq("import_container_id", containerId);
+  const { error: headerError } = await supabase.from("container_vendor_invoice").update({ vendor_invoice_number: textValue(formData, "vendor_invoice_number") || null, due_date: textValue(formData, "due_date") || null, notes: textValue(formData, "notes") || null }).eq("id", invoiceId).eq("import_container_id", containerId);
   if (headerError) redirect(`${detailUrl}&error=${encodeURIComponent(headerError.message)}`);
   const lineIds = formData.getAll("invoice_line_id").map(String);
   const poNumbers = formData.getAll("po_number").map((value) => String(value).trim());

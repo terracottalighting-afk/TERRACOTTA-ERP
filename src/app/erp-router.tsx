@@ -224,6 +224,7 @@ export type SearchParams = Promise<{
   agency_type?: string;
   container?: string;
   container_invoice?: string;
+  container_invoice_vendor?: string;
   container_invoice_view?: string;
   container_tab?: string;
   container_edit_mode?: string;
@@ -13701,30 +13702,18 @@ async function createContainerVendorInvoiceAction(formData: FormData) {
   if (!workspace?.container || !vendorLines.length) redirect(`${detailUrl}&error=${encodeURIComponent("No loaded products were found for this vendor.")}`);
   const existing = workspace.vendorInvoices.find((invoice) => invoice.vendor_id === vendorId);
   if (existing) redirect(`${detailUrl}&container_invoice=${existing.id}`);
-  const invoiceMappings = await getReportFieldMappings("container_invoice");
-  const hsSource = reportMappingSource(invoiceMappings, "container_invoice", "hs_code");
-  const descriptionSource = reportMappingSource(invoiceMappings, "container_invoice", "description");
-  const supabase = createSupabaseUntypedAdminClient();
-  const { data: invoice, error: invoiceError } = await supabase.from("container_vendor_invoice").insert({ import_container_id: containerId, vendor_id: vendorId, vendor_name_snapshot: vendorLines[0].vendor_name, vendor_email_snapshot: vendorLines[0].vendor_email }).select("id").single();
-  if (invoiceError || !invoice) redirect(`${detailUrl}&error=${encodeURIComponent(invoiceError?.message ?? "Vendor invoice could not be created.")}`);
-  const { error: linesError } = await supabase.from("container_vendor_invoice_line").insert(vendorLines.map((line, index) => ({ container_vendor_invoice_id: invoice.id, import_container_line_id: line.id, line_type: "product", po_number: line.po_number, sku: line.sku, factory_sku: line.factory_sku, hs_code: reportLineText(line, hsSource), description: reportLineText(line, descriptionSource), quantity: line.quantity_packed, pieces_per_carton: line.pieces_per_carton, carton_count: line.carton_count, unit_price: line.unit_cost, sort_order: index + 1 })));
-  if (linesError) redirect(`${detailUrl}&error=${encodeURIComponent(linesError.message)}`);
-  revalidatePath("/");
-  redirect(`${detailUrl}&container_invoice=${invoice.id}`);
+  redirect(`${detailUrl}&container_invoice_vendor=${vendorId}`);
 }
 
 async function saveContainerVendorInvoiceAction(formData: FormData) {
   "use server";
   const containerId = textValue(formData, "container_id");
-  const invoiceId = textValue(formData, "container_vendor_invoice_id");
-  const detailUrl = `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices&container_invoice=${invoiceId}`;
-  if (!containerId || !invoiceId) redirect(`/?module=purchasing&error=${encodeURIComponent("Vendor invoice could not be identified.")}`);
+  const vendorId = textValue(formData, "vendor_id");
+  let invoiceId = textValue(formData, "container_vendor_invoice_id");
+  const isNewInvoice = !invoiceId;
+  let detailUrl = `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices${isNewInvoice ? `&container_invoice_vendor=${vendorId}` : `&container_invoice=${invoiceId}`}`;
+  if (!containerId || (isNewInvoice && !vendorId)) redirect(`/?module=purchasing&error=${encodeURIComponent("Vendor invoice could not be identified.")}`);
   const supabase = createSupabaseUntypedAdminClient();
-  const { data: existingInvoice, error: existingInvoiceError } = await supabase.from("container_vendor_invoice").select("invoice_status").eq("id", invoiceId).eq("import_container_id", containerId).maybeSingle();
-  if (existingInvoiceError || !existingInvoice) redirect(`${detailUrl}&error=${encodeURIComponent(existingInvoiceError?.message ?? "Vendor invoice was not found.")}`);
-  if (existingInvoice.invoice_status === "paid") redirect(`${detailUrl}&container_invoice_view=1&error=${encodeURIComponent("Paid vendor invoices are read-only and cannot be edited.")}`);
-  const { error: headerError } = await supabase.from("container_vendor_invoice").update({ vendor_invoice_number: textValue(formData, "vendor_invoice_number") || null, due_date: textValue(formData, "due_date") || null, notes: textValue(formData, "notes") || null }).eq("id", invoiceId).eq("import_container_id", containerId);
-  if (headerError) redirect(`${detailUrl}&error=${encodeURIComponent(headerError.message)}`);
   const lineIds = formData.getAll("invoice_line_id").map(String);
   const poNumbers = formData.getAll("po_number").map((value) => String(value).trim());
   const skus = formData.getAll("sku").map((value) => String(value).trim());
@@ -13737,19 +13726,46 @@ async function saveContainerVendorInvoiceAction(formData: FormData) {
   const unitPrices = formData.getAll("unit_price").map((value) => Number(value));
   for (let index = 0; index < lineIds.length; index += 1) {
     if (!lineIds[index] || !poNumbers[index] || !skus[index] || !descriptions[index] || !Number.isFinite(quantities[index]) || quantities[index] <= 0 || !Number.isFinite(unitPrices[index]) || unitPrices[index] < 0) redirect(`${detailUrl}&error=${encodeURIComponent("Complete every product invoice row with a PO number, SKU, description, quantity, and valid price.")}`);
-    const { error } = await supabase.from("container_vendor_invoice_line").update({ po_number: poNumbers[index], sku: skus[index], factory_sku: factorySkus[index] || null, hs_code: hsCodes[index] || null, description: descriptions[index], quantity: quantities[index], pieces_per_carton: Number.isFinite(piecesPerCarton[index]) ? piecesPerCarton[index] : null, carton_count: Number.isFinite(cartonCounts[index]) ? cartonCounts[index] : null, unit_price: unitPrices[index] }).eq("id", lineIds[index]).eq("container_vendor_invoice_id", invoiceId).eq("line_type", "product");
-    if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
   }
-  const { error: removeMiscError } = await supabase.from("container_vendor_invoice_line").delete().eq("container_vendor_invoice_id", invoiceId).eq("line_type", "misc");
-  if (removeMiscError) redirect(`${detailUrl}&error=${encodeURIComponent(removeMiscError.message)}`);
   const miscDescriptions = formData.getAll("misc_description").map((value) => String(value).trim());
   const amounts = formData.getAll("misc_amount").map((value) => Number(value));
   const notes = formData.getAll("misc_notes").map((value) => String(value).trim());
   const miscRows = miscDescriptions.map((description, index) => ({ description, amount: amounts[index], notes: notes[index] })).filter((row) => row.description || Number.isFinite(row.amount) || row.notes);
   if (miscRows.some((row) => !row.description || !row.notes || !Number.isFinite(row.amount) || row.amount < 0)) redirect(`${detailUrl}&error=${encodeURIComponent("Each miscellaneous charge needs a description, amount, and note.")}`);
+  if (isNewInvoice) {
+    const workspace = await getContainerWorkspace(containerId);
+    const vendorLines = workspace?.containerLines.filter((line) => line.vendor_id === vendorId) ?? [];
+    if (!workspace?.container || !vendorLines.length || lineIds.length !== vendorLines.length || lineIds.some((lineId) => !vendorLines.some((line) => line.id === lineId))) redirect(`${detailUrl}&error=${encodeURIComponent("The loaded products for this vendor have changed. Reopen the invoice draft and try again.")}`);
+    const existing = workspace.vendorInvoices.find((invoice) => invoice.vendor_id === vendorId);
+    if (existing) redirect(`/?module=container-detail&container=${containerId}&container_tab=vendor_invoices&container_invoice=${existing.id}`);
+    const { data: invoice, error: invoiceError } = await supabase.from("container_vendor_invoice").insert({ import_container_id: containerId, vendor_id: vendorId, vendor_name_snapshot: vendorLines[0].vendor_name, vendor_email_snapshot: vendorLines[0].vendor_email, vendor_invoice_number: textValue(formData, "vendor_invoice_number") || null, due_date: textValue(formData, "due_date") || null, notes: textValue(formData, "notes") || null }).select("id").single();
+    if (invoiceError || !invoice) redirect(`${detailUrl}&error=${encodeURIComponent(invoiceError?.message ?? "Vendor invoice could not be saved.")}`);
+    invoiceId = invoice.id;
+    detailUrl = `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices&container_invoice=${invoiceId}`;
+    const { error: linesError } = await supabase.from("container_vendor_invoice_line").insert(lineIds.map((lineId, index) => ({ container_vendor_invoice_id: invoiceId, import_container_line_id: lineId, line_type: "product", po_number: poNumbers[index], sku: skus[index], factory_sku: factorySkus[index] || null, hs_code: hsCodes[index] || null, description: descriptions[index], quantity: quantities[index], pieces_per_carton: Number.isFinite(piecesPerCarton[index]) ? piecesPerCarton[index] : null, carton_count: Number.isFinite(cartonCounts[index]) ? cartonCounts[index] : null, unit_price: unitPrices[index], sort_order: index + 1 })));
+    if (linesError) {
+      await supabase.from("container_vendor_invoice").delete().eq("id", invoiceId);
+      redirect(`${detailUrl}&error=${encodeURIComponent(linesError.message)}`);
+    }
+  } else {
+    const { data: existingInvoice, error: existingInvoiceError } = await supabase.from("container_vendor_invoice").select("invoice_status").eq("id", invoiceId).eq("import_container_id", containerId).maybeSingle();
+    if (existingInvoiceError || !existingInvoice) redirect(`${detailUrl}&error=${encodeURIComponent(existingInvoiceError?.message ?? "Vendor invoice was not found.")}`);
+    if (existingInvoice.invoice_status === "paid") redirect(`${detailUrl}&container_invoice_view=1&error=${encodeURIComponent("Paid vendor invoices are read-only and cannot be edited.")}`);
+    const { error: headerError } = await supabase.from("container_vendor_invoice").update({ vendor_invoice_number: textValue(formData, "vendor_invoice_number") || null, due_date: textValue(formData, "due_date") || null, notes: textValue(formData, "notes") || null }).eq("id", invoiceId).eq("import_container_id", containerId);
+    if (headerError) redirect(`${detailUrl}&error=${encodeURIComponent(headerError.message)}`);
+    for (let index = 0; index < lineIds.length; index += 1) {
+      const { error } = await supabase.from("container_vendor_invoice_line").update({ po_number: poNumbers[index], sku: skus[index], factory_sku: factorySkus[index] || null, hs_code: hsCodes[index] || null, description: descriptions[index], quantity: quantities[index], pieces_per_carton: Number.isFinite(piecesPerCarton[index]) ? piecesPerCarton[index] : null, carton_count: Number.isFinite(cartonCounts[index]) ? cartonCounts[index] : null, unit_price: unitPrices[index] }).eq("id", lineIds[index]).eq("container_vendor_invoice_id", invoiceId).eq("line_type", "product");
+      if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
+    }
+    const { error: removeMiscError } = await supabase.from("container_vendor_invoice_line").delete().eq("container_vendor_invoice_id", invoiceId).eq("line_type", "misc");
+    if (removeMiscError) redirect(`${detailUrl}&error=${encodeURIComponent(removeMiscError.message)}`);
+  }
   if (miscRows.length) {
     const { error } = await supabase.from("container_vendor_invoice_line").insert(miscRows.map((row, index) => ({ container_vendor_invoice_id: invoiceId, line_type: "misc", description: row.description, quantity: 1, unit_price: row.amount, notes: row.notes, sort_order: 1000 + index })));
-    if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
+    if (error) {
+      if (isNewInvoice) await supabase.from("container_vendor_invoice").delete().eq("id", invoiceId);
+      redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
+    }
   }
   revalidatePath("/");
   redirect(`${detailUrl}&container_invoice_view=1`);
@@ -16318,7 +16334,7 @@ export async function ErpRouter({
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} vendors={await getContainerLoadingSiteVendors()} />;
         })() : activeModule === "container-detail" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
-          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} createVendorInvoiceAction={createContainerVendorInvoiceAction} deleteDocumentAction={deleteContainerDocumentAction} deleteVendorInvoiceAction={deleteContainerVendorInvoiceAction} documents={workspace?.documents ?? []} initialTab={params.container_tab === "products" || params.container_tab === "documents" || params.container_tab === "vendor_invoices" ? params.container_tab : "profile"} invoiceReadOnly={params.container_invoice_view === "1"} reportMappings={await getReportFieldMappings("container_invoice")} selectedInvoiceId={params.container_invoice} saveVendorInvoiceAction={saveContainerVendorInvoiceAction} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} updateVendorInvoiceStatusAction={updateContainerVendorInvoiceStatusAction} uploadDocumentAction={uploadContainerDocumentAction} uploadVendorInvoiceDocumentAction={uploadContainerVendorInvoiceDocumentAction} vendorInvoices={workspace?.vendorInvoices ?? []} />;
+          return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} createVendorInvoiceAction={createContainerVendorInvoiceAction} deleteDocumentAction={deleteContainerDocumentAction} deleteVendorInvoiceAction={deleteContainerVendorInvoiceAction} documents={workspace?.documents ?? []} draftVendorId={params.container_invoice_vendor} initialTab={params.container_tab === "products" || params.container_tab === "documents" || params.container_tab === "vendor_invoices" ? params.container_tab : "profile"} invoiceReadOnly={params.container_invoice_view === "1"} reportMappings={await getReportFieldMappings("container_invoice")} selectedInvoiceId={params.container_invoice} saveVendorInvoiceAction={saveContainerVendorInvoiceAction} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} updateVendorInvoiceStatusAction={updateContainerVendorInvoiceStatusAction} uploadDocumentAction={uploadContainerDocumentAction} uploadVendorInvoiceDocumentAction={uploadContainerVendorInvoiceDocumentAction} vendorInvoices={workspace?.vendorInvoices ?? []} />;
         })() : activeModule === "container-loading-sheets" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerLoadingSheetPage container={workspace?.container ?? null} exportType={params.export_type} lines={workspace?.containerLines ?? []} reportMappings={await getReportFieldMappings("container_packing_list")} selectedVendorId={params.loading_vendor} />;

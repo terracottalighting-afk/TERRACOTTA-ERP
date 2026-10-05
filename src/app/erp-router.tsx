@@ -13720,6 +13720,9 @@ async function saveContainerVendorInvoiceAction(formData: FormData) {
   const detailUrl = `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices&container_invoice=${invoiceId}`;
   if (!containerId || !invoiceId) redirect(`/?module=purchasing&error=${encodeURIComponent("Vendor invoice could not be identified.")}`);
   const supabase = createSupabaseUntypedAdminClient();
+  const { data: existingInvoice, error: existingInvoiceError } = await supabase.from("container_vendor_invoice").select("invoice_status").eq("id", invoiceId).eq("import_container_id", containerId).maybeSingle();
+  if (existingInvoiceError || !existingInvoice) redirect(`${detailUrl}&error=${encodeURIComponent(existingInvoiceError?.message ?? "Vendor invoice was not found.")}`);
+  if (existingInvoice.invoice_status === "paid") redirect(`${detailUrl}&container_invoice_view=1&error=${encodeURIComponent("Paid vendor invoices are read-only and cannot be edited.")}`);
   const { error: headerError } = await supabase.from("container_vendor_invoice").update({ vendor_invoice_number: textValue(formData, "vendor_invoice_number") || null, invoice_date: textValue(formData, "invoice_date") || null, due_date: textValue(formData, "due_date") || null, notes: textValue(formData, "notes") || null }).eq("id", invoiceId).eq("import_container_id", containerId);
   if (headerError) redirect(`${detailUrl}&error=${encodeURIComponent(headerError.message)}`);
   const lineIds = formData.getAll("invoice_line_id").map(String);
@@ -13760,8 +13763,9 @@ async function uploadContainerVendorInvoiceDocumentAction(formData: FormData) {
   const detailUrl = `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices&container_invoice=${invoiceId}`;
   if (!containerId || !invoiceId || !(file instanceof File) || file.size === 0) redirect(`/?module=purchasing&error=${encodeURIComponent("Choose an original vendor invoice file to upload.")}`);
   const supabase = createSupabaseUntypedAdminClient();
-  const { data: invoice, error: invoiceError } = await supabase.from("container_vendor_invoice").select("id").eq("id", invoiceId).eq("import_container_id", containerId).maybeSingle();
+  const { data: invoice, error: invoiceError } = await supabase.from("container_vendor_invoice").select("id, invoice_status").eq("id", invoiceId).eq("import_container_id", containerId).maybeSingle();
   if (invoiceError || !invoice) redirect(`${detailUrl}&error=${encodeURIComponent(invoiceError?.message ?? "Vendor invoice was not found.")}`);
+  if (invoice.invoice_status === "paid") redirect(`${detailUrl}&container_invoice_view=1&error=${encodeURIComponent("Paid vendor invoices are read-only and cannot be changed.")}`);
   const bucketName = "container-vendor-invoice-documents";
   const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
   if (bucketsError) redirect(`${detailUrl}&error=${encodeURIComponent(bucketsError.message)}`);
@@ -13814,6 +13818,9 @@ async function deleteContainerVendorInvoiceAction(formData: FormData) {
   const detailUrl = `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices`;
   if (!containerId || !invoiceId) redirect(`/?module=purchasing&error=${encodeURIComponent("Vendor invoice could not be identified.")}`);
   const supabase = createSupabaseUntypedAdminClient();
+  const { data: invoice, error: invoiceError } = await supabase.from("container_vendor_invoice").select("invoice_status").eq("id", invoiceId).eq("import_container_id", containerId).maybeSingle();
+  if (invoiceError || !invoice) redirect(`${detailUrl}&error=${encodeURIComponent(invoiceError?.message ?? "Vendor invoice was not found.")}`);
+  if (invoice.invoice_status === "paid") redirect(`${detailUrl}&error=${encodeURIComponent("Paid vendor invoices cannot be deleted.")}`);
   const { error } = await supabase.from("container_vendor_invoice").delete().eq("id", invoiceId).eq("import_container_id", containerId);
   if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");

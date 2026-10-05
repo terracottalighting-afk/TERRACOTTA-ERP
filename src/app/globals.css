@@ -2133,6 +2133,16 @@ dd {
   margin-top: 16px;
 }
 
+.container-detail-tabs {
+  background: var(--accent-soft);
+  padding: 0 8px;
+}
+
+.container-detail-tabs button {
+  font-size: 15px;
+  padding: 12px 14px;
+}
+
 .filter-grid {
   align-items: end;
   display: grid;

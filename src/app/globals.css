@@ -3414,6 +3414,7 @@ tfoot td {
 
 .text-action--upload {
   color: var(--accent);
+  font-weight: 400;
 }
 
 .inline-action-form {

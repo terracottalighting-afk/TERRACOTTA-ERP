@@ -13961,6 +13961,7 @@ async function saveContainerServiceInvoiceAction(formData: FormData) {
   const agencyInvoiceNumber = textValue(formData, "agency_invoice_number");
   const dueDate = textValue(formData, "due_date");
   const totalAmount = Number(textValue(formData, "total_amount"));
+  const originalInvoiceFile = formData.get("agency_invoice_document_file");
   const fail = (message: string) => ({ error: message });
   if (!containerId || !["shipping_agency", "tariff_broker"].includes(serviceType)) return fail("The service invoice could not be identified.");
   if (!agencyName || !agencyInvoiceNumber || !dueDate || !Number.isFinite(totalAmount) || totalAmount < 0) return fail("Enter the agency invoice number, due date, and a valid total amount.");
@@ -13972,8 +13973,26 @@ async function saveContainerServiceInvoiceAction(formData: FormData) {
   const agencyBusinessType = serviceType === "shipping_agency" ? "shipping" : "customs_broker";
   const { data: agency, error: agencyError } = await supabase.from("purchasing_agency").select("id").eq("business_type", agencyBusinessType).eq("agency_name", agencyName).maybeSingle();
   if (agencyError) return fail(agencyError.message);
-  const { error } = await supabase.from("container_service_invoice").insert({ import_container_id: container.id, purchasing_agency_id: agency?.id ?? null, service_type: serviceType, agency_name_snapshot: agencyName, agency_invoice_number: agencyInvoiceNumber, due_date: dueDate, total_amount: totalAmount, container_number_snapshot: container.container_number, booking_number_snapshot: serviceType === "shipping_agency" ? container.booking_number : null, vessel_name_snapshot: serviceType === "shipping_agency" ? container.vessel_name : null });
-  if (error) return fail(error.message);
+  const { data: invoice, error: invoiceError } = await supabase.from("container_service_invoice").insert({ import_container_id: container.id, purchasing_agency_id: agency?.id ?? null, service_type: serviceType, agency_name_snapshot: agencyName, agency_invoice_number: agencyInvoiceNumber, due_date: dueDate, total_amount: totalAmount, container_number_snapshot: container.container_number, booking_number_snapshot: serviceType === "shipping_agency" ? container.booking_number : null, vessel_name_snapshot: serviceType === "shipping_agency" ? container.vessel_name : null }).select("id").single();
+  if (invoiceError || !invoice) return fail(invoiceError?.message ?? "The service invoice could not be saved.");
+  if (originalInvoiceFile instanceof File && originalInvoiceFile.size > 0) {
+    const bucketName = "container-service-invoice-documents";
+    const cleanupInvoice = async () => { await supabase.from("container_service_invoice").delete().eq("id", invoice.id); };
+    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+    if (bucketsError) { await cleanupInvoice(); return fail(bucketsError.message); }
+    if (!buckets?.some((bucket) => bucket.name === bucketName)) {
+      const { error } = await supabase.storage.createBucket(bucketName, { public: false });
+      if (error) { await cleanupInvoice(); return fail(error.message); }
+    }
+    const safeName = originalInvoiceFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storagePath = `container/${container.id}/service-invoice/${invoice.id}/${Date.now()}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from(bucketName).upload(storagePath, new Uint8Array(await originalInvoiceFile.arrayBuffer()), { contentType: originalInvoiceFile.type || "application/octet-stream", upsert: false });
+    if (uploadError) { await cleanupInvoice(); return fail(uploadError.message); }
+    const { data: attachment, error: attachmentError } = await supabase.from("attachment").insert({ category: "container_service_invoice", content_type: originalInvoiceFile.type || null, entity_id: invoice.id, entity_type: "container_service_invoice", file_size: originalInvoiceFile.size, original_file_name: originalInvoiceFile.name, storage_bucket: bucketName, storage_path: storagePath }).select("id").single();
+    if (attachmentError || !attachment) { await supabase.storage.from(bucketName).remove([storagePath]); await cleanupInvoice(); return fail(attachmentError?.message ?? "The original invoice could not be recorded."); }
+    const { error: documentError } = await supabase.from("container_service_invoice_document").insert({ container_service_invoice_id: invoice.id, file_id: attachment.id });
+    if (documentError) { await supabase.from("attachment").delete().eq("id", attachment.id); await supabase.storage.from(bucketName).remove([storagePath]); await cleanupInvoice(); return fail(documentError.message); }
+  }
   revalidatePath("/");
   return { destination: `/?module=container-detail&container=${containerId}` };
 }

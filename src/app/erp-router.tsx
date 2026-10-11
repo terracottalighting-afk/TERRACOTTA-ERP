@@ -13629,7 +13629,13 @@ async function getContainerVendorInvoiceDetail(invoiceId: string) {
 
 async function getContainerServiceInvoiceDetail(invoiceId: string) {
   const supabase = createSupabaseUntypedAdminClient();
-  const { data, error } = await supabase.from("container_service_invoice").select("id, import_container_id, service_type, agency_name_snapshot, erp_invoice_number, agency_invoice_number, invoice_date, due_date, total_amount, container_number_snapshot, booking_number_snapshot, vessel_name_snapshot, invoice_status, paid_date, paid_amount, payment_method, payment_reference, payment_notes").eq("id", invoiceId).maybeSingle();
+  const detailFields = "id, import_container_id, service_type, agency_name_snapshot, erp_invoice_number, agency_invoice_number, invoice_date, due_date, total_amount, container_number_snapshot, booking_number_snapshot, vessel_name_snapshot";
+  let { data, error } = await supabase.from("container_service_invoice").select(`${detailFields}, invoice_status, paid_date, paid_amount, payment_method, payment_reference, payment_notes`).eq("id", invoiceId).maybeSingle();
+  if (error?.code === "42703" && error.message.includes("invoice_status")) {
+    const fallback = await supabase.from("container_service_invoice").select(detailFields).eq("id", invoiceId).maybeSingle();
+    data = fallback.data && { ...fallback.data, invoice_status: "open", paid_date: null, paid_amount: null, payment_method: null, payment_reference: null, payment_notes: null };
+    error = fallback.error;
+  }
   if (error) throw new Error(error.message);
   if (!data) return null;
   return { ...data, service_type: data.service_type === "tariff_broker" ? "tariff_broker" as const : "shipping_agency" as const, invoice_status: data.invoice_status === "paid" ? "paid" as const : "open" as const, total_amount: Number(data.total_amount), paid_amount: data.paid_amount === null ? null : Number(data.paid_amount) };

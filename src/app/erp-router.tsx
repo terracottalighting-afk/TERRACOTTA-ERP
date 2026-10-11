@@ -13663,14 +13663,14 @@ async function updateContainerStatusAction(formData: FormData) {
   const targetIndex = options.findIndex((option) => option.code === containerStatus);
   if (targetIndex === -1) redirect(`${baseUrl}&error=${encodeURIComponent("Select a valid configured container status.")}`);
   const supabase = createSupabaseUntypedAdminClient();
-  const { data: container, error: containerError } = await supabase.from("import_container").select("container_status").eq("id", containerId).maybeSingle();
+  const { data: container, error: containerError } = await supabase.from("import_container").select("container_status, loaded_date").eq("id", containerId).maybeSingle();
   if (containerError || !container) redirect(`${baseUrl}&error=${encodeURIComponent(containerError?.message ?? "Container was not found.")}`);
   if (["delivered", "cancelled"].includes(container.container_status)) redirect(`${baseUrl}&error=${encodeURIComponent("Delivered or cancelled containers cannot be updated.")}`);
   const currentIndex = options.findIndex((option) => option.code === container.container_status);
   const isCancellation = containerStatus === "cancelled";
   if (currentIndex >= 0 && targetIndex !== currentIndex + 1 && !isCancellation) redirect(`${baseUrl}&error=${encodeURIComponent("Container status can only move to the next configured stage.")}`);
   if (currentIndex >= 0 && targetIndex <= currentIndex) redirect(`${baseUrl}&error=${encodeURIComponent("Container status cannot move backward.")}`);
-  const { error } = await supabase.from("import_container").update({ container_status: containerStatus }).eq("id", containerId);
+  const { error } = await supabase.from("import_container").update({ container_status: containerStatus, ...(containerStatus === "loaded" && !container.loaded_date ? { loaded_date: new Date().toISOString().slice(0, 10) } : {}) }).eq("id", containerId);
   if (error) redirect(`${baseUrl}&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");
   redirect(baseUrl);
@@ -14276,12 +14276,14 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
   const { data: vendor, error: vendorError } = await supabase.from("vendor").select("*").eq("id", vendorId).maybeSingle();
   if (vendorError) throw new Error(vendorError.message);
   if (!vendor) return null;
-  const [vendorProductsResult, ordersResult] = await Promise.all([
+  const [vendorProductsResult, ordersResult, vendorInvoicesResult] = await Promise.all([
     supabase.from("vendor_product").select("*").eq("vendor_id", vendorId).order("created_at", { ascending: false }),
     supabase.from("vendor_purchase_order").select("id, vendor_po_number, po_date, expected_ready_date, total_amount, status").eq("vendor_id", vendorId).order("po_date", { ascending: false }),
+    supabase.from("container_vendor_invoice").select("id, import_container_id, erp_invoice_number, vendor_invoice_number, invoice_date, invoice_status, created_at").eq("vendor_id", vendorId).order("invoice_date", { ascending: false }),
   ]);
   if (vendorProductsResult.error) throw new Error(vendorProductsResult.error.message);
   if (ordersResult.error) throw new Error(ordersResult.error.message);
+  if (vendorInvoicesResult.error) throw new Error(vendorInvoicesResult.error.message);
   const vendorProducts = vendorProductsResult.data ?? [];
   const productIds = vendorProducts.map((row) => row.product_id);
   const vendorProductIds = vendorProducts.map((row) => row.id);
@@ -14321,10 +14323,15 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
   const poLineIds = (linesResult.data ?? []).map((line) => line.id);
   const { data: containerLines, error: containerLinesError } = poLineIds.length ? await supabase.from("import_container_line").select("import_container_id, product_id, quantity_packed").in("vendor_purchase_order_line_id", poLineIds) : { data: [], error: null };
   if (containerLinesError) throw new Error(containerLinesError.message);
-  const containerIds = [...new Set((containerLines ?? []).map((line) => line.import_container_id))];
-  const { data: containers, error: containersError } = containerIds.length ? await supabase.from("import_container").select("id, container_number, container_status, etd, eta").in("id", containerIds).order("created_at", { ascending: false }) : { data: [], error: null };
+  const vendorInvoices = vendorInvoicesResult.data ?? [];
+  const vendorInvoiceIds = vendorInvoices.map((invoice) => invoice.id);
+  const { data: vendorInvoiceLines, error: vendorInvoiceLinesError } = vendorInvoiceIds.length ? await supabase.from("container_vendor_invoice_line").select("container_vendor_invoice_id, quantity, unit_price").in("container_vendor_invoice_id", vendorInvoiceIds) : { data: [], error: null };
+  if (vendorInvoiceLinesError) throw new Error(vendorInvoiceLinesError.message);
+  const containerIds = [...new Set([...(containerLines ?? []).map((line) => line.import_container_id), ...vendorInvoices.map((invoice) => invoice.import_container_id)])];
+  const { data: containers, error: containersError } = containerIds.length ? await supabase.from("import_container").select("id, container_number, container_status, etd, eta, loaded_date").in("id", containerIds).order("created_at", { ascending: false }) : { data: [], error: null };
   if (containersError) throw new Error(containersError.message);
   const invoices = invoicesResult.data ?? [];
+  const containerById = new Map((containers ?? []).map((container) => [container.id, container]));
   const purchaseOrderById = new Map((ordersResult.data ?? []).map((order) => [order.id, order]));
   const balanceLines = (linesResult.data ?? []).flatMap((line) => {
     const order = purchaseOrderById.get(line.vendor_purchase_order_id);
@@ -14349,6 +14356,11 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
     products: vendorProducts.map((row) => { const product = productById.get(row.product_id); const box = firstBoxByProduct.get(row.product_id); const imageFileId = firstImageByProduct.get(row.product_id); const vendorBoxes = (vendorPackingBoxesByProductId.get(row.id) ?? []).map((vendorBox) => ({ id: vendorBox.id, catalog_product_packing_box_id: vendorBox.catalog_product_packing_box_id, sequence: vendorBox.box_sequence, label: vendorBox.box_label, width: vendorBox.box_width_inches === null ? null : Number(vendorBox.box_width_inches), depth: vendorBox.box_depth_inches === null ? null : Number(vendorBox.box_depth_inches), height: vendorBox.box_height_inches === null ? null : Number(vendorBox.box_height_inches), net_weight: vendorBox.net_weight_lbs === null ? null : Number(vendorBox.net_weight_lbs), gross_weight: vendorBox.gross_weight_lbs === null ? null : Number(vendorBox.gross_weight_lbs) })); return { id: row.id, product_id: row.product_id, sku: product?.sku ?? "Unknown", name: product?.name ?? "Product unavailable", image_url: imageFileId ? imageUrlByFileId.get(imageFileId) ?? null : null, category: product?.product_category_id ? categoryById.get(product.product_category_id) ?? null : null, finishes: finishesByProductId.get(row.product_id) ?? [], dimensions: dimensionsByProductId.get(row.product_id) ?? [], vendor_item_number: row.vendor_item_number, vendor_item_name: row.vendor_item_name ?? null, unit_cost: Number(row.unit_cost), currency: row.currency, minimum_order_quantity: row.minimum_order_quantity === null ? null : Number(row.minimum_order_quantity), lead_time_days: row.lead_time_days === null ? null : Number(row.lead_time_days), is_active: row.is_active, product_type: null, hs_code: hsCodeByProductId.get(row.product_id) ?? null, packing_boxes: vendorBoxes, box_width_inches: row.box_width_inches ?? box?.box_width ?? null, box_depth_inches: row.box_depth_inches ?? box?.box_length ?? null, box_height_inches: row.box_height_inches ?? box?.box_height ?? null, net_weight_lbs: row.net_weight_lbs ?? box?.net_weight ?? null, gross_weight_lbs: row.gross_weight_lbs ?? box?.gross_weight ?? null }; }),
     purchaseOrders: (ordersResult.data ?? []).map((order) => ({ ...order, total_amount: order.total_amount === null ? null : Number(order.total_amount) })),
     containers: (containers ?? []).map((container) => ({ ...container, product_lines: (containerLines ?? []).filter((line) => line.import_container_id === container.id).map((line) => ({ sku: productById.get(line.product_id)?.sku ?? "Unknown", quantity: Number(line.quantity_packed) })), invoice_amount: invoices.reduce((sum, invoice) => sum + Number(invoice.invoice_amount), 0), amount_paid: invoices.reduce((sum, invoice) => sum + Number(invoice.amount_paid), 0), paid_date: invoices.find((invoice) => invoice.paid_date)?.paid_date ?? null, payment_method: invoices.find((invoice) => invoice.payment_method)?.payment_method ?? null })),
+    invoices: vendorInvoices.map((invoice) => {
+      const container = containerById.get(invoice.import_container_id);
+      const totalAmount = (vendorInvoiceLines ?? []).filter((line) => line.container_vendor_invoice_id === invoice.id).reduce((sum, line) => sum + Number(line.quantity) * Number(line.unit_price), 0);
+      return { id: invoice.id, container_id: invoice.import_container_id, container_number: container?.container_number ?? "Unavailable", loaded_date: container?.loaded_date ?? null, erp_invoice_number: invoice.erp_invoice_number, vendor_invoice_number: invoice.vendor_invoice_number, invoice_date: invoice.invoice_date, total_amount: totalAmount, invoice_status: invoice.invoice_status === "paid" ? "paid" : "open" };
+    }),
     balanceLines,
   };
 }

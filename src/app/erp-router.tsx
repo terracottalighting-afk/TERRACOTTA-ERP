@@ -13956,6 +13956,41 @@ async function getPurchasingAgencyInvoices(agencyId: string) {
   return (data ?? []).map((invoice) => ({ id: invoice.id, erp_invoice_number: invoice.erp_invoice_number, agency_invoice_number: invoice.agency_invoice_number, container_id: invoice.import_container_id, container_number: invoice.container_number_snapshot, booking_number: invoice.booking_number_snapshot, invoice_date: invoice.invoice_date, due_date: invoice.due_date, total_amount: Number(invoice.total_amount) }));
 }
 
+async function getContainerServiceInvoiceDraftDocuments(containerId: string, serviceType: "shipping_agency" | "tariff_broker") {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data, error } = await supabase.from("container_service_invoice_draft_document").select("id, uploaded_at, attachment:file_id(original_file_name)").eq("import_container_id", containerId).eq("service_type", serviceType).order("uploaded_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).flatMap((document) => { const attachment = Array.isArray(document.attachment) ? document.attachment[0] : document.attachment; return attachment ? [{ id: document.id, original_file_name: attachment.original_file_name, uploaded_at: document.uploaded_at }] : []; });
+}
+
+async function uploadContainerServiceInvoiceDraftDocumentAction(formData: FormData) {
+  "use server";
+  const containerId = textValue(formData, "container_id");
+  const serviceType = textValue(formData, "service_type");
+  const file = formData.get("agency_invoice_document_file");
+  const fail = (message: string) => ({ error: message });
+  if (!containerId || !["shipping_agency", "tariff_broker"].includes(serviceType) || !(file instanceof File) || file.size === 0) return fail("Choose an original invoice file to upload.");
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: container, error: containerError } = await supabase.from("import_container").select("id").eq("id", containerId).maybeSingle();
+  if (containerError || !container) return fail(containerError?.message ?? "The container was not found.");
+  const bucketName = "container-service-invoice-documents";
+  const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+  if (bucketsError) return fail(bucketsError.message);
+  if (!buckets?.some((bucket) => bucket.name === bucketName)) {
+    const { error } = await supabase.storage.createBucket(bucketName, { public: false });
+    if (error) return fail(error.message);
+  }
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storagePath = `container/${container.id}/service-invoice-draft/${serviceType}/${Date.now()}-${safeName}`;
+  const { error: uploadError } = await supabase.storage.from(bucketName).upload(storagePath, new Uint8Array(await file.arrayBuffer()), { contentType: file.type || "application/octet-stream", upsert: false });
+  if (uploadError) return fail(uploadError.message);
+  const { data: attachment, error: attachmentError } = await supabase.from("attachment").insert({ category: "container_service_invoice_draft", content_type: file.type || null, entity_id: container.id, entity_type: "import_container", file_size: file.size, original_file_name: file.name, storage_bucket: bucketName, storage_path: storagePath }).select("id, original_file_name").single();
+  if (attachmentError || !attachment) { await supabase.storage.from(bucketName).remove([storagePath]); return fail(attachmentError?.message ?? "The original invoice could not be saved."); }
+  const { data: document, error: documentError } = await supabase.from("container_service_invoice_draft_document").insert({ import_container_id: container.id, service_type: serviceType, file_id: attachment.id }).select("id, uploaded_at").single();
+  if (documentError || !document) { await supabase.from("attachment").delete().eq("id", attachment.id); await supabase.storage.from(bucketName).remove([storagePath]); return fail(documentError?.message ?? "The original invoice could not be saved."); }
+  return { document: { id: document.id, original_file_name: attachment.original_file_name, uploaded_at: document.uploaded_at } };
+}
+
 async function saveContainerServiceInvoiceAction(formData: FormData) {
   "use server";
   const containerId = textValue(formData, "container_id");
@@ -13998,6 +14033,16 @@ async function saveContainerServiceInvoiceAction(formData: FormData) {
     if (attachmentError || !attachment) { await supabase.storage.from(bucketName).remove([storagePath]); await cleanupInvoice(); return fail(attachmentError?.message ?? "The original invoice could not be recorded."); }
     const { error: documentError } = await supabase.from("container_service_invoice_document").insert({ container_service_invoice_id: invoice.id, file_id: attachment.id });
     if (documentError) { await supabase.from("attachment").delete().eq("id", attachment.id); await supabase.storage.from(bucketName).remove([storagePath]); await cleanupInvoice(); return fail(documentError.message); }
+  }
+  const { data: draftDocuments, error: draftDocumentsError } = await supabase.from("container_service_invoice_draft_document").select("id, file_id").eq("import_container_id", container.id).eq("service_type", serviceType);
+  if (draftDocumentsError) return fail(draftDocumentsError.message);
+  for (const document of draftDocuments ?? []) {
+    const { error: attachmentError } = await supabase.from("attachment").update({ category: "container_service_invoice", entity_id: invoice.id, entity_type: "container_service_invoice" }).eq("id", document.file_id);
+    if (attachmentError) return fail(attachmentError.message);
+    const { error: documentError } = await supabase.from("container_service_invoice_document").insert({ container_service_invoice_id: invoice.id, file_id: document.file_id });
+    if (documentError) { await supabase.from("attachment").update({ category: "container_service_invoice_draft", entity_id: container.id, entity_type: "import_container" }).eq("id", document.file_id); return fail(documentError.message); }
+    const { error: deleteDraftError } = await supabase.from("container_service_invoice_draft_document").delete().eq("id", document.id);
+    if (deleteDraftError) return fail(deleteDraftError.message);
   }
   revalidatePath("/");
   return { destination: `/?module=container-detail&container=${containerId}` };
@@ -16477,7 +16522,8 @@ export async function ErpRouter({
           return <ContainerLoadingSheetPage container={workspace?.container ?? null} exportType={params.export_type} lines={workspace?.containerLines ?? []} reportMappings={await getReportFieldMappings("container_packing_list")} selectedVendorId={params.loading_vendor} />;
         })() : activeModule === "container-service-invoice" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
-          return <ContainerServiceInvoiceEditor container={workspace?.container ?? null} error={params.error} saveAction={saveContainerServiceInvoiceAction} serviceType={params.service_invoice_type === "tariff_broker" ? "tariff_broker" : "shipping_agency"} />;
+          const serviceType = params.service_invoice_type === "tariff_broker" ? "tariff_broker" : "shipping_agency";
+          return <ContainerServiceInvoiceEditor container={workspace?.container ?? null} draftDocuments={workspace?.container ? await getContainerServiceInvoiceDraftDocuments(workspace.container.id, serviceType) : []} error={params.error} saveAction={saveContainerServiceInvoiceAction} serviceType={serviceType} uploadAction={uploadContainerServiceInvoiceDraftDocumentAction} />;
         })() : activeModule === "purchasing-agency" ? (
           <PurchasingAgencyEditor agency={params.purchasing_agency ? await getPurchasingAgency(params.purchasing_agency) : null} defaultBusinessType={params.agency_type === "customs_broker" ? "customs_broker" : "shipping"} deleteAction={deletePurchasingAgencyAction} error={params.error} invoices={params.purchasing_agency ? await getPurchasingAgencyInvoices(params.purchasing_agency) : []} saveAction={savePurchasingAgencyAction} />
         ) : activeModule === "create-vendor-purchase-order" ? (

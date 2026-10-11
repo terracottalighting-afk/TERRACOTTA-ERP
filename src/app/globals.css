@@ -2454,8 +2454,7 @@ dd {
   gap: 4px;
 }
 
-.sr-only,
-.visually-hidden {
+.sr-only {
   height: 1px;
   margin: -1px;
   overflow: hidden;

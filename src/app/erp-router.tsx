@@ -35,6 +35,7 @@ import { ContainerWorkspace } from "@/components/purchasing/container-workspace"
 import { ContainerSummary, VendorInvoiceDetailPage } from "@/components/purchasing/container-summary";
 import { ContainerLoadingSheetPage } from "@/components/purchasing/container-loading-sheet-page";
 import { ContainerServiceInvoiceEditor } from "@/components/purchasing/container-service-invoice-editor";
+import { ContainerServiceInvoiceDetail } from "@/components/purchasing/container-service-invoice-detail";
 import { PurchasingAgencyEditor } from "@/components/purchasing/purchasing-agency-editor";
 import { VendorPurchaseOrderDocumentPage } from "@/components/purchasing/vendor-purchase-order-document-page";
 import { VendorDashboard, type VendorDashboardData } from "@/components/purchasing/vendor-dashboard";
@@ -13626,6 +13627,14 @@ async function getContainerVendorInvoiceDetail(invoiceId: string) {
   };
 }
 
+async function getContainerServiceInvoiceDetail(invoiceId: string) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data, error } = await supabase.from("container_service_invoice").select("id, import_container_id, service_type, agency_name_snapshot, erp_invoice_number, agency_invoice_number, invoice_date, due_date, total_amount, container_number_snapshot, booking_number_snapshot, vessel_name_snapshot, invoice_status, paid_date, paid_amount, payment_method, payment_reference, payment_notes").eq("id", invoiceId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  return { ...data, service_type: data.service_type === "tariff_broker" ? "tariff_broker" as const : "shipping_agency" as const, invoice_status: data.invoice_status === "paid" ? "paid" as const : "open" as const, total_amount: Number(data.total_amount), paid_amount: data.paid_amount === null ? null : Number(data.paid_amount) };
+}
+
 async function createContainerAction(formData: FormData) {
   "use server";
   const containerNumber = textValue(formData, "container_number");
@@ -13996,6 +14005,7 @@ async function saveContainerServiceInvoiceAction(formData: FormData) {
   "use server";
   const containerId = textValue(formData, "container_id");
   const serviceType = textValue(formData, "service_type");
+  const serviceInvoiceId = textValue(formData, "service_invoice_id");
   const agencyName = textValue(formData, "agency_name");
   const agencyInvoiceNumber = textValue(formData, "agency_invoice_number");
   const dueDate = textValue(formData, "due_date");
@@ -14009,6 +14019,12 @@ async function saveContainerServiceInvoiceAction(formData: FormData) {
   if (containerError || !container) return fail(containerError?.message ?? "The container was not found.");
   const expectedAgencyName = serviceType === "shipping_agency" ? container.shipping_agency : container.tariff_broker_agency;
   if (expectedAgencyName !== agencyName) return fail("The container agency has changed. Reopen the invoice form and try again.");
+  if (serviceInvoiceId) {
+    const { error: updateError } = await supabase.from("container_service_invoice").update({ agency_invoice_number: agencyInvoiceNumber, due_date: dueDate, total_amount: totalAmount }).eq("id", serviceInvoiceId).eq("import_container_id", container.id).eq("service_type", serviceType).eq("invoice_status", "open");
+    if (updateError) return fail(updateError.message);
+    revalidatePath("/");
+    return { destination: `/?module=service-invoice&service_invoice=${serviceInvoiceId}` };
+  }
   const { data: existingInvoice, error: existingInvoiceError } = await supabase.from("container_service_invoice").select("id").eq("import_container_id", containerId).eq("service_type", serviceType).maybeSingle();
   if (existingInvoiceError) return fail(existingInvoiceError.message);
   if (existingInvoice) return { destination: `/?module=container-detail&container=${containerId}&container_tab=service_invoices` };
@@ -14047,6 +14063,20 @@ async function saveContainerServiceInvoiceAction(formData: FormData) {
   }
   revalidatePath("/");
   return { destination: `/?module=container-detail&container=${containerId}` };
+}
+
+async function recordContainerServiceInvoicePaymentAction(formData: FormData) {
+  "use server";
+  const invoiceId = textValue(formData, "service_invoice_id");
+  const paidDate = textValue(formData, "paid_date");
+  const paidAmount = Number(textValue(formData, "paid_amount"));
+  const paymentMethod = textValue(formData, "payment_method");
+  const detailUrl = `/?module=service-invoice&service_invoice=${invoiceId}`;
+  if (!invoiceId || !paidDate || !Number.isFinite(paidAmount) || paidAmount < 0 || !["wire", "ach", "check", "zelle"].includes(paymentMethod)) redirect(`/?module=purchasing&error=${encodeURIComponent("Enter a paid date, valid amount, and payment method.")}`);
+  const { error } = await createSupabaseUntypedAdminClient().from("container_service_invoice").update({ invoice_status: "paid", paid_date: paidDate, paid_amount: paidAmount, payment_method: paymentMethod, payment_reference: textValue(formData, "payment_reference") || null, payment_notes: textValue(formData, "payment_notes") || null }).eq("id", invoiceId).eq("invoice_status", "open");
+  if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(detailUrl);
 }
 
 async function savePurchasingAgencyAction(formData: FormData) {
@@ -16521,10 +16551,13 @@ export async function ErpRouter({
         })() : activeModule === "container-loading-sheets" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerLoadingSheetPage container={workspace?.container ?? null} exportType={params.export_type} lines={workspace?.containerLines ?? []} reportMappings={await getReportFieldMappings("container_packing_list")} selectedVendorId={params.loading_vendor} />;
+        })() : activeModule === "service-invoice" ? await (async () => {
+          return <ContainerServiceInvoiceDetail error={params.error} invoice={params.service_invoice ? await getContainerServiceInvoiceDetail(params.service_invoice) : null} payAction={recordContainerServiceInvoicePaymentAction} />;
         })() : activeModule === "container-service-invoice" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           const serviceType = params.service_invoice_type === "tariff_broker" ? "tariff_broker" : "shipping_agency";
-          return <ContainerServiceInvoiceEditor container={workspace?.container ?? null} draftDocuments={workspace?.container ? await getContainerServiceInvoiceDraftDocuments(workspace.container.id, serviceType) : []} error={params.error} saveAction={saveContainerServiceInvoiceAction} serviceType={serviceType} uploadAction={uploadContainerServiceInvoiceDraftDocumentAction} />;
+          const invoice = params.service_invoice ? workspace?.serviceInvoices.find((item) => item.id === params.service_invoice && item.service_type === serviceType) ?? null : null;
+          return <ContainerServiceInvoiceEditor container={workspace?.container ?? null} draftDocuments={workspace?.container ? await getContainerServiceInvoiceDraftDocuments(workspace.container.id, serviceType) : []} error={params.error} invoice={invoice} saveAction={saveContainerServiceInvoiceAction} serviceType={serviceType} uploadAction={uploadContainerServiceInvoiceDraftDocumentAction} />;
         })() : activeModule === "purchasing-agency" ? (
           <PurchasingAgencyEditor agency={params.purchasing_agency ? await getPurchasingAgency(params.purchasing_agency) : null} defaultBusinessType={params.agency_type === "customs_broker" ? "customs_broker" : "shipping"} deleteAction={deletePurchasingAgencyAction} error={params.error} invoices={params.purchasing_agency ? await getPurchasingAgencyInvoices(params.purchasing_agency) : []} saveAction={savePurchasingAgencyAction} />
         ) : activeModule === "create-vendor-purchase-order" ? (

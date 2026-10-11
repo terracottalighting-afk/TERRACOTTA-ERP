@@ -1475,6 +1475,19 @@ input {
   line-height: 1.2;
 }
 
+.metric-link {
+  color: var(--accent);
+  display: inline-block;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+}
+
+.metric-link:hover {
+  text-decoration: underline;
+}
+
 .record-hero {
   align-items: flex-start;
   border-bottom: 1px solid var(--line);

@@ -221,6 +221,7 @@ export type SearchParams = Promise<{
   purchase_order?: string;
   purchasing_agency?: string;
   purchasing_tab?: string;
+  purchasing_invoice_status?: string;
   agency_type?: string;
   container?: string;
   container_invoice?: string;
@@ -13455,18 +13456,31 @@ async function getPrimaryShowroomDashboard(
 
 async function getPurchasingDashboard() {
   const supabase = createSupabaseUntypedAdminClient();
-  const [vendorsResult, purchaseOrdersResult, containersResult, agenciesResult] = await Promise.all([
+  const [vendorsResult, purchaseOrdersResult, containersResult, agenciesResult, vendorInvoicesResult] = await Promise.all([
     supabase.from("vendor").select("id, vendor_number, name, contact_name, email, status").order("name", { ascending: true }),
     supabase.from("vendor_purchase_order").select("id, vendor_po_number, vendor_name_snapshot, po_date, expected_ready_date, total_amount, status").order("po_date", { ascending: false }),
-    supabase.from("import_container").select("id, container_number, shipping_agency, etd, eta, arrival_date, container_status").order("created_at", { ascending: false }),
+    supabase.from("import_container").select("id, container_number, shipping_agency, etd, eta, arrival_date, container_status, loaded_date").order("created_at", { ascending: false }),
     supabase.from("purchasing_agency").select("id, business_type, agency_name, contact_name, contact_email, contact_phone").order("agency_name"),
+    supabase.from("container_vendor_invoice").select("id, import_container_id, vendor_id, vendor_name_snapshot, erp_invoice_number, vendor_invoice_number, invoice_date, due_date, invoice_status").order("invoice_date", { ascending: false, nullsFirst: false }),
   ]);
   if (vendorsResult.error) throw new Error(vendorsResult.error.message);
   if (purchaseOrdersResult.error) throw new Error(purchaseOrdersResult.error.message);
   if (containersResult.error) throw new Error(containersResult.error.message);
+  if (vendorInvoicesResult.error) throw new Error(vendorInvoicesResult.error.message);
+  const vendorInvoices = vendorInvoicesResult.data ?? [];
+  const vendorInvoiceIds = vendorInvoices.map((invoice) => invoice.id);
+  const { data: vendorInvoiceLines, error: vendorInvoiceLinesError } = vendorInvoiceIds.length ? await supabase.from("container_vendor_invoice_line").select("container_vendor_invoice_id, quantity, unit_price").in("container_vendor_invoice_id", vendorInvoiceIds) : { data: [], error: null };
+  if (vendorInvoiceLinesError) throw new Error(vendorInvoiceLinesError.message);
+  const containers = containersResult.data ?? [];
+  const containerById = new Map(containers.map((container) => [container.id, container]));
   return {
     agencies: agenciesResult.error ? [] : agenciesResult.data ?? [],
-    containers: (containersResult.data ?? []).map((container) => ({ ...container, freight_amount: 0 })),
+    containers: containers.map((container) => ({ ...container, freight_amount: 0 })),
+    invoices: vendorInvoices.map((invoice) => {
+      const container = containerById.get(invoice.import_container_id);
+      const totalAmount = (vendorInvoiceLines ?? []).filter((line) => line.container_vendor_invoice_id === invoice.id).reduce((sum, line) => sum + Number(line.quantity) * Number(line.unit_price), 0);
+      return { id: invoice.id, container_id: invoice.import_container_id, container_number: container?.container_number ?? "Unavailable", loaded_date: container?.loaded_date ?? null, vendor_id: invoice.vendor_id, vendor_name: invoice.vendor_name_snapshot, erp_invoice_number: invoice.erp_invoice_number, vendor_invoice_number: invoice.vendor_invoice_number, invoice_date: invoice.invoice_date, due_date: invoice.due_date, total_amount: totalAmount, invoice_status: (invoice.invoice_status === "paid" ? "paid" : "open") as "open" | "paid" };
+    }),
     purchaseOrders: purchaseOrdersResult.data ?? [],
     vendors: vendorsResult.data ?? [],
   };
@@ -16322,7 +16336,7 @@ export async function ErpRouter({
             saveAction={recordInvoicePaymentAction}
           />
         ) : activeModule === "purchasing" ? (
-          <PurchasingDashboard dashboard={await getPurchasingDashboard()} selectedTab={params.purchasing_tab} />
+          <PurchasingDashboard dashboard={await getPurchasingDashboard()} selectedInvoiceStatus={params.purchasing_invoice_status} selectedTab={params.purchasing_tab} />
         ) : activeModule === "create-container" ? (
           <ContainerEditor agencies={await getContainerAgencies()} error={params.error} saveAction={createContainerAction} vendors={await getContainerLoadingSiteVendors()} />
         ) : activeModule === "container" ? await (async () => {

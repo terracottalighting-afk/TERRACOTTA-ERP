@@ -229,6 +229,7 @@ export type SearchParams = Promise<{
   container_invoice_vendor?: string;
   container_invoice_view?: string;
   vendor_invoice?: string;
+  payment_entry?: string;
   container_tab?: string;
   container_edit_mode?: string;
   container_edit?: string;
@@ -13826,7 +13827,7 @@ async function uploadContainerVendorInvoiceDocumentAction(formData: FormData) {
     redirect(`${detailUrl}&error=${encodeURIComponent(documentError.message)}`);
   }
   revalidatePath("/");
-  redirect(detailUrl);
+  redirect(isPaymentDocument && returnToVendorInvoice ? `${detailUrl}&payment_entry=1` : detailUrl);
 }
 
 async function updateContainerVendorInvoiceStatusAction(formData: FormData) {
@@ -16408,7 +16409,7 @@ export async function ErpRouter({
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} vendors={await getContainerLoadingSiteVendors()} />;
         })() : activeModule === "vendor-invoice" ? await (async () => {
           const detail = params.vendor_invoice ? await getContainerVendorInvoiceDetail(params.vendor_invoice) : null;
-          return <VendorInvoiceDetailPage container={detail?.container ?? null} invoice={detail?.invoice ?? null} reportMappings={await getReportFieldMappings("container_invoice")} updateStatusAction={updateContainerVendorInvoiceStatusAction} uploadDocumentAction={uploadContainerVendorInvoiceDocumentAction} />;
+          return <VendorInvoiceDetailPage container={detail?.container ?? null} invoice={detail?.invoice ?? null} reportMappings={await getReportFieldMappings("container_invoice")} startPayment={params.payment_entry === "1"} updateStatusAction={updateContainerVendorInvoiceStatusAction} uploadDocumentAction={uploadContainerVendorInvoiceDocumentAction} />;
         })() : activeModule === "container-detail" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteVendorInvoiceAction={deleteContainerVendorInvoiceAction} documents={workspace?.documents ?? []} draftVendorId={params.container_invoice_vendor} initialTab={params.container_tab === "products" || params.container_tab === "documents" || params.container_tab === "vendor_invoices" ? params.container_tab : "profile"} invoiceReadOnly={params.container_invoice_view === "1"} reportMappings={await getReportFieldMappings("container_invoice")} selectedInvoiceId={params.container_invoice} saveVendorInvoiceAction={saveContainerVendorInvoiceAction} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} updateVendorInvoiceStatusAction={updateContainerVendorInvoiceStatusAction} uploadDocumentAction={uploadContainerDocumentAction} uploadVendorInvoiceDocumentAction={uploadContainerVendorInvoiceDocumentAction} vendorInvoices={workspace?.vendorInvoices ?? []} />;

@@ -13959,6 +13959,7 @@ async function getPurchasingAgencyInvoices(agencyId: string) {
 async function getContainerServiceInvoiceDraftDocuments(containerId: string, serviceType: "shipping_agency" | "tariff_broker") {
   const supabase = createSupabaseUntypedAdminClient();
   const { data, error } = await supabase.from("container_service_invoice_draft_document").select("id, uploaded_at, attachment:file_id(original_file_name)").eq("import_container_id", containerId).eq("service_type", serviceType).order("uploaded_at", { ascending: false });
+  if (error && (error.code === "PGRST205" || error.message.includes("container_service_invoice_draft_document"))) return [];
   if (error) throw new Error(error.message);
   return (data ?? []).flatMap((document) => { const attachment = Array.isArray(document.attachment) ? document.attachment[0] : document.attachment; return attachment ? [{ id: document.id, original_file_name: attachment.original_file_name, uploaded_at: document.uploaded_at }] : []; });
 }
@@ -13987,7 +13988,7 @@ async function uploadContainerServiceInvoiceDraftDocumentAction(formData: FormDa
   const { data: attachment, error: attachmentError } = await supabase.from("attachment").insert({ category: "container_service_invoice_draft", content_type: file.type || null, entity_id: container.id, entity_type: "import_container", file_size: file.size, original_file_name: file.name, storage_bucket: bucketName, storage_path: storagePath }).select("id, original_file_name").single();
   if (attachmentError || !attachment) { await supabase.storage.from(bucketName).remove([storagePath]); return fail(attachmentError?.message ?? "The original invoice could not be saved."); }
   const { data: document, error: documentError } = await supabase.from("container_service_invoice_draft_document").insert({ import_container_id: container.id, service_type: serviceType, file_id: attachment.id }).select("id, uploaded_at").single();
-  if (documentError || !document) { await supabase.from("attachment").delete().eq("id", attachment.id); await supabase.storage.from(bucketName).remove([storagePath]); return fail(documentError?.message ?? "The original invoice could not be saved."); }
+  if (documentError || !document) { await supabase.from("attachment").delete().eq("id", attachment.id); await supabase.storage.from(bucketName).remove([storagePath]); return fail(documentError?.code === "PGRST205" ? "Upload setup is incomplete. Run the service invoice draft documents SQL migration, then try again." : documentError?.message ?? "The original invoice could not be saved."); }
   return { document: { id: document.id, original_file_name: attachment.original_file_name, uploaded_at: document.uploaded_at } };
 }
 

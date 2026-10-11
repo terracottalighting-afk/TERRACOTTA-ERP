@@ -13640,12 +13640,15 @@ async function getContainerServiceInvoiceDetail(invoiceId: string) {
   }
   if (error) throw new Error(error.message);
   if (!data) return null;
-  const [containerResult, agencyResult] = await Promise.all([
+  const [containerResult, agencyResult, paymentDetailsResult, documentsResult] = await Promise.all([
     supabase.from("import_container").select("container_status").eq("id", data.import_container_id).maybeSingle(),
     data.purchasing_agency_id ? supabase.from("purchasing_agency").select("bank_name, bank_swift_code, bank_ach_routing_number, bank_account_number").eq("id", data.purchasing_agency_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    supabase.from("container_service_invoice").select("payment_bank_name, payment_bank_account_number, payment_routing_number").eq("id", data.id).maybeSingle(),
+    supabase.from("container_service_invoice_document").select("id, display_name, document_scope, uploaded_at, attachment:file_id(original_file_name, storage_bucket, storage_path)").eq("container_service_invoice_id", data.id).eq("document_scope", "payment").order("uploaded_at", { ascending: false }),
   ]);
-  if (containerResult.error || agencyResult.error) throw new Error(containerResult.error?.message ?? agencyResult.error?.message);
-  return { ...data, service_type: data.service_type === "tariff_broker" ? "tariff_broker" as const : "shipping_agency" as const, invoice_status: data.invoice_status === "paid" ? "paid" as const : "open" as const, total_amount: Number(data.total_amount), paid_amount: data.paid_amount === null ? null : Number(data.paid_amount), container_status: containerResult.data?.container_status ?? null, payment_bank_name: agencyResult.data?.bank_name ?? null, payment_bank_swift_code: agencyResult.data?.bank_swift_code ?? null, payment_bank_ach_routing_number: agencyResult.data?.bank_ach_routing_number ?? null, payment_bank_account_number: agencyResult.data?.bank_account_number ?? null };
+  if (containerResult.error || agencyResult.error || (paymentDetailsResult.error && paymentDetailsResult.error.code !== "42703") || (documentsResult.error && documentsResult.error.code !== "42703")) throw new Error(containerResult.error?.message ?? agencyResult.error?.message ?? paymentDetailsResult.error?.message ?? documentsResult.error?.message);
+  const paymentDocuments = await Promise.all((documentsResult.data ?? []).flatMap((document) => { const attachment = Array.isArray(document.attachment) ? document.attachment[0] : document.attachment; return attachment ? [{ id: document.id, display_name: document.display_name, original_file_name: attachment.original_file_name, uploaded_at: document.uploaded_at, storage_bucket: attachment.storage_bucket, storage_path: attachment.storage_path }] : []; }).map(async (document) => ({ id: document.id, display_name: document.display_name, original_file_name: document.original_file_name, uploaded_at: document.uploaded_at, signed_url: (await supabase.storage.from(document.storage_bucket).createSignedUrl(document.storage_path, 60 * 60)).data?.signedUrl ?? null })));
+  return { ...data, service_type: data.service_type === "tariff_broker" ? "tariff_broker" as const : "shipping_agency" as const, invoice_status: data.invoice_status === "paid" ? "paid" as const : "open" as const, total_amount: Number(data.total_amount), paid_amount: data.paid_amount === null ? null : Number(data.paid_amount), container_status: containerResult.data?.container_status ?? null, agency_bank: { bank_name: agencyResult.data?.bank_name ?? null, bank_swift_code: agencyResult.data?.bank_swift_code ?? null, bank_ach_routing_number: agencyResult.data?.bank_ach_routing_number ?? null, bank_account_number: agencyResult.data?.bank_account_number ?? null }, payment_bank_name: paymentDetailsResult.data?.payment_bank_name ?? null, payment_bank_account_number: paymentDetailsResult.data?.payment_bank_account_number ?? null, payment_routing_number: paymentDetailsResult.data?.payment_routing_number ?? null, payment_documents: paymentDocuments };
 }
 
 async function createContainerAction(formData: FormData) {
@@ -14111,10 +14114,53 @@ async function recordContainerServiceInvoicePaymentAction(formData: FormData) {
   const paidDate = textValue(formData, "paid_date");
   const paidAmount = Number(textValue(formData, "paid_amount"));
   const paymentMethod = textValue(formData, "payment_method");
+  const paymentSource = textValue(formData, "payment_source");
+  const paymentReference = textValue(formData, "payment_reference") || null;
+  const paymentNotes = textValue(formData, "payment_notes") || null;
+  const customBankName = textValue(formData, "custom_bank_name") || null;
+  const customBankAccountNumber = textValue(formData, "custom_bank_account_number") || null;
+  const enteredRoutingNumber = textValue(formData, "payment_routing_number") || null;
   const detailUrl = `/?module=service-invoice&service_invoice=${invoiceId}`;
-  if (!invoiceId || !paidDate || !Number.isFinite(paidAmount) || paidAmount < 0 || !["wire", "ach", "check", "zelle"].includes(paymentMethod)) redirect(`/?module=purchasing&error=${encodeURIComponent("Enter a paid date, valid amount, and payment method.")}`);
-  const { error } = await createSupabaseUntypedAdminClient().from("container_service_invoice").update({ invoice_status: "paid", paid_date: paidDate, paid_amount: paidAmount, payment_method: paymentMethod, payment_reference: textValue(formData, "payment_reference") || null, payment_notes: textValue(formData, "payment_notes") || null }).eq("id", invoiceId).eq("invoice_status", "open");
+  if (!invoiceId || !paidDate || !Number.isFinite(paidAmount) || paidAmount < 0 || !["wire", "ach", "check", "zelle"].includes(paymentMethod) || !["custom", "check", "saved_agency_bank"].includes(paymentSource)) redirect(`/?module=purchasing&error=${encodeURIComponent("Enter a paid date, valid amount, payment method, and bank information source.")}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: invoice, error: invoiceError } = await supabase.from("container_service_invoice").select("purchasing_agency_id").eq("id", invoiceId).maybeSingle();
+  if (invoiceError || !invoice) redirect(`${detailUrl}&error=${encodeURIComponent(invoiceError?.message ?? "Service invoice was not found.")}`);
+  const { data: agency, error: agencyError } = invoice.purchasing_agency_id ? await supabase.from("purchasing_agency").select("bank_name, bank_account_number, bank_swift_code, bank_ach_routing_number").eq("id", invoice.purchasing_agency_id).maybeSingle() : { data: null, error: null };
+  if (agencyError) redirect(`${detailUrl}&error=${encodeURIComponent(agencyError.message)}`);
+  if (paymentSource === "check" && (!paymentReference || paymentMethod !== "check")) redirect(`${detailUrl}&error=${encodeURIComponent("Enter the check number before recording this payment.")}`);
+  if (paymentSource === "custom" && (!customBankName || !customBankAccountNumber || !["wire", "ach", "zelle"].includes(paymentMethod))) redirect(`${detailUrl}&error=${encodeURIComponent("Enter the custom bank name, account number, and payment method.")}`);
+  if (paymentSource === "custom" && ["wire", "ach"].includes(paymentMethod) && !enteredRoutingNumber) redirect(`${detailUrl}&error=${encodeURIComponent("Enter the routing information required for this custom bank payment.")}`);
+  if (paymentSource === "saved_agency_bank" && !["wire", "ach"].includes(paymentMethod)) redirect(`${detailUrl}&error=${encodeURIComponent("Choose wire or ACH when using saved agency bank information.")}`);
+  const savedRoutingNumber = paymentMethod === "wire" ? agency?.bank_swift_code : paymentMethod === "ach" ? agency?.bank_ach_routing_number : null;
+  if (paymentSource === "saved_agency_bank" && !(enteredRoutingNumber || savedRoutingNumber)) redirect(`${detailUrl}&error=${encodeURIComponent("Enter the missing routing information for the selected saved agency bank payment.")}`);
+  const bankDetails = paymentSource === "custom" ? { payment_bank_name: customBankName, payment_bank_account_number: customBankAccountNumber, payment_routing_number: enteredRoutingNumber } : paymentSource === "saved_agency_bank" ? { payment_bank_name: agency?.bank_name ?? null, payment_bank_account_number: agency?.bank_account_number ?? null, payment_routing_number: enteredRoutingNumber || savedRoutingNumber } : { payment_bank_name: null, payment_bank_account_number: null, payment_routing_number: null };
+  const { error } = await supabase.from("container_service_invoice").update({ invoice_status: "paid", paid_date: paidDate, paid_amount: paidAmount, payment_method: paymentMethod, payment_reference: paymentReference, payment_notes: paymentNotes, payment_bank_source: paymentSource, ...bankDetails }).eq("id", invoiceId).eq("invoice_status", "open");
   if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
+  revalidatePath("/");
+  redirect(detailUrl);
+}
+
+async function uploadContainerServiceInvoicePaymentDocumentAction(formData: FormData) {
+  "use server";
+  const invoiceId = textValue(formData, "service_invoice_id");
+  const file = formData.get("service_invoice_document_file");
+  const detailUrl = `/?module=service-invoice&service_invoice=${invoiceId}&payment_entry=1`;
+  if (!invoiceId || !(file instanceof File) || file.size === 0) redirect(`/?module=purchasing&error=${encodeURIComponent("Choose a payment document to upload.")}`);
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: invoice, error: invoiceError } = await supabase.from("container_service_invoice").select("id, import_container_id").eq("id", invoiceId).maybeSingle();
+  if (invoiceError || !invoice) redirect(`/?module=purchasing&error=${encodeURIComponent(invoiceError?.message ?? "Service invoice was not found.")}`);
+  const bucketName = "container-service-invoice-documents";
+  const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+  if (bucketsError) redirect(`${detailUrl}&error=${encodeURIComponent(bucketsError.message)}`);
+  if (!buckets?.some((bucket) => bucket.name === bucketName)) { const { error } = await supabase.storage.createBucket(bucketName, { public: false }); if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`); }
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storagePath = `container/${invoice.import_container_id}/service-invoice/${invoice.id}/payment/${Date.now()}-${safeName}`;
+  const { error: uploadError } = await supabase.storage.from(bucketName).upload(storagePath, new Uint8Array(await file.arrayBuffer()), { contentType: file.type || "application/octet-stream", upsert: false });
+  if (uploadError) redirect(`${detailUrl}&error=${encodeURIComponent(uploadError.message)}`);
+  const { data: attachment, error: attachmentError } = await supabase.from("attachment").insert({ category: "container_service_invoice_payment", content_type: file.type || null, entity_id: invoice.id, entity_type: "container_service_invoice", file_size: file.size, original_file_name: file.name, storage_bucket: bucketName, storage_path: storagePath }).select("id").single();
+  if (attachmentError || !attachment) { await supabase.storage.from(bucketName).remove([storagePath]); redirect(`${detailUrl}&error=${encodeURIComponent(attachmentError?.message ?? "The payment document could not be saved.")}`); }
+  const { error: documentError } = await supabase.from("container_service_invoice_document").insert({ container_service_invoice_id: invoice.id, file_id: attachment.id, document_scope: "payment", display_name: textValue(formData, "display_name") || null });
+  if (documentError) { await supabase.from("attachment").delete().eq("id", attachment.id); await supabase.storage.from(bucketName).remove([storagePath]); redirect(`${detailUrl}&error=${encodeURIComponent(documentError.message)}`); }
   revalidatePath("/");
   redirect(detailUrl);
 }
@@ -16592,7 +16638,7 @@ export async function ErpRouter({
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerLoadingSheetPage container={workspace?.container ?? null} exportType={params.export_type} lines={workspace?.containerLines ?? []} reportMappings={await getReportFieldMappings("container_packing_list")} selectedVendorId={params.loading_vendor} />;
         })() : activeModule === "service-invoice" ? await (async () => {
-          return <ContainerServiceInvoiceDetail error={params.error} invoice={params.service_invoice ? await getContainerServiceInvoiceDetail(params.service_invoice) : null} payAction={recordContainerServiceInvoicePaymentAction} />;
+          return <ContainerServiceInvoiceDetail error={params.error} invoice={params.service_invoice ? await getContainerServiceInvoiceDetail(params.service_invoice) : null} payAction={recordContainerServiceInvoicePaymentAction} startPayment={params.payment_entry === "1"} uploadDocumentAction={uploadContainerServiceInvoicePaymentDocumentAction} />;
         })() : activeModule === "container-service-invoice" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           const serviceType = params.service_invoice_type === "tariff_broker" ? "tariff_broker" : "shipping_agency";

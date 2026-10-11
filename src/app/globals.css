@@ -3457,6 +3457,7 @@ tfoot td {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+  justify-content: space-between;
   padding: 12px 16px 0;
 }
 
@@ -3467,7 +3468,8 @@ tfoot td {
 
 .service-invoice-file-upload .text-action--upload {
   font-size: 13px;
-  font-weight: 400;
+  font-weight: 800;
+  margin-left: auto;
 }
 
 .inline-action-form {

@@ -114,8 +114,28 @@ type SupplierBill = {
   invoice_status: "open" | "paid";
 };
 
+type ServiceBill = {
+  id: string;
+  service_type: "shipping_agency" | "tariff_broker";
+  container_id: string;
+  container_number: string;
+  loaded_date: string | null;
+  agency_id: string | null;
+  agency_name: string;
+  erp_invoice_number: string;
+  provided_invoice_number: string;
+  invoice_date: string | null;
+  due_date: string | null;
+  total_amount: number;
+  invoice_status: "open" | "paid";
+};
+
 function SupplierBillTable({ bills }: { bills: SupplierBill[] }) {
   return bills.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>No.</th><th>Invoice Number</th><th>Container Number</th><th>Vendor</th><th>Container Loaded Date</th><th>Invoice Date</th><th>Due Date</th><th>Total Amount</th><th>Status</th></tr></thead><tbody>{bills.map((bill, index) => <tr key={bill.id}><td>{numberFormatter.format(index + 1)}</td><td><Link className="table-link" href={`/?module=vendor-invoice&vendor_invoice=${bill.id}`}>{bill.erp_invoice_number}</Link>{bill.vendor_invoice_number ? <><br /><small>Vendor: {bill.vendor_invoice_number}</small></> : null}</td><td><Link className="table-link" href={`/?module=container&container=${bill.container_id}`}>{bill.container_number}</Link></td><td><Link className="table-link" href={`/?module=vendor&vendor=${bill.vendor_id}`}>{bill.vendor_name}</Link></td><td>{dateLabel(bill.loaded_date)}</td><td>{dateLabel(bill.invoice_date)}</td><td>{dateLabel(bill.due_date)}</td><td>{money(bill.total_amount)}</td><td><StatusBadge tone={bill.invoice_status === "paid" ? "good" : "primary"} value={bill.invoice_status} /></td></tr>)}</tbody></table></div> : <div className="empty-state">No supplier bills have been recorded.</div>;
+}
+
+function ServiceBillTable({ bills, emptyLabel }: { bills: ServiceBill[]; emptyLabel: string }) {
+  return bills.length ? <div className="table-wrap"><table className="data-table"><thead><tr><th>No.</th><th>Invoice Number</th><th>Container Number</th><th>Agency</th><th>Container Loaded Date</th><th>Invoice Date</th><th>Due Date</th><th>Total Amount</th><th>Status</th></tr></thead><tbody>{bills.map((bill, index) => <tr key={bill.id}><td>{numberFormatter.format(index + 1)}</td><td><Link className="table-link" href={`/?module=service-invoice&service_invoice=${bill.id}`}>{bill.erp_invoice_number}</Link><br /><small>Agency: {bill.provided_invoice_number}</small></td><td><Link className="table-link" href={`/?module=container&container=${bill.container_id}`}>{bill.container_number}</Link></td><td>{bill.agency_id ? <Link className="table-link" href={`/?module=purchasing-agency&purchasing_agency=${bill.agency_id}`}>{bill.agency_name}</Link> : bill.agency_name}</td><td>{dateLabel(bill.loaded_date)}</td><td>{dateLabel(bill.invoice_date)}</td><td>{dateLabel(bill.due_date)}</td><td>{money(bill.total_amount)}</td><td><StatusBadge tone={bill.invoice_status === "paid" ? "good" : "primary"} value={bill.invoice_status} /></td></tr>)}</tbody></table></div> : <div className="empty-state">No {emptyLabel} bills have been recorded.</div>;
 }
 
 export async function FinancialDashboardTabs({
@@ -146,6 +166,7 @@ export async function FinancialDashboardTabs({
     { data: commissionPaymentLines, error: commissionPaymentLinesError },
     { data: creditMemos, error: creditMemosError },
     { data: supplierBills, error: supplierBillsError },
+    { data: serviceBills, error: serviceBillsError },
     { data: billContainers, error: billContainersError },
   ] = await Promise.all([
     supabase
@@ -186,6 +207,10 @@ export async function FinancialDashboardTabs({
       .select("id, import_container_id, vendor_id, vendor_name_snapshot, erp_invoice_number, vendor_invoice_number, invoice_date, due_date, invoice_status")
       .order("invoice_date", { ascending: false, nullsFirst: false }),
     supplierSupabase
+      .from("container_service_invoice")
+      .select("id, import_container_id, purchasing_agency_id, service_type, agency_name_snapshot, erp_invoice_number, agency_invoice_number, invoice_date, due_date, total_amount, invoice_status")
+      .order("invoice_date", { ascending: false, nullsFirst: false }),
+    supplierSupabase
       .from("import_container")
       .select("id, container_number, loaded_date"),
   ]);
@@ -198,6 +223,7 @@ export async function FinancialDashboardTabs({
     throw new Error(commissionPaymentLinesError.message);
   if (creditMemosError) throw new Error(creditMemosError.message);
   if (supplierBillsError) throw new Error(supplierBillsError.message);
+  if (serviceBillsError) throw new Error(serviceBillsError.message);
   if (billContainersError) throw new Error(billContainersError.message);
 
   const supplierBillIds = (supplierBills ?? []).map((bill) => bill.id);
@@ -263,6 +289,12 @@ export async function FinancialDashboardTabs({
     const totalAmount = (supplierBillLines ?? []).filter((line) => line.container_vendor_invoice_id === bill.id).reduce((sum, line) => sum + Number(line.quantity) * Number(line.unit_price), 0);
     return { id: bill.id, container_id: bill.import_container_id, container_number: container?.container_number ?? "Unavailable", loaded_date: container?.loaded_date ?? null, vendor_id: bill.vendor_id, vendor_name: bill.vendor_name_snapshot ?? "Unknown vendor", erp_invoice_number: bill.erp_invoice_number, vendor_invoice_number: bill.vendor_invoice_number, invoice_date: bill.invoice_date, due_date: bill.due_date, total_amount: totalAmount, invoice_status: (bill.invoice_status === "paid" ? "paid" : "open") as "open" | "paid" };
   }).sort((left, right) => `${right.invoice_date ?? ""}${right.erp_invoice_number}`.localeCompare(`${left.invoice_date ?? ""}${left.erp_invoice_number}`));
+  const orderedServiceBills: ServiceBill[] = (serviceBills ?? []).map((bill) => {
+    const container = billContainerById.get(bill.import_container_id);
+    return { id: bill.id, service_type: (bill.service_type === "tariff_broker" ? "tariff_broker" : "shipping_agency") as ServiceBill["service_type"], container_id: bill.import_container_id, container_number: container?.container_number ?? "Unavailable", loaded_date: container?.loaded_date ?? null, agency_id: bill.purchasing_agency_id, agency_name: bill.agency_name_snapshot ?? "Unknown agency", erp_invoice_number: bill.erp_invoice_number, provided_invoice_number: bill.agency_invoice_number, invoice_date: bill.invoice_date, due_date: bill.due_date, total_amount: Number(bill.total_amount), invoice_status: (bill.invoice_status === "paid" ? "paid" : "open") as ServiceBill["invoice_status"] };
+  }).sort((left, right) => `${right.invoice_date ?? ""}${right.erp_invoice_number}`.localeCompare(`${left.invoice_date ?? ""}${left.erp_invoice_number}`));
+  const shippingAgencyBills = orderedServiceBills.filter((bill) => bill.service_type === "shipping_agency");
+  const customsServiceBills = orderedServiceBills.filter((bill) => bill.service_type === "tariff_broker");
   const invoiceSkusById = new Map<string, string[]>();
   for (const line of invoiceLines ?? []) {
     const skus = invoiceSkusById.get(line.customer_invoice_id) ?? [];
@@ -424,7 +456,7 @@ export async function FinancialDashboardTabs({
         </Link>
         <Link className={`metric agency-customer-type-tab${selectedSection === "bills-to-pay" ? " agency-customer-type-tab--active" : ""}`} href="/?module=invoices&financial_section=bills-to-pay&financial_bills_tab=suppliers">
           <span>Bills to Pay</span>
-          <strong>{numberFormatter.format(orderedSupplierBills.length)}</strong>
+          <strong>{numberFormatter.format(orderedSupplierBills.length + orderedServiceBills.length)}</strong>
         </Link>
         <Link className={`metric agency-customer-type-tab${selectedSection === "commission" ? " agency-customer-type-tab--active" : ""}`} href="/?module=invoices&financial_section=commission&financial_commission_tab=paid">
           <span>Commission</span>
@@ -632,8 +664,8 @@ export async function FinancialDashboardTabs({
           {billsTabs.map((tab) => <Link aria-current={tab.key === selectedBillsTab ? "page" : undefined} href={`/?module=invoices&financial_section=bills-to-pay&financial_bills_tab=${tab.key}`} key={tab.key}>{tab.label}</Link>)}
         </nav>
         {selectedBillsTab === "suppliers" ? <section className="record-section"><h3>Supplier Bills</h3><SupplierBillTable bills={orderedSupplierBills} /></section> : null}
-        {selectedBillsTab === "shipping-agency" ? <section className="record-section"><h3>Shipping Agency Bills</h3><div className="empty-state">Shipping agency bills will be available here when agency invoices are recorded.</div></section> : null}
-        {selectedBillsTab === "customs-services" ? <section className="record-section"><h3>Customs Services Bills</h3><div className="empty-state">Customs services bills will be available here when customs invoices are recorded.</div></section> : null}
+        {selectedBillsTab === "shipping-agency" ? <section className="record-section"><h3>Shipping Agency Bills</h3><ServiceBillTable bills={shippingAgencyBills} emptyLabel="shipping agency" /></section> : null}
+        {selectedBillsTab === "customs-services" ? <section className="record-section"><h3>Customs Services Bills</h3><ServiceBillTable bills={customsServiceBills} emptyLabel="customs service" /></section> : null}
       </> : null}
       {selectedSection === "commission" ? <>
         <nav className="tab-nav financial-tab-nav" aria-label="Commission statement lists">

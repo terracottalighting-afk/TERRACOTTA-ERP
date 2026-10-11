@@ -1,0 +1,19 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { dateLabel } from "@/lib/formatters";
+
+type Result = { destination?: string; error?: string };
+type Container = { id: string; container_number: string; booking_number: string | null; shipping_agency: string | null; vessel_name: string | null; tariff_broker_agency: string | null };
+type ServiceType = "shipping_agency" | "tariff_broker";
+
+export function ContainerServiceInvoiceEditor({ container, error, saveAction, serviceType }: { container: Container | null; error?: string; saveAction: (formData: FormData) => Promise<Result>; serviceType: ServiceType }) {
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+  if (!container) return <section className="dashboard-panel"><div className="form-alert">Container was not found.</div><a className="secondary-action secondary-action--light" href="/?module=purchasing">Back to Purchasing</a></section>;
+  const isShipping = serviceType === "shipping_agency";
+  const title = isShipping ? "Shipping Agency Invoice" : "Tariff Broker Invoice";
+  const agencyName = isShipping ? container.shipping_agency : container.tariff_broker_agency;
+  const submit = (event: React.FormEvent<HTMLFormElement>) => { event.preventDefault(); const formData = new FormData(event.currentTarget); startTransition(async () => { setFormError(null); const result = await saveAction(formData); if (result.error) setFormError(result.error); else if (result.destination) window.location.assign(result.destination); }); };
+  return <section className="dashboard-panel"><section className="form-header"><div><span className="eyebrow">Container Service Invoice</span><h2>{title}</h2><p>Create the invoice record for {agencyName || "the selected agency"}.</p></div><a className="secondary-action secondary-action--light" href={`/?module=container-detail&container=${container.id}`}>Back to Container</a></section>{error || formError ? <div className="form-alert">{formError ?? decodeURIComponent(error ?? "")}</div> : null}<form className="customer-form" onSubmit={submit}><input name="container_id" type="hidden" value={container.id} /><input name="service_type" type="hidden" value={serviceType} /><fieldset><legend>Invoice Details</legend><div className="form-grid"><label>ERP {isShipping ? "Shipping Agency" : "Broker"} Invoice ID<input disabled value="Generated when saved" /></label><label>{isShipping ? "Agency" : "Broker"} Name<input disabled value={agencyName || "Not set"} /><input name="agency_name" type="hidden" value={agencyName || ""} /></label><label>{isShipping ? "Agency" : "Broker"} Invoice Number<input name="agency_invoice_number" required /></label><label>Total Amount<input min="0" name="total_amount" required step="0.01" type="number" /></label><label>Due Date<input name="due_date" required type="date" /></label><label>Invoice Date<input disabled value={dateLabel(new Date().toISOString().slice(0, 10))} /></label></div></fieldset><fieldset><legend>Container Reference</legend><div className="detail-grid detail-grid--inside"><article className="info-panel"><dl><div><dt>Container Number</dt><dd>{container.container_number}</dd></div>{isShipping ? <><div><dt>Sea Freight Booking Number</dt><dd>{container.booking_number || "Not set"}</dd></div><div><dt>Vessel</dt><dd>{container.vessel_name || "Not set"}</dd></div></> : null}</dl></article></div></fieldset><div className="form-actions"><button className="primary-action" disabled={isPending || !agencyName} type="submit">{isPending ? "Saving..." : "Save Invoice"}</button><a className="secondary-action secondary-action--light" href={`/?module=container-detail&container=${container.id}`}>Cancel</a></div>{!agencyName ? <p className="form-error">Set the {isShipping ? "shipping agency" : "tariff broker"} on this container before creating its invoice.</p> : null}</form></section>;
+}

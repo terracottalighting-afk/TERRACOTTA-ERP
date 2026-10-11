@@ -13631,7 +13631,7 @@ async function getContainerVendorInvoiceDetail(invoiceId: string) {
 
 async function getContainerServiceInvoiceDetail(invoiceId: string) {
   const supabase = createSupabaseUntypedAdminClient();
-  const detailFields = "id, import_container_id, service_type, agency_name_snapshot, erp_invoice_number, agency_invoice_number, invoice_date, due_date, total_amount, container_number_snapshot, booking_number_snapshot, vessel_name_snapshot";
+  const detailFields = "id, import_container_id, purchasing_agency_id, service_type, agency_name_snapshot, erp_invoice_number, agency_invoice_number, invoice_date, due_date, total_amount, container_number_snapshot, booking_number_snapshot, vessel_name_snapshot";
   let { data, error } = await supabase.from("container_service_invoice").select(`${detailFields}, invoice_status, paid_date, paid_amount, payment_method, payment_reference, payment_notes`).eq("id", invoiceId).maybeSingle();
   if (error?.code === "42703" && error.message.includes("invoice_status")) {
     const fallback = await supabase.from("container_service_invoice").select(detailFields).eq("id", invoiceId).maybeSingle();
@@ -13640,7 +13640,12 @@ async function getContainerServiceInvoiceDetail(invoiceId: string) {
   }
   if (error) throw new Error(error.message);
   if (!data) return null;
-  return { ...data, service_type: data.service_type === "tariff_broker" ? "tariff_broker" as const : "shipping_agency" as const, invoice_status: data.invoice_status === "paid" ? "paid" as const : "open" as const, total_amount: Number(data.total_amount), paid_amount: data.paid_amount === null ? null : Number(data.paid_amount) };
+  const [containerResult, agencyResult] = await Promise.all([
+    supabase.from("import_container").select("container_status").eq("id", data.import_container_id).maybeSingle(),
+    data.purchasing_agency_id ? supabase.from("purchasing_agency").select("bank_name, bank_swift_code, bank_ach_routing_number, bank_account_number").eq("id", data.purchasing_agency_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+  ]);
+  if (containerResult.error || agencyResult.error) throw new Error(containerResult.error?.message ?? agencyResult.error?.message);
+  return { ...data, service_type: data.service_type === "tariff_broker" ? "tariff_broker" as const : "shipping_agency" as const, invoice_status: data.invoice_status === "paid" ? "paid" as const : "open" as const, total_amount: Number(data.total_amount), paid_amount: data.paid_amount === null ? null : Number(data.paid_amount), container_status: containerResult.data?.container_status ?? null, payment_bank_name: agencyResult.data?.bank_name ?? null, payment_bank_swift_code: agencyResult.data?.bank_swift_code ?? null, payment_bank_ach_routing_number: agencyResult.data?.bank_ach_routing_number ?? null, payment_bank_account_number: agencyResult.data?.bank_account_number ?? null };
 }
 
 async function createContainerAction(formData: FormData) {

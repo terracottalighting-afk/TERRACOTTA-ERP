@@ -13527,7 +13527,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
     supabase.from("vendor_purchase_order").select("id, vendor_id, vendor_po_number, vendor_name_snapshot, status").order("po_date", { ascending: false }),
     supabase.from("import_container_line").select("id, vendor_purchase_order_line_id, product_id, quantity_packed, carton_count").eq("import_container_id", containerId).eq("is_active", true),
     supabase.from("container_document").select("id, document_type, display_name, uploaded_at, attachment:file_id(id, original_file_name, storage_bucket, storage_path)").eq("import_container_id", containerId).eq("is_active", true).order("uploaded_at", { ascending: false }),
-    supabase.from("container_vendor_invoice").select("id, vendor_id, vendor_name_snapshot, erp_invoice_number, vendor_invoice_number, invoice_date, due_date, currency, notes, invoice_status, paid_date, paid_amount, payment_method, payment_reference, payment_notes").eq("import_container_id", containerId).order("created_at"),
+    supabase.from("container_vendor_invoice").select("id, vendor_id, vendor_name_snapshot, erp_invoice_number, vendor_invoice_number, invoice_date, due_date, currency, notes, invoice_status, paid_date, paid_amount, payment_method, payment_reference, payment_notes, payment_bank_source, payment_bank_name, payment_bank_account_number, payment_routing_number").eq("import_container_id", containerId).order("created_at"),
   ]);
   if (containerError || ordersError || containerLinesError || documentRowsError || vendorInvoicesError) throw new Error(containerError?.message ?? ordersError?.message ?? containerLinesError?.message ?? documentRowsError?.message ?? vendorInvoicesError?.message);
   if (!container) return null;
@@ -13830,16 +13830,37 @@ async function updateContainerVendorInvoiceStatusAction(formData: FormData) {
   const paidDate = textValue(formData, "paid_date");
   const paidAmount = Number(textValue(formData, "paid_amount"));
   const paymentMethod = textValue(formData, "payment_method");
+  const paymentSource = textValue(formData, "payment_source");
   const paymentReference = textValue(formData, "payment_reference") || null;
   const paymentNotes = textValue(formData, "payment_notes") || null;
+  const customBankName = textValue(formData, "custom_bank_name") || null;
+  const customBankAccountNumber = textValue(formData, "custom_bank_account_number") || null;
+  const enteredRoutingNumber = textValue(formData, "payment_routing_number") || null;
   const returnToVendorInvoice = textValue(formData, "return_to_vendor_invoice") === "1";
   const detailUrl = returnToVendorInvoice
     ? `/?module=vendor-invoice&vendor_invoice=${invoiceId}`
     : `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices&container_invoice=${invoiceId}&container_invoice_view=1`;
   if (!containerId || !invoiceId) redirect(`/?module=purchasing&error=${encodeURIComponent("Vendor invoice could not be identified.")}`);
-  if (!paidDate || !Number.isFinite(paidAmount) || paidAmount < 0 || !["wire", "ach", "check", "credit_card", "cash", "other"].includes(paymentMethod)) redirect(`${detailUrl}&error=${encodeURIComponent("Enter a paid date, valid paid amount, and payment method.")}`);
+  if (!paidDate || !Number.isFinite(paidAmount) || paidAmount < 0 || !["wire", "ach", "check", "zelle"].includes(paymentMethod) || !["custom", "check", "saved_vendor_bank"].includes(paymentSource)) redirect(`${detailUrl}&error=${encodeURIComponent("Enter a paid date, valid paid amount, payment method, and bank information source.")}`);
   const supabase = createSupabaseUntypedAdminClient();
-  const { error } = await supabase.from("container_vendor_invoice").update({ invoice_status: "paid", paid_date: paidDate, paid_amount: paidAmount, payment_method: paymentMethod, payment_reference: paymentReference, payment_notes: paymentNotes }).eq("id", invoiceId).eq("import_container_id", containerId).eq("invoice_status", "open");
+  const { data: invoice, error: invoiceError } = await supabase.from("container_vendor_invoice").select("vendor_id").eq("id", invoiceId).eq("import_container_id", containerId).maybeSingle();
+  if (invoiceError || !invoice) redirect(`${detailUrl}&error=${encodeURIComponent(invoiceError?.message ?? "Vendor invoice was not found.")}`);
+  const { data: vendor, error: vendorError } = await supabase.from("vendor").select("bank_name, bank_account_number, bank_swift_code, bank_ach_routing_code").eq("id", invoice.vendor_id).maybeSingle();
+  if (vendorError) redirect(`${detailUrl}&error=${encodeURIComponent(vendorError.message)}`);
+
+  if (paymentSource === "check" && (!paymentReference || paymentMethod !== "check")) redirect(`${detailUrl}&error=${encodeURIComponent("Enter the check number before recording this payment.")}`);
+  if (paymentSource === "custom" && (!customBankName || !customBankAccountNumber || !["wire", "ach", "zelle"].includes(paymentMethod))) redirect(`${detailUrl}&error=${encodeURIComponent("Enter the custom bank name, account number, and payment method.")}`);
+  if (paymentSource === "custom" && ["wire", "ach"].includes(paymentMethod) && !enteredRoutingNumber) redirect(`${detailUrl}&error=${encodeURIComponent("Enter the routing information required for this custom bank payment.")}`);
+  if (paymentSource === "saved_vendor_bank" && !["wire", "ach"].includes(paymentMethod)) redirect(`${detailUrl}&error=${encodeURIComponent("Choose wire or ACH when using saved vendor bank information.")}`);
+  const savedRoutingNumber = paymentMethod === "wire" ? vendor?.bank_swift_code : paymentMethod === "ach" ? vendor?.bank_ach_routing_code : null;
+  if (paymentSource === "saved_vendor_bank" && ["wire", "ach"].includes(paymentMethod) && !(enteredRoutingNumber || savedRoutingNumber)) redirect(`${detailUrl}&error=${encodeURIComponent("Enter the missing routing information for the selected saved vendor bank payment.")}`);
+
+  const bankDetails = paymentSource === "custom"
+    ? { payment_bank_name: customBankName, payment_bank_account_number: customBankAccountNumber, payment_routing_number: enteredRoutingNumber }
+    : paymentSource === "saved_vendor_bank"
+      ? { payment_bank_name: vendor?.bank_name ?? null, payment_bank_account_number: vendor?.bank_account_number ?? null, payment_routing_number: enteredRoutingNumber || savedRoutingNumber }
+      : { payment_bank_name: null, payment_bank_account_number: null, payment_routing_number: null };
+  const { error } = await supabase.from("container_vendor_invoice").update({ invoice_status: "paid", paid_date: paidDate, paid_amount: paidAmount, payment_method: paymentMethod, payment_reference: paymentReference, payment_notes: paymentNotes, payment_bank_source: paymentSource, ...bankDetails }).eq("id", invoiceId).eq("import_container_id", containerId).eq("invoice_status", "open");
   if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
   revalidatePath("/");
   redirect(detailUrl);

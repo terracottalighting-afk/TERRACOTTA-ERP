@@ -37,6 +37,7 @@ import { ContainerLoadingSheetPage } from "@/components/purchasing/container-loa
 import { ContainerServiceInvoiceEditor } from "@/components/purchasing/container-service-invoice-editor";
 import { ContainerServiceInvoiceDetail } from "@/components/purchasing/container-service-invoice-detail";
 import { PurchasingAgencyEditor } from "@/components/purchasing/purchasing-agency-editor";
+import { PurchasingAgencyDashboard, type PurchasingAgencyDashboardData } from "@/components/purchasing/purchasing-agency-dashboard";
 import { VendorPurchaseOrderDocumentPage } from "@/components/purchasing/vendor-purchase-order-document-page";
 import { VendorDashboard, type VendorDashboardData } from "@/components/purchasing/vendor-dashboard";
 import { VendorEditor } from "@/components/purchasing/vendor-editor";
@@ -223,6 +224,7 @@ export type SearchParams = Promise<{
   packing_list?: string;
   purchase_order?: string;
   purchasing_agency?: string;
+  agency_edit?: string;
   purchasing_tab?: string;
   purchasing_invoice_status?: string;
   agency_type?: string;
@@ -13971,6 +13973,33 @@ async function getPurchasingAgencyInvoices(agencyId: string) {
   return (data ?? []).map((invoice) => ({ id: invoice.id, erp_invoice_number: invoice.erp_invoice_number, agency_invoice_number: invoice.agency_invoice_number, container_id: invoice.import_container_id, container_number: invoice.container_number_snapshot, booking_number: invoice.booking_number_snapshot, invoice_date: invoice.invoice_date, due_date: invoice.due_date, total_amount: Number(invoice.total_amount) }));
 }
 
+async function getPurchasingAgencyDashboard(agencyId: string): Promise<PurchasingAgencyDashboardData | null> {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data: agency, error: agencyError } = await supabase.from("purchasing_agency").select("id, business_type, agency_name, address, contact_name, contact_email, contact_phone, bank_name, bank_swift_code, bank_ach_routing_number, bank_account_number").eq("id", agencyId).maybeSingle();
+  if (agencyError) throw new Error(agencyError.message);
+  if (!agency) return null;
+  const agencyField = agency.business_type === "customs_broker" ? "tariff_broker_agency" : "shipping_agency";
+  const [{ data: containers, error: containersError }, initialInvoiceResult] = await Promise.all([
+    supabase.from("import_container").select("id, container_number, booking_number, vessel_name, loaded_date, eta, container_status").eq(agencyField, agency.agency_name).order("loaded_date", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }),
+    supabase.from("container_service_invoice").select("id, erp_invoice_number, agency_invoice_number, import_container_id, container_number_snapshot, booking_number_snapshot, invoice_date, due_date, total_amount, invoice_status").eq("purchasing_agency_id", agencyId).order("invoice_date", { ascending: false }),
+  ]);
+  let invoiceRows = initialInvoiceResult.data ?? [];
+  let invoiceError = initialInvoiceResult.error;
+  if (invoiceError?.code === "42703" && invoiceError.message.includes("invoice_status")) {
+    const fallback = await supabase.from("container_service_invoice").select("id, erp_invoice_number, agency_invoice_number, import_container_id, container_number_snapshot, booking_number_snapshot, invoice_date, due_date, total_amount").eq("purchasing_agency_id", agencyId).order("invoice_date", { ascending: false });
+    invoiceRows = (fallback.data ?? []).map((invoice) => ({ ...invoice, invoice_status: "open" }));
+    invoiceError = fallback.error;
+  }
+  if (containersError || invoiceError) throw new Error(containersError?.message ?? invoiceError?.message);
+  const serviceInvoiceCounts = new Map<string, number>();
+  for (const invoice of invoiceRows) serviceInvoiceCounts.set(invoice.import_container_id, (serviceInvoiceCounts.get(invoice.import_container_id) ?? 0) + 1);
+  return {
+    agency: { ...agency, business_type: agency.business_type === "customs_broker" ? "customs_broker" : "shipping" },
+    containers: (containers ?? []).map((container) => ({ ...container, service_invoice_count: serviceInvoiceCounts.get(container.id) ?? 0 })),
+    invoices: invoiceRows.map((invoice) => ({ id: invoice.id, erp_invoice_number: invoice.erp_invoice_number, agency_invoice_number: invoice.agency_invoice_number, container_id: invoice.import_container_id, container_number: invoice.container_number_snapshot, booking_number: invoice.booking_number_snapshot, invoice_date: invoice.invoice_date, due_date: invoice.due_date, total_amount: Number(invoice.total_amount), invoice_status: invoice.invoice_status === "paid" ? "paid" as const : "open" as const })),
+  };
+}
+
 async function getContainerServiceInvoiceDraftDocuments(containerId: string, serviceType: "shipping_agency" | "tariff_broker") {
   const supabase = createSupabaseUntypedAdminClient();
   const { data, error } = await supabase.from("container_service_invoice_draft_document").select("id, uploaded_at, attachment:file_id(original_file_name)").eq("import_container_id", containerId).eq("service_type", serviceType).order("uploaded_at", { ascending: false });
@@ -16564,7 +16593,9 @@ export async function ErpRouter({
           const serviceType = params.service_invoice_type === "tariff_broker" ? "tariff_broker" : "shipping_agency";
           const invoice = params.service_invoice ? workspace?.serviceInvoices.find((item) => item.id === params.service_invoice && item.service_type === serviceType) ?? null : null;
           return <ContainerServiceInvoiceEditor container={workspace?.container ?? null} draftDocuments={workspace?.container ? await getContainerServiceInvoiceDraftDocuments(workspace.container.id, serviceType) : []} error={params.error} invoice={invoice} saveAction={saveContainerServiceInvoiceAction} serviceType={serviceType} uploadAction={uploadContainerServiceInvoiceDraftDocumentAction} />;
-        })() : activeModule === "purchasing-agency" ? (
+        })() : activeModule === "purchasing-agency" ? params.purchasing_agency && params.agency_edit !== "1" ? (
+          <PurchasingAgencyDashboard dashboard={await getPurchasingAgencyDashboard(params.purchasing_agency)} error={params.error} selectedTab={params.agency_tab} />
+        ) : (
           <PurchasingAgencyEditor agency={params.purchasing_agency ? await getPurchasingAgency(params.purchasing_agency) : null} defaultBusinessType={params.agency_type === "customs_broker" ? "customs_broker" : "shipping"} deleteAction={deletePurchasingAgencyAction} error={params.error} invoices={params.purchasing_agency ? await getPurchasingAgencyInvoices(params.purchasing_agency) : []} saveAction={savePurchasingAgencyAction} />
         ) : activeModule === "create-vendor-purchase-order" ? (
           <PurchaseOrderEditor

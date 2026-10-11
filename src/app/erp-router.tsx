@@ -38,6 +38,7 @@ import { ContainerServiceInvoiceEditor } from "@/components/purchasing/container
 import { ContainerServiceInvoiceDetail } from "@/components/purchasing/container-service-invoice-detail";
 import { PurchasingAgencyEditor } from "@/components/purchasing/purchasing-agency-editor";
 import { PurchasingAgencyDashboard, type PurchasingAgencyDashboardData } from "@/components/purchasing/purchasing-agency-dashboard";
+import { PurchasingAgencySectionEditor } from "@/components/purchasing/purchasing-agency-section-editor";
 import { VendorPurchaseOrderDocumentPage } from "@/components/purchasing/vendor-purchase-order-document-page";
 import { VendorDashboard, type VendorDashboardData } from "@/components/purchasing/vendor-dashboard";
 import { VendorEditor } from "@/components/purchasing/vendor-editor";
@@ -225,6 +226,7 @@ export type SearchParams = Promise<{
   purchase_order?: string;
   purchasing_agency?: string;
   agency_edit?: string;
+  agency_edit_section?: string;
   purchasing_tab?: string;
   purchasing_invoice_status?: string;
   agency_type?: string;
@@ -14168,12 +14170,22 @@ async function uploadContainerServiceInvoicePaymentDocumentAction(formData: Form
 async function savePurchasingAgencyAction(formData: FormData) {
   "use server";
   const agencyId = textValue(formData, "agency_id");
+  const editSection = textValue(formData, "edit_section");
   const businessType = textValue(formData, "business_type");
   const agencyName = textValue(formData, "agency_name");
   const fail = (message: string) => ({ error: message });
+  const supabase = createSupabaseUntypedAdminClient();
+  if (agencyId && ["details", "bank"].includes(editSection)) {
+    const detailUrl = `/?module=purchasing-agency&purchasing_agency=${agencyId}&agency_tab=profile`;
+    const values = editSection === "details" ? { business_type: businessType, agency_name: agencyName, address: textValue(formData, "address") || null, contact_name: textValue(formData, "contact_name") || null, contact_email: textValue(formData, "contact_email") || null, contact_phone: textValue(formData, "contact_phone") || null } : { bank_name: textValue(formData, "bank_name") || null, bank_swift_code: textValue(formData, "bank_swift_code") || null, bank_ach_routing_number: textValue(formData, "bank_ach_routing_number") || null, bank_account_number: textValue(formData, "bank_account_number") || null };
+    if (editSection === "details" && (!agencyName || !["shipping", "customs_broker"].includes(businessType))) redirect(`${detailUrl}&error=${encodeURIComponent("Enter an agency name and select a valid business type.")}`);
+    const { error } = await supabase.from("purchasing_agency").update(values).eq("id", agencyId);
+    if (error) redirect(`${detailUrl}&error=${encodeURIComponent(error.message)}`);
+    revalidatePath("/");
+    redirect(detailUrl);
+  }
   if (!agencyName || !["shipping", "customs_broker"].includes(businessType)) return fail("Enter an agency name and select a valid business type.");
   const values = { business_type: businessType, agency_name: agencyName, address: textValue(formData, "address") || null, contact_name: textValue(formData, "contact_name") || null, contact_email: textValue(formData, "contact_email") || null, contact_phone: textValue(formData, "contact_phone") || null, bank_name: textValue(formData, "bank_name") || null, bank_swift_code: textValue(formData, "bank_swift_code") || null, bank_ach_routing_number: textValue(formData, "bank_ach_routing_number") || null, bank_account_number: textValue(formData, "bank_account_number") || null };
-  const supabase = createSupabaseUntypedAdminClient();
   const result = agencyId ? await supabase.from("purchasing_agency").update(values).eq("id", agencyId).select("id").single() : await supabase.from("purchasing_agency").insert(values).select("id").single();
   if (result.error || !result.data) return fail(result.error?.message ?? "The agency could not be saved.");
   return { destination: "/?module=purchasing&purchasing_tab=agencies" };
@@ -16644,7 +16656,9 @@ export async function ErpRouter({
           const serviceType = params.service_invoice_type === "tariff_broker" ? "tariff_broker" : "shipping_agency";
           const invoice = params.service_invoice ? workspace?.serviceInvoices.find((item) => item.id === params.service_invoice && item.service_type === serviceType) ?? null : null;
           return <ContainerServiceInvoiceEditor container={workspace?.container ?? null} draftDocuments={workspace?.container ? await getContainerServiceInvoiceDraftDocuments(workspace.container.id, serviceType) : []} error={params.error} invoice={invoice} saveAction={saveContainerServiceInvoiceAction} serviceType={serviceType} uploadAction={uploadContainerServiceInvoiceDraftDocumentAction} />;
-        })() : activeModule === "purchasing-agency" ? params.purchasing_agency && params.agency_edit !== "1" ? (
+        })() : activeModule === "purchasing-agency" ? params.purchasing_agency && (params.agency_edit_section === "details" || params.agency_edit_section === "bank") ? (
+          <PurchasingAgencySectionEditor agency={await getPurchasingAgency(params.purchasing_agency)} error={params.error} saveAction={savePurchasingAgencyAction} section={params.agency_edit_section} />
+        ) : params.purchasing_agency && params.agency_edit !== "1" ? (
           <PurchasingAgencyDashboard dashboard={await getPurchasingAgencyDashboard(params.purchasing_agency)} error={params.error} selectedTab={params.agency_tab} />
         ) : (
           <PurchasingAgencyEditor agency={params.purchasing_agency ? await getPurchasingAgency(params.purchasing_agency) : null} defaultBusinessType={params.agency_type === "customs_broker" ? "customs_broker" : "shipping"} deleteAction={deletePurchasingAgencyAction} error={params.error} invoices={params.purchasing_agency ? await getPurchasingAgencyInvoices(params.purchasing_agency) : []} saveAction={savePurchasingAgencyAction} />

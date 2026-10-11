@@ -14381,7 +14381,23 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
 }
 
 function vendorRedirect(vendorId: string, tab: string, error?: string) { redirect(`/?module=vendor&vendor=${vendorId}&vendor_tab=${tab}${error ? `&error=${encodeURIComponent(error)}` : ""}`); }
-async function updateVendorProfileAction(formData: FormData) { "use server"; const vendorId = textValue(formData, "vendor_id"); if (!vendorId) redirect("/?module=purchasing"); const optional = (key: string) => textValue(formData, key) || null; const { error } = await createSupabaseUntypedAdminClient().from("vendor").update({ name: textValue(formData, "name"), legal_name: optional("legal_name"), country: textValue(formData, "country"), country_code: textValue(formData, "country_code").toUpperCase(), currency: textValue(formData, "currency"), payment_terms: optional("payment_terms"), contact_name: optional("contact_name"), email: optional("email"), phone: optional("phone"), address_line_1: optional("address_line_1"), address_line_2: optional("address_line_2"), city: optional("city"), state_province: optional("state_province"), postal_code: optional("postal_code"), notes: optional("notes"), bank_name: optional("bank_name"), bank_address: optional("bank_address"), bank_city: optional("bank_city"), bank_country: optional("bank_country"), bank_swift_code: optional("bank_swift_code"), bank_ach_routing_code: optional("bank_ach_routing_code"), bank_account_number: optional("bank_account_number") }).eq("id", vendorId); if (error) vendorRedirect(vendorId, "profile", error.message); revalidatePath("/"); vendorRedirect(vendorId, "profile"); }
+async function updateVendorProfileAction(formData: FormData) {
+  "use server";
+  const vendorId = textValue(formData, "vendor_id");
+  const section = textValue(formData, "edit_section");
+  if (!vendorId) redirect("/?module=purchasing");
+  if (section !== "profile" && section !== "payment") vendorRedirect(vendorId, "profile", "Choose a valid vendor section to update.");
+  const optional = (key: string) => textValue(formData, key) || null;
+  const values = section === "payment" ? {
+    bank_name: optional("bank_name"), bank_address: optional("bank_address"), bank_city: optional("bank_city"), bank_country: optional("bank_country"), bank_swift_code: optional("bank_swift_code"), bank_ach_routing_code: optional("bank_ach_routing_code"), bank_account_number: optional("bank_account_number"),
+  } : {
+    name: textValue(formData, "name"), legal_name: optional("legal_name"), country: textValue(formData, "country"), country_code: textValue(formData, "country_code").toUpperCase(), currency: textValue(formData, "currency"), payment_terms: optional("payment_terms"), contact_name: optional("contact_name"), email: optional("email"), phone: optional("phone"), address_line_1: optional("address_line_1"), address_line_2: optional("address_line_2"), city: optional("city"), state_province: optional("state_province"), postal_code: optional("postal_code"), notes: optional("notes"),
+  };
+  const { error } = await createSupabaseUntypedAdminClient().from("vendor").update(values).eq("id", vendorId);
+  if (error) vendorRedirect(vendorId, "profile", error.message);
+  revalidatePath("/");
+  vendorRedirect(vendorId, "profile");
+}
 async function updateVendorTermsAction(formData: FormData) { "use server"; const vendorId = textValue(formData, "vendor_id"); if (!vendorId) redirect("/?module=purchasing"); const num = (key: string) => { const value = textValue(formData, key); return value ? Number(value) : null; }; const { error } = await createSupabaseUntypedAdminClient().from("vendor").update({ price_terms: textValue(formData, "price_terms") || null, price_currency: textValue(formData, "price_currency"), default_lead_time_days: num("default_lead_time_days"), default_minimum_order_quantity: num("default_minimum_order_quantity"), prototype_sample_discount_percent: num("prototype_sample_discount_percent"), terms_notes: textValue(formData, "terms_notes") || null }).eq("id", vendorId); if (error) vendorRedirect(vendorId, "terms", error.message); revalidatePath("/"); vendorRedirect(vendorId, "terms"); }
 async function getVendorProductOptions(): Promise<VendorProductOption[]> {
   const supabase = createSupabaseUntypedAdminClient();
@@ -16377,7 +16393,7 @@ export async function ErpRouter({
         })() : activeModule === "add-vendor" ? (
           <VendorEditor error={params.error} saveAction={createVendorAction} />
         ) : activeModule === "vendor" ? (
-          <VendorDashboard dashboard={params.vendor ? await getVendorDashboard(params.vendor) : null} editingProfile={params.vendor_edit === "profile"} editingTerms={params.vendor_edit === "terms"} error={params.error} selectedTab={params.vendor_tab} saveProfileAction={updateVendorProfileAction} saveTermsAction={updateVendorTermsAction} />
+          <VendorDashboard dashboard={params.vendor ? await getVendorDashboard(params.vendor) : null} editingPayment={params.vendor_edit === "payment"} editingProfile={params.vendor_edit === "profile"} editingTerms={params.vendor_edit === "terms"} error={params.error} selectedTab={params.vendor_tab} saveProfileAction={updateVendorProfileAction} saveTermsAction={updateVendorTermsAction} />
         ) : activeModule === "vendor-product" ? (
           <VendorProductDetailPage
             vendor={params.vendor ? (await getVendorDashboard(params.vendor))?.vendor ?? null : null}

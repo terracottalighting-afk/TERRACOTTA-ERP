@@ -14279,7 +14279,7 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
   const [vendorProductsResult, ordersResult, vendorInvoicesResult] = await Promise.all([
     supabase.from("vendor_product").select("*").eq("vendor_id", vendorId).order("created_at", { ascending: false }),
     supabase.from("vendor_purchase_order").select("id, vendor_po_number, po_date, expected_ready_date, total_amount, status").eq("vendor_id", vendorId).order("po_date", { ascending: false }),
-    supabase.from("container_vendor_invoice").select("id, import_container_id, erp_invoice_number, vendor_invoice_number, invoice_date, invoice_status, created_at").eq("vendor_id", vendorId).order("invoice_date", { ascending: false }),
+    supabase.from("container_vendor_invoice").select("id, import_container_id, erp_invoice_number, vendor_invoice_number, invoice_date, due_date, invoice_status, created_at").eq("vendor_id", vendorId).order("invoice_date", { ascending: false }),
   ]);
   if (vendorProductsResult.error) throw new Error(vendorProductsResult.error.message);
   if (ordersResult.error) throw new Error(ordersResult.error.message);
@@ -14359,7 +14359,7 @@ async function getVendorDashboard(vendorId: string): Promise<VendorDashboardData
     invoices: vendorInvoices.map((invoice) => {
       const container = containerById.get(invoice.import_container_id);
       const totalAmount = (vendorInvoiceLines ?? []).filter((line) => line.container_vendor_invoice_id === invoice.id).reduce((sum, line) => sum + Number(line.quantity) * Number(line.unit_price), 0);
-      return { id: invoice.id, container_id: invoice.import_container_id, container_number: container?.container_number ?? "Unavailable", loaded_date: container?.loaded_date ?? null, erp_invoice_number: invoice.erp_invoice_number, vendor_invoice_number: invoice.vendor_invoice_number, invoice_date: invoice.invoice_date, total_amount: totalAmount, invoice_status: invoice.invoice_status === "paid" ? "paid" : "open" };
+      return { id: invoice.id, container_id: invoice.import_container_id, container_number: container?.container_number ?? "Unavailable", loaded_date: container?.loaded_date ?? null, erp_invoice_number: invoice.erp_invoice_number, vendor_invoice_number: invoice.vendor_invoice_number, invoice_date: invoice.invoice_date, due_date: invoice.due_date, total_amount: totalAmount, invoice_status: invoice.invoice_status === "paid" ? "paid" : "open" };
     }),
     balanceLines,
   };

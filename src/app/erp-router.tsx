@@ -32,7 +32,7 @@ import { PurchaseOrderReview } from "@/components/purchasing/purchase-order-revi
 import { PurchaseOrderProductionUpdate } from "@/components/purchasing/purchase-order-production-update";
 import { ContainerEditor } from "@/components/purchasing/container-editor";
 import { ContainerWorkspace } from "@/components/purchasing/container-workspace";
-import { ContainerSummary } from "@/components/purchasing/container-summary";
+import { ContainerSummary, VendorInvoiceDetailPage } from "@/components/purchasing/container-summary";
 import { ContainerLoadingSheetPage } from "@/components/purchasing/container-loading-sheet-page";
 import { PurchasingAgencyEditor } from "@/components/purchasing/purchasing-agency-editor";
 import { VendorPurchaseOrderDocumentPage } from "@/components/purchasing/vendor-purchase-order-document-page";
@@ -228,6 +228,7 @@ export type SearchParams = Promise<{
   container_invoice?: string;
   container_invoice_vendor?: string;
   container_invoice_view?: string;
+  vendor_invoice?: string;
   container_tab?: string;
   container_edit_mode?: string;
   container_edit?: string;
@@ -13606,6 +13607,19 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
   };
 }
 
+async function getContainerVendorInvoiceDetail(invoiceId: string) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const { data, error } = await supabase.from("container_vendor_invoice").select("import_container_id").eq("id", invoiceId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  const workspace = await getContainerWorkspace(data.import_container_id);
+  return {
+    container: workspace?.container ?? null,
+    invoice: workspace?.vendorInvoices.find((invoice) => invoice.id === invoiceId) ?? null,
+  };
+}
+
 async function createContainerAction(formData: FormData) {
   "use server";
   const containerNumber = textValue(formData, "container_number");
@@ -13818,7 +13832,10 @@ async function updateContainerVendorInvoiceStatusAction(formData: FormData) {
   const paymentMethod = textValue(formData, "payment_method");
   const paymentReference = textValue(formData, "payment_reference") || null;
   const paymentNotes = textValue(formData, "payment_notes") || null;
-  const detailUrl = `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices&container_invoice=${invoiceId}&container_invoice_view=1`;
+  const returnToVendorInvoice = textValue(formData, "return_to_vendor_invoice") === "1";
+  const detailUrl = returnToVendorInvoice
+    ? `/?module=vendor-invoice&vendor_invoice=${invoiceId}`
+    : `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices&container_invoice=${invoiceId}&container_invoice_view=1`;
   if (!containerId || !invoiceId) redirect(`/?module=purchasing&error=${encodeURIComponent("Vendor invoice could not be identified.")}`);
   if (!paidDate || !Number.isFinite(paidAmount) || paidAmount < 0 || !["wire", "ach", "check", "credit_card", "cash", "other"].includes(paymentMethod)) redirect(`${detailUrl}&error=${encodeURIComponent("Enter a paid date, valid paid amount, and payment method.")}`);
   const supabase = createSupabaseUntypedAdminClient();
@@ -16362,6 +16379,9 @@ export async function ErpRouter({
           if (workspace?.container && workspace.container.container_status !== "draft" && params.container_edit_mode !== "1") redirect(`/?module=container-detail&container=${workspace.container.id}`);
           const editingSection = ["shipping", "schedule", "broker", "loading_site"].includes(params.container_edit ?? "") ? params.container_edit as "shipping" | "schedule" | "broker" | "loading_site" : undefined;
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} vendors={await getContainerLoadingSiteVendors()} />;
+        })() : activeModule === "vendor-invoice" ? await (async () => {
+          const detail = params.vendor_invoice ? await getContainerVendorInvoiceDetail(params.vendor_invoice) : null;
+          return <VendorInvoiceDetailPage container={detail?.container ?? null} invoice={detail?.invoice ?? null} reportMappings={await getReportFieldMappings("container_invoice")} updateStatusAction={updateContainerVendorInvoiceStatusAction} />;
         })() : activeModule === "container-detail" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteVendorInvoiceAction={deleteContainerVendorInvoiceAction} documents={workspace?.documents ?? []} draftVendorId={params.container_invoice_vendor} initialTab={params.container_tab === "products" || params.container_tab === "documents" || params.container_tab === "vendor_invoices" ? params.container_tab : "profile"} invoiceReadOnly={params.container_invoice_view === "1"} reportMappings={await getReportFieldMappings("container_invoice")} selectedInvoiceId={params.container_invoice} saveVendorInvoiceAction={saveContainerVendorInvoiceAction} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} updateVendorInvoiceStatusAction={updateContainerVendorInvoiceStatusAction} uploadDocumentAction={uploadContainerDocumentAction} uploadVendorInvoiceDocumentAction={uploadContainerVendorInvoiceDocumentAction} vendorInvoices={workspace?.vendorInvoices ?? []} />;

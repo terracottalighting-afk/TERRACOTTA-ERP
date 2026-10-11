@@ -13791,12 +13791,17 @@ async function uploadContainerVendorInvoiceDocumentAction(formData: FormData) {
   const containerId = textValue(formData, "container_id");
   const invoiceId = textValue(formData, "container_vendor_invoice_id");
   const file = formData.get("vendor_invoice_document_file");
-  const detailUrl = `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices&container_invoice=${invoiceId}`;
-  if (!containerId || !invoiceId || !(file instanceof File) || file.size === 0) redirect(`/?module=purchasing&error=${encodeURIComponent("Choose an original vendor invoice file to upload.")}`);
+  const isPaymentDocument = textValue(formData, "document_scope") === "payment";
+  const returnToVendorInvoice = textValue(formData, "return_to_vendor_invoice") === "1";
+  const detailUrl = returnToVendorInvoice
+    ? `/?module=vendor-invoice&vendor_invoice=${invoiceId}`
+    : `/?module=container-detail&container=${containerId}&container_tab=vendor_invoices&container_invoice=${invoiceId}`;
+  if (!containerId || !invoiceId || !(file instanceof File) || file.size === 0) redirect(`/?module=purchasing&error=${encodeURIComponent("Choose a document file to upload.")}`);
+  if (isPaymentDocument && !textValue(formData, "display_name")) redirect(`${detailUrl}&error=${encodeURIComponent("Enter a note for the payment document.")}`);
   const supabase = createSupabaseUntypedAdminClient();
   const { data: invoice, error: invoiceError } = await supabase.from("container_vendor_invoice").select("id, invoice_status").eq("id", invoiceId).eq("import_container_id", containerId).maybeSingle();
   if (invoiceError || !invoice) redirect(`${detailUrl}&error=${encodeURIComponent(invoiceError?.message ?? "Vendor invoice was not found.")}`);
-  if (invoice.invoice_status === "paid") redirect(`${detailUrl}&container_invoice_view=1&error=${encodeURIComponent("Paid vendor invoices are read-only and cannot be changed.")}`);
+  if (invoice.invoice_status === "paid" && !isPaymentDocument) redirect(`${detailUrl}&container_invoice_view=1&error=${encodeURIComponent("Paid vendor invoices are read-only and cannot be changed.")}`);
   const bucketName = "container-vendor-invoice-documents";
   const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
   if (bucketsError) redirect(`${detailUrl}&error=${encodeURIComponent(bucketsError.message)}`);
@@ -13813,7 +13818,8 @@ async function uploadContainerVendorInvoiceDocumentAction(formData: FormData) {
     await supabase.storage.from(bucketName).remove([storagePath]);
     redirect(`${detailUrl}&error=${encodeURIComponent(attachmentError?.message ?? "Vendor invoice document could not be recorded.")}`);
   }
-  const { error: documentError } = await supabase.from("container_vendor_invoice_document").insert({ container_vendor_invoice_id: invoiceId, display_name: textValue(formData, "display_name") || null, file_id: attachment.id });
+  const documentNote = textValue(formData, "display_name");
+  const { error: documentError } = await supabase.from("container_vendor_invoice_document").insert({ container_vendor_invoice_id: invoiceId, display_name: isPaymentDocument ? `Payment document: ${documentNote}` : documentNote || null, file_id: attachment.id });
   if (documentError) {
     await supabase.from("attachment").delete().eq("id", attachment.id);
     await supabase.storage.from(bucketName).remove([storagePath]);
@@ -16402,7 +16408,7 @@ export async function ErpRouter({
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} vendors={await getContainerLoadingSiteVendors()} />;
         })() : activeModule === "vendor-invoice" ? await (async () => {
           const detail = params.vendor_invoice ? await getContainerVendorInvoiceDetail(params.vendor_invoice) : null;
-          return <VendorInvoiceDetailPage container={detail?.container ?? null} invoice={detail?.invoice ?? null} reportMappings={await getReportFieldMappings("container_invoice")} updateStatusAction={updateContainerVendorInvoiceStatusAction} />;
+          return <VendorInvoiceDetailPage container={detail?.container ?? null} invoice={detail?.invoice ?? null} reportMappings={await getReportFieldMappings("container_invoice")} updateStatusAction={updateContainerVendorInvoiceStatusAction} uploadDocumentAction={uploadContainerVendorInvoiceDocumentAction} />;
         })() : activeModule === "container-detail" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
           return <ContainerSummary container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteVendorInvoiceAction={deleteContainerVendorInvoiceAction} documents={workspace?.documents ?? []} draftVendorId={params.container_invoice_vendor} initialTab={params.container_tab === "products" || params.container_tab === "documents" || params.container_tab === "vendor_invoices" ? params.container_tab : "profile"} invoiceReadOnly={params.container_invoice_view === "1"} reportMappings={await getReportFieldMappings("container_invoice")} selectedInvoiceId={params.container_invoice} saveVendorInvoiceAction={saveContainerVendorInvoiceAction} statusOptions={await getContainerStatusOptions()} updateStatusAction={updateContainerStatusAction} updateVendorInvoiceStatusAction={updateContainerVendorInvoiceStatusAction} uploadDocumentAction={uploadContainerDocumentAction} uploadVendorInvoiceDocumentAction={uploadContainerVendorInvoiceDocumentAction} vendorInvoices={workspace?.vendorInvoices ?? []} />;

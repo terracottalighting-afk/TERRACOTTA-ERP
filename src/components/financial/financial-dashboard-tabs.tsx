@@ -116,7 +116,7 @@ type SupplierBill = {
 
 type ServiceBill = {
   id: string;
-  service_type: "shipping_agency" | "tariff_broker";
+  service_type: "shipping_agency" | "tariff_broker" | "container_trucking";
   container_id: string;
   container_number: string;
   loaded_date: string | null;
@@ -291,10 +291,11 @@ export async function FinancialDashboardTabs({
   }).sort((left, right) => `${right.invoice_date ?? ""}${right.erp_invoice_number}`.localeCompare(`${left.invoice_date ?? ""}${left.erp_invoice_number}`));
   const orderedServiceBills: ServiceBill[] = (serviceBills ?? []).map((bill) => {
     const container = billContainerById.get(bill.import_container_id);
-    return { id: bill.id, service_type: (bill.service_type === "tariff_broker" ? "tariff_broker" : "shipping_agency") as ServiceBill["service_type"], container_id: bill.import_container_id, container_number: container?.container_number ?? "Unavailable", loaded_date: container?.loaded_date ?? null, agency_id: bill.purchasing_agency_id, agency_name: bill.agency_name_snapshot ?? "Unknown agency", erp_invoice_number: bill.erp_invoice_number, provided_invoice_number: bill.agency_invoice_number, invoice_date: bill.invoice_date, due_date: bill.due_date, total_amount: Number(bill.total_amount), invoice_status: (bill.invoice_status === "paid" ? "paid" : "open") as ServiceBill["invoice_status"] };
+    return { id: bill.id, service_type: (bill.service_type === "container_trucking" ? "container_trucking" : bill.service_type === "tariff_broker" ? "tariff_broker" : "shipping_agency") as ServiceBill["service_type"], container_id: bill.import_container_id, container_number: container?.container_number ?? "Unavailable", loaded_date: container?.loaded_date ?? null, agency_id: bill.purchasing_agency_id, agency_name: bill.agency_name_snapshot ?? "Unknown agency", erp_invoice_number: bill.erp_invoice_number, provided_invoice_number: bill.agency_invoice_number, invoice_date: bill.invoice_date, due_date: bill.due_date, total_amount: Number(bill.total_amount), invoice_status: (bill.invoice_status === "paid" ? "paid" : "open") as ServiceBill["invoice_status"] };
   }).sort((left, right) => `${right.invoice_date ?? ""}${right.erp_invoice_number}`.localeCompare(`${left.invoice_date ?? ""}${left.erp_invoice_number}`));
   const shippingAgencyBills = orderedServiceBills.filter((bill) => bill.service_type === "shipping_agency");
   const customsServiceBills = orderedServiceBills.filter((bill) => bill.service_type === "tariff_broker");
+  const containerTruckingBills = orderedServiceBills.filter((bill) => bill.service_type === "container_trucking");
   const invoiceSkusById = new Map<string, string[]>();
   for (const line of invoiceLines ?? []) {
     const skus = invoiceSkusById.get(line.customer_invoice_id) ?? [];
@@ -442,6 +443,7 @@ export async function FinancialDashboardTabs({
     { key: "suppliers", label: "Suppliers" },
     { key: "shipping-agency", label: "Shipping Agency" },
     { key: "customs-services", label: "Customs Services" },
+    { key: "container-trucking", label: "Container Trucking" },
   ];
   const selectedBillsTab = billsTabs.some((tab) => tab.key === financialBillsTab)
     ? financialBillsTab!
@@ -666,6 +668,7 @@ export async function FinancialDashboardTabs({
         {selectedBillsTab === "suppliers" ? <section className="record-section"><h3>Supplier Bills</h3><SupplierBillTable bills={orderedSupplierBills} /></section> : null}
         {selectedBillsTab === "shipping-agency" ? <section className="record-section"><h3>Shipping Agency Bills</h3><ServiceBillTable bills={shippingAgencyBills} emptyLabel="shipping agency" /></section> : null}
         {selectedBillsTab === "customs-services" ? <section className="record-section"><h3>Customs Services Bills</h3><ServiceBillTable bills={customsServiceBills} emptyLabel="customs service" /></section> : null}
+        {selectedBillsTab === "container-trucking" ? <section className="record-section"><h3>Container Trucking Bills</h3><ServiceBillTable bills={containerTruckingBills} emptyLabel="container trucking" /></section> : null}
       </> : null}
       {selectedSection === "commission" ? <>
         <nav className="tab-nav financial-tab-nav" aria-label="Commission statement lists">

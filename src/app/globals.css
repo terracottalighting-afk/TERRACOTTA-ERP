@@ -2243,6 +2243,13 @@ dd {
   padding: 4px 8px;
 }
 
+.section-title .text-action--disabled {
+  background: transparent;
+  border-radius: 0;
+  font-size: 13px;
+  padding: 0;
+}
+
 .document-section-description {
   color: var(--muted);
   font-size: 13px;

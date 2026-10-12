@@ -13610,7 +13610,7 @@ async function getContainerWorkspace(containerId: string, selectedPurchaseOrderI
       return { id: line.id, vendor_id: purchaseOrder?.vendor_id ?? "unknown", vendor_email: purchaseOrder ? vendorById.get(purchaseOrder.vendor_id)?.email ?? null : null, po_number: purchaseOrder?.vendor_po_number ?? "Not set", vendor_name: purchaseOrder?.vendor_name_snapshot ?? "Not set", sku: product?.sku ?? "Unknown", factory_sku: purchaseOrderLine?.vendor_item_number_snapshot ?? null, name: product?.name ?? "Product unavailable", category_name: product?.product_category_id ? categoryById.get(product.product_category_id) ?? null : null, hs_code: hsCodeByProductId.get(line.product_id) ?? null, quantity_packed: quantityPacked, pieces_per_carton: piecesPerCarton, carton_count: cartonCount, packing_dimensions: validBoxes.map((box, index) => `${box.label || `Box ${index + 1}`}: ${numberFormatter.format(box.width)} × ${numberFormatter.format(box.depth)} × ${numberFormatter.format(box.height)} in`), unit_cbm: unitCbm, line_cbm: unitCbm === null ? null : unitCbm * quantityPacked, quantity_boxes: cartonCount, unit_cost: Number(purchaseOrderLine?.unit_cost ?? 0) };
     }),
     documents: documents.flat(),
-    serviceInvoices: (serviceInvoices ?? []).map((invoice) => ({ ...invoice, service_type: invoice.service_type === "tariff_broker" ? "tariff_broker" as const : "shipping_agency" as const, invoice_status: (invoice.invoice_status === "paid" ? "paid" : "open") as "open" | "paid", total_amount: Number(invoice.total_amount) })),
+    serviceInvoices: (serviceInvoices ?? []).map((invoice) => ({ ...invoice, service_type: invoice.service_type === "container_trucking" ? "container_trucking" as const : invoice.service_type === "tariff_broker" ? "tariff_broker" as const : "shipping_agency" as const, invoice_status: (invoice.invoice_status === "paid" ? "paid" : "open") as "open" | "paid", total_amount: Number(invoice.total_amount) })),
     vendorInvoices: (vendorInvoices ?? []).map((invoice) => ({ ...invoice, invoice_status: (invoice.invoice_status === "paid" ? "paid" : "open") as "open" | "paid", paid_amount: invoice.paid_amount === null ? null : Number(invoice.paid_amount), payment_bank_source: invoice.payment_bank_source === "custom" || invoice.payment_bank_source === "check" || invoice.payment_bank_source === "saved_vendor_bank" ? invoice.payment_bank_source : null, vendor_bank: (() => { const vendor = vendorById.get(invoice.vendor_id); return { bank_name: vendor?.bank_name ?? null, bank_address: vendor?.bank_address ?? null, bank_city: vendor?.bank_city ?? null, bank_country: vendor?.bank_country ?? null, bank_swift_code: vendor?.bank_swift_code ?? null, bank_ach_routing_code: vendor?.bank_ach_routing_code ?? null, bank_account_number: vendor?.bank_account_number ?? null }; })(), documents: vendorInvoiceDocuments.flat().filter((document) => document.container_vendor_invoice_id === invoice.id).map(({ container_vendor_invoice_id: _invoiceId, ...document }) => document), lines: (vendorInvoiceLines ?? []).filter((line) => line.container_vendor_invoice_id === invoice.id).map((line) => ({ ...line, carton_count: line.carton_count === null ? null : Number(line.carton_count), pieces_per_carton: line.pieces_per_carton === null ? null : Number(line.pieces_per_carton), quantity: Number(line.quantity), unit_price: Number(line.unit_price) })) })),
     activeOrders,
     selectedOrder,
@@ -13650,7 +13650,7 @@ async function getContainerServiceInvoiceDetail(invoiceId: string) {
   ]);
   if (containerResult.error || agencyResult.error || (paymentDetailsResult.error && paymentDetailsResult.error.code !== "42703") || (documentsResult.error && documentsResult.error.code !== "42703")) throw new Error(containerResult.error?.message ?? agencyResult.error?.message ?? paymentDetailsResult.error?.message ?? documentsResult.error?.message);
   const paymentDocuments = await Promise.all((documentsResult.data ?? []).flatMap((document) => { const attachment = Array.isArray(document.attachment) ? document.attachment[0] : document.attachment; return attachment ? [{ id: document.id, display_name: document.display_name, original_file_name: attachment.original_file_name, uploaded_at: document.uploaded_at, storage_bucket: attachment.storage_bucket, storage_path: attachment.storage_path }] : []; }).map(async (document) => ({ id: document.id, display_name: document.display_name, original_file_name: document.original_file_name, uploaded_at: document.uploaded_at, signed_url: (await supabase.storage.from(document.storage_bucket).createSignedUrl(document.storage_path, 60 * 60)).data?.signedUrl ?? null })));
-  return { ...data, service_type: data.service_type === "tariff_broker" ? "tariff_broker" as const : "shipping_agency" as const, invoice_status: data.invoice_status === "paid" ? "paid" as const : "open" as const, total_amount: Number(data.total_amount), paid_amount: data.paid_amount === null ? null : Number(data.paid_amount), container_status: containerResult.data?.container_status ?? null, agency_bank: { bank_name: agencyResult.data?.bank_name ?? null, bank_swift_code: agencyResult.data?.bank_swift_code ?? null, bank_ach_routing_number: agencyResult.data?.bank_ach_routing_number ?? null, bank_account_number: agencyResult.data?.bank_account_number ?? null }, payment_bank_name: paymentDetailsResult.data?.payment_bank_name ?? null, payment_bank_account_number: paymentDetailsResult.data?.payment_bank_account_number ?? null, payment_routing_number: paymentDetailsResult.data?.payment_routing_number ?? null, payment_documents: paymentDocuments };
+  return { ...data, service_type: data.service_type === "container_trucking" ? "container_trucking" as const : data.service_type === "tariff_broker" ? "tariff_broker" as const : "shipping_agency" as const, invoice_status: data.invoice_status === "paid" ? "paid" as const : "open" as const, total_amount: Number(data.total_amount), paid_amount: data.paid_amount === null ? null : Number(data.paid_amount), container_status: containerResult.data?.container_status ?? null, agency_bank: { bank_name: agencyResult.data?.bank_name ?? null, bank_swift_code: agencyResult.data?.bank_swift_code ?? null, bank_ach_routing_number: agencyResult.data?.bank_ach_routing_number ?? null, bank_account_number: agencyResult.data?.bank_account_number ?? null }, payment_bank_name: paymentDetailsResult.data?.payment_bank_name ?? null, payment_bank_account_number: paymentDetailsResult.data?.payment_bank_account_number ?? null, payment_routing_number: paymentDetailsResult.data?.payment_routing_number ?? null, payment_documents: paymentDocuments };
 }
 
 async function createContainerAction(formData: FormData) {
@@ -14019,7 +14019,7 @@ async function getPurchasingAgencyDashboard(agencyId: string): Promise<Purchasin
   };
 }
 
-async function getContainerServiceInvoiceDraftDocuments(containerId: string, serviceType: "shipping_agency" | "tariff_broker") {
+async function getContainerServiceInvoiceDraftDocuments(containerId: string, serviceType: "shipping_agency" | "tariff_broker" | "container_trucking") {
   const supabase = createSupabaseUntypedAdminClient();
   const { data, error } = await supabase.from("container_service_invoice_draft_document").select("id, uploaded_at, attachment:file_id(original_file_name)").eq("import_container_id", containerId).eq("service_type", serviceType).order("uploaded_at", { ascending: false });
   if (error && (error.code === "PGRST205" || error.message.includes("container_service_invoice_draft_document"))) return [];
@@ -14033,7 +14033,7 @@ async function uploadContainerServiceInvoiceDraftDocumentAction(formData: FormDa
   const serviceType = textValue(formData, "service_type");
   const file = formData.get("agency_invoice_document_file");
   const fail = (message: string) => ({ error: message });
-  if (!containerId || !["shipping_agency", "tariff_broker"].includes(serviceType) || !(file instanceof File) || file.size === 0) return fail("Choose an original invoice file to upload.");
+  if (!containerId || !["shipping_agency", "tariff_broker", "container_trucking"].includes(serviceType) || !(file instanceof File) || file.size === 0) return fail("Choose an original invoice file to upload.");
   const supabase = createSupabaseUntypedAdminClient();
   const { data: container, error: containerError } = await supabase.from("import_container").select("id").eq("id", containerId).maybeSingle();
   if (containerError || !container) return fail(containerError?.message ?? "The container was not found.");
@@ -14066,12 +14066,12 @@ async function saveContainerServiceInvoiceAction(formData: FormData) {
   const totalAmount = Number(textValue(formData, "total_amount"));
   const originalInvoiceFile = formData.get("agency_invoice_document_file");
   const fail = (message: string) => ({ error: message });
-  if (!containerId || !["shipping_agency", "tariff_broker"].includes(serviceType)) return fail("The service invoice could not be identified.");
+  if (!containerId || !["shipping_agency", "tariff_broker", "container_trucking"].includes(serviceType)) return fail("The service invoice could not be identified.");
   if (!agencyName || !agencyInvoiceNumber || !dueDate || !Number.isFinite(totalAmount) || totalAmount < 0) return fail("Enter the agency invoice number, due date, and a valid total amount.");
   const supabase = createSupabaseUntypedAdminClient();
   const { data: container, error: containerError } = await supabase.from("import_container").select("id, container_number, booking_number, vessel_name, shipping_agency, tariff_broker_agency").eq("id", containerId).maybeSingle();
   if (containerError || !container) return fail(containerError?.message ?? "The container was not found.");
-  const expectedAgencyName = serviceType === "shipping_agency" ? container.shipping_agency : container.tariff_broker_agency;
+  const expectedAgencyName = serviceType === "shipping_agency" ? container.shipping_agency : serviceType === "tariff_broker" ? container.tariff_broker_agency : agencyName;
   if (expectedAgencyName !== agencyName) return fail("The container agency has changed. Reopen the invoice form and try again.");
   if (serviceInvoiceId) {
     const { error: updateError } = await supabase.from("container_service_invoice").update({ agency_invoice_number: agencyInvoiceNumber, due_date: dueDate, total_amount: totalAmount }).eq("id", serviceInvoiceId).eq("import_container_id", container.id).eq("service_type", serviceType).eq("invoice_status", "open");
@@ -14082,8 +14082,8 @@ async function saveContainerServiceInvoiceAction(formData: FormData) {
   const { data: existingInvoice, error: existingInvoiceError } = await supabase.from("container_service_invoice").select("id").eq("import_container_id", containerId).eq("service_type", serviceType).maybeSingle();
   if (existingInvoiceError) return fail(existingInvoiceError.message);
   if (existingInvoice) return { destination: `/?module=container-detail&container=${containerId}&container_tab=service_invoices` };
-  const agencyBusinessType = serviceType === "shipping_agency" ? "shipping" : "customs_broker";
-  const { data: agency, error: agencyError } = await supabase.from("purchasing_agency").select("id").eq("business_type", agencyBusinessType).eq("agency_name", agencyName).maybeSingle();
+  const agencyBusinessType = serviceType === "shipping_agency" ? "shipping" : serviceType === "tariff_broker" ? "customs_broker" : null;
+  const { data: agency, error: agencyError } = agencyBusinessType ? await supabase.from("purchasing_agency").select("id").eq("business_type", agencyBusinessType).eq("agency_name", agencyName).maybeSingle() : { data: null, error: null };
   if (agencyError) return fail(agencyError.message);
   const { data: invoice, error: invoiceError } = await supabase.from("container_service_invoice").insert({ import_container_id: container.id, purchasing_agency_id: agency?.id ?? null, service_type: serviceType, agency_name_snapshot: agencyName, agency_invoice_number: agencyInvoiceNumber, due_date: dueDate, total_amount: totalAmount, container_number_snapshot: container.container_number, booking_number_snapshot: serviceType === "shipping_agency" ? container.booking_number : null, vessel_name_snapshot: serviceType === "shipping_agency" ? container.vessel_name : null }).select("id").single();
   if (invoiceError || !invoice) return fail(invoiceError?.message ?? "The service invoice could not be saved.");
@@ -16669,7 +16669,7 @@ export async function ErpRouter({
           return <ContainerServiceInvoiceDetail error={params.error} invoice={params.service_invoice ? await getContainerServiceInvoiceDetail(params.service_invoice) : null} payAction={recordContainerServiceInvoicePaymentAction} startPayment={params.payment_entry === "1"} uploadDocumentAction={uploadContainerServiceInvoicePaymentDocumentAction} />;
         })() : activeModule === "container-service-invoice" ? await (async () => {
           const workspace = params.container ? await getContainerWorkspace(params.container) : null;
-          const serviceType = params.service_invoice_type === "tariff_broker" ? "tariff_broker" : "shipping_agency";
+          const serviceType = params.service_invoice_type === "container_trucking" ? "container_trucking" : params.service_invoice_type === "tariff_broker" ? "tariff_broker" : "shipping_agency";
           const invoice = params.service_invoice ? workspace?.serviceInvoices.find((item) => item.id === params.service_invoice && item.service_type === serviceType) ?? null : null;
           return <ContainerServiceInvoiceEditor container={workspace?.container ?? null} draftDocuments={workspace?.container ? await getContainerServiceInvoiceDraftDocuments(workspace.container.id, serviceType) : []} error={params.error} invoice={invoice} saveAction={saveContainerServiceInvoiceAction} serviceType={serviceType} uploadAction={uploadContainerServiceInvoiceDraftDocumentAction} />;
         })() : activeModule === "purchasing-agency" ? params.purchasing_agency && (params.agency_edit_section === "details" || params.agency_edit_section === "bank") ? (

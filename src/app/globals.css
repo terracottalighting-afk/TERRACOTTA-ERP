@@ -2225,6 +2225,11 @@ dd {
   overflow: hidden;
 }
 
+.stacked-sections {
+  display: grid;
+  gap: 16px;
+}
+
 .section-title {
   align-items: center;
   background: var(--panel-soft);

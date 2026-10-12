@@ -2005,6 +2005,16 @@ input {
   text-decoration: underline;
 }
 
+.text-action--disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.text-action--disabled:hover {
+  text-decoration: none;
+}
+
 .text-action--active {
   border-bottom: 2px solid var(--accent);
   padding-bottom: 5px;

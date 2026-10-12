@@ -13689,6 +13689,15 @@ async function updateContainerHeaderAction(formData: FormData) {
   const section = textValue(formData, "section");
   const baseUrl = `/?module=container&container=${containerId}`;
   if (!containerId || !["shipping", "schedule", "broker", "loading_site"].includes(section)) redirect(`/?module=purchasing&error=${encodeURIComponent("Invalid container update request.")}`);
+  if (section !== "schedule") {
+    const { data: container, error: containerError } = await createSupabaseUntypedAdminClient().from("import_container").select("container_status").eq("id", containerId).maybeSingle();
+    if (containerError || !container) redirect(`${baseUrl}&container_edit_mode=1&container_edit=${section}&error=${encodeURIComponent(containerError?.message ?? "Container was not found.")}`);
+    const options = await getContainerStatusOptions();
+    const currentStatusIndex = options.findIndex((option) => option.code === container.container_status);
+    const loadedStatusIndex = options.findIndex((option) => option.code === "loaded");
+    const isLocked = currentStatusIndex >= 0 && loadedStatusIndex >= 0 ? currentStatusIndex >= loadedStatusIndex : ["loaded", "on_water", "customs_cleared", "delivered", "cancelled"].includes(container.container_status);
+    if (isLocked) redirect(`/?module=container-detail&container=${containerId}&error=${encodeURIComponent("Container details cannot be edited after the container reaches Loaded status.")}`);
+  }
   let loadingSite;
   try { loadingSite = section === "loading_site" ? await resolveContainerLoadingSite(textValue(formData, "consolidation_loading_vendor_id")) : null; } catch (error) { redirect(`${baseUrl}&error=${encodeURIComponent(error instanceof Error ? error.message : "The loading site could not be saved.")}`); }
   const values = section === "shipping" ? {
@@ -16639,6 +16648,13 @@ export async function ErpRouter({
           const workspace = params.container ? await getContainerWorkspace(params.container, params.container_po) : null;
           if (workspace?.container && workspace.container.container_status !== "draft" && params.container_edit_mode !== "1") redirect(`/?module=container-detail&container=${workspace.container.id}`);
           const editingSection = ["shipping", "schedule", "broker", "loading_site"].includes(params.container_edit ?? "") ? params.container_edit as "shipping" | "schedule" | "broker" | "loading_site" : undefined;
+          if (workspace?.container && editingSection && editingSection !== "schedule") {
+            const options = await getContainerStatusOptions();
+            const currentStatusIndex = options.findIndex((option) => option.code === workspace.container.container_status);
+            const loadedStatusIndex = options.findIndex((option) => option.code === "loaded");
+            const isLocked = currentStatusIndex >= 0 && loadedStatusIndex >= 0 ? currentStatusIndex >= loadedStatusIndex : ["loaded", "on_water", "customs_cleared", "delivered", "cancelled"].includes(workspace.container.container_status);
+            if (isLocked) redirect(`/?module=container-detail&container=${workspace.container.id}`);
+          }
           return <ContainerWorkspace activeOrders={workspace?.activeOrders ?? []} addProductAction={addContainerProductAction} agencies={await getContainerAgencies()} container={workspace?.container ?? null} containerLines={workspace?.containerLines ?? []} deleteDocumentAction={deleteContainerDocumentAction} deleteProductAction={deleteContainerProductAction} documents={workspace?.documents ?? []} editingSection={editingSection} error={params.error} finalizeAction={finalizeContainerAction} selectedLines={workspace?.selectedLines ?? []} selectedOrder={workspace?.selectedOrder ?? null} updateHeaderAction={updateContainerHeaderAction} updateProductAction={updateContainerProductAction} uploadDocumentAction={uploadContainerDocumentAction} vendors={await getContainerLoadingSiteVendors()} />;
         })() : activeModule === "vendor-invoice" ? await (async () => {
           const detail = params.vendor_invoice ? await getContainerVendorInvoiceDetail(params.vendor_invoice) : null;

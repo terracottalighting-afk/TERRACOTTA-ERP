@@ -2161,6 +2161,7 @@ dd {
   padding: 0 8px;
 }
 
+.container-detail-tabs a,
 .container-detail-tabs button {
   font-size: 15px;
   padding: 12px 14px;

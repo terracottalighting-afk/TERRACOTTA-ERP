@@ -27,7 +27,7 @@ import { PrimaryShowroomDashboardPage } from "@/components/customers/primary-sho
 import { PrimaryShowroomPerformanceReportPage } from "@/components/customers/primary-showroom-performance-report-page";
 import { PurchasingDashboard } from "@/components/purchasing/purchasing-dashboard";
 import { PurchaseOrderEditor } from "@/components/purchasing/purchase-order-editor";
-import { PurchaseOrderLinesEditor } from "@/components/purchasing/purchase-order-lines-editor";
+import { PurchaseOrderDetail } from "@/components/purchasing/purchase-order-detail";
 import { PurchaseOrderReview } from "@/components/purchasing/purchase-order-review";
 import { PurchaseOrderProductionUpdate } from "@/components/purchasing/purchase-order-production-update";
 import { ContainerEditor } from "@/components/purchasing/container-editor";
@@ -246,6 +246,7 @@ export type SearchParams = Promise<{
   container_po?: string;
   po_edit?: string;
   po_line?: string;
+  po_tab?: string;
   po_vendor_confirmation?: string;
   payment?: string;
   invoice?: string;
@@ -14356,7 +14357,7 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
   const [{ data: vendorProducts, error: vendorProductsError }, { data: lines, error: linesError }, { data: vendorContact, error: vendorContactError }, { data: purchasingSettings, error: purchasingSettingsError }] = await Promise.all([
     supabase.from("vendor_product").select("id, product_id, vendor_item_number, unit_cost").eq("vendor_id", order.vendor_id).eq("is_active", true).order("vendor_item_number"),
     supabase.from("vendor_purchase_order_line").select("id, product_sku_snapshot, product_name_snapshot, vendor_item_number_snapshot, quantity_ordered, unit_cost, line_total, expected_ready_date, notes, production_status, production_status_changed_at, quantity_exited_factory, cancellation_reason").eq("vendor_purchase_order_id", order.id).order("created_at"),
-    supabase.from("vendor").select("email").eq("id", order.vendor_id).maybeSingle(),
+    supabase.from("vendor").select("contact_name, email").eq("id", order.vendor_id).maybeSingle(),
     supabase.from("system_setting").select("setting_key, setting_value").in("setting_key", ["purchasing_import_tariff_rate_percent", "purchasing_vendor_production_commitment"]),
   ]);
   if (vendorProductsError || linesError || vendorContactError || purchasingSettingsError) throw new Error(vendorProductsError?.message ?? linesError?.message ?? vendorContactError?.message ?? purchasingSettingsError?.message);
@@ -14369,8 +14370,10 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
   const tariffRatePercent = Number.isFinite(configuredTariffRate) && configuredTariffRate >= 0 && configuredTariffRate <= 100 ? configuredTariffRate : DEFAULT_IMPORT_TARIFF_RATE_PERCENT;
   const configuredCommitment = purchasingSettingByKey.get("purchasing_vendor_production_commitment");
   const vendorProductionCommitment = typeof configuredCommitment === "string" && configuredCommitment.trim() ? configuredCommitment : DEFAULT_VENDOR_PRODUCTION_COMMITMENT;
+  const addressSnapshot = order.vendor_address_snapshot_json && typeof order.vendor_address_snapshot_json === "object" && !Array.isArray(order.vendor_address_snapshot_json) ? order.vendor_address_snapshot_json as Record<string, unknown> : {};
+  const vendorAddress = [addressSnapshot.address_line_1, addressSnapshot.address_line_2, [addressSnapshot.city, addressSnapshot.state_province, addressSnapshot.postal_code].filter(Boolean).join(", "), addressSnapshot.country].filter((value) => typeof value === "string" && value.trim()).join("\n");
   return {
-    order: { ...order, vendor_name: order.vendor_name_snapshot, vendor_email: vendorContact?.email ?? null },
+    order: { ...order, vendor_name: order.vendor_name_snapshot, vendor_address: vendorAddress, vendor_contact_name: vendorContact?.contact_name ?? null, vendor_email: vendorContact?.email ?? null },
     products: (vendorProducts ?? []).flatMap((vendorProduct) => {
       const product = productById.get(vendorProduct.product_id);
       return product ? [{ id: vendorProduct.id, sku: product.sku, name: product.name, vendor_item_number: vendorProduct.vendor_item_number, unit_cost: Number(vendorProduct.unit_cost) }] : [];
@@ -14386,7 +14389,7 @@ async function addVendorPurchaseOrderLineAction(formData: FormData) {
   "use server";
   const purchaseOrderId = textValue(formData, "purchase_order_id");
   const vendorProductId = textValue(formData, "vendor_product_id");
-  const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&po_tab=order_products&error=${encodeURIComponent(message)}`);
   const quantityOrdered = Number(textValue(formData, "quantity_ordered"));
   if (!purchaseOrderId || !vendorProductId || !Number.isFinite(quantityOrdered) || quantityOrdered <= 0) fail("Select a product and enter a quantity greater than zero.");
   const supabase = createSupabaseUntypedAdminClient();
@@ -14412,18 +14415,18 @@ async function addVendorPurchaseOrderLineAction(formData: FormData) {
     notes: textValue(formData, "notes") || null,
   });
   if (error) fail(error.message);
-  redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
+  redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&po_tab=order_products`);
 }
 
 async function updateVendorPurchaseOrderScheduleAction(formData: FormData) {
   "use server";
   const purchaseOrderId = textValue(formData, "purchase_order_id");
-  const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&po_tab=profile&error=${encodeURIComponent(message)}`);
   if (!purchaseOrderId || !textValue(formData, "po_date")) fail("A PO date is required.");
   const freightAmount = Number(textValue(formData, "freight_amount") || 0);
   if (!Number.isFinite(freightAmount) || freightAmount < 0) fail("Expected freight cost must be zero or greater.");
-  const { data: order, error: orderError } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).in("status", PRE_VENDOR_CONFIRMATION_EDITABLE_PO_STATUSES).maybeSingle();
-  if (orderError || !order) fail(orderError?.message ?? "Purchase orders can be edited until vendor confirmation is saved.");
+  const { data: order, error: orderError } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).maybeSingle();
+  if (orderError || !order) fail(orderError?.message ?? "Purchase order was not found.");
   const { error } = await createSupabaseUntypedAdminClient().from("vendor_purchase_order").update({
     po_date: textValue(formData, "po_date"),
     expected_ready_date: textValue(formData, "expected_ready_date") || null,
@@ -14431,9 +14434,9 @@ async function updateVendorPurchaseOrderScheduleAction(formData: FormData) {
     expected_arrival_date: textValue(formData, "expected_arrival_date") || null,
     expected_available_date: textValue(formData, "expected_available_date") || null,
     freight_amount: freightAmount,
-  }).eq("id", purchaseOrderId).in("status", PRE_VENDOR_CONFIRMATION_EDITABLE_PO_STATUSES);
+  }).eq("id", purchaseOrderId);
   if (error) fail(error.message);
-  redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
+  redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&po_tab=profile`);
 }
 
 async function updateVendorPurchaseOrderLineAction(formData: FormData) {
@@ -14441,28 +14444,28 @@ async function updateVendorPurchaseOrderLineAction(formData: FormData) {
   const purchaseOrderId = textValue(formData, "purchase_order_id");
   const lineId = textValue(formData, "line_id");
   const quantityOrdered = Number(textValue(formData, "quantity_ordered"));
-  const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&po_tab=order_products&error=${encodeURIComponent(message)}`);
   if (!purchaseOrderId || !lineId || !Number.isFinite(quantityOrdered) || quantityOrdered <= 0) fail("Enter a quantity greater than zero.");
   const supabase = createSupabaseUntypedAdminClient();
   const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).in("status", PRE_VENDOR_CONFIRMATION_EDITABLE_PO_STATUSES).maybeSingle();
   if (orderError || !order) fail(orderError?.message ?? "Purchase orders can be edited until vendor confirmation is saved.");
   const { error } = await supabase.from("vendor_purchase_order_line").update({ quantity_ordered: quantityOrdered, expected_ready_date: textValue(formData, "expected_ready_date") || null, notes: textValue(formData, "notes") || null }).eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId);
   if (error) fail(error.message);
-  redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
+  redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&po_tab=order_products`);
 }
 
 async function deleteVendorPurchaseOrderLineAction(formData: FormData) {
   "use server";
   const purchaseOrderId = textValue(formData, "purchase_order_id");
   const lineId = textValue(formData, "line_id");
-  const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&error=${encodeURIComponent(message)}`);
+  const fail = (message: string) => redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&po_tab=order_products&error=${encodeURIComponent(message)}`);
   if (!purchaseOrderId || !lineId) fail("The purchase order product was not found.");
   const supabase = createSupabaseUntypedAdminClient();
   const { data: order, error: orderError } = await supabase.from("vendor_purchase_order").select("id").eq("id", purchaseOrderId).in("status", PRE_VENDOR_CONFIRMATION_EDITABLE_PO_STATUSES).maybeSingle();
   if (orderError || !order) fail(orderError?.message ?? "Purchase orders can be edited until vendor confirmation is saved.");
   const { error } = await supabase.from("vendor_purchase_order_line").delete().eq("id", lineId).eq("vendor_purchase_order_id", purchaseOrderId);
   if (error) fail(error.message);
-  redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}`);
+  redirect(`/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&po_tab=order_products`);
 }
 
 async function submitVendorPurchaseOrderForReviewAction(formData: FormData) {
@@ -16688,7 +16691,8 @@ export async function ErpRouter({
         ) : activeModule === "vendor-purchase-order" ? await (async () => {
           const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;
           if (workspace?.order.status === "in_production") redirect(`/?module=vendor-purchase-order-review&purchase_order=${workspace.order.id}`);
-          return <PurchaseOrderLinesEditor addLineAction={addVendorPurchaseOrderLineAction} deleteLineAction={deleteVendorPurchaseOrderLineAction} editingLineId={params.po_line} editingSchedule={params.po_edit === "schedule"} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} products={workspace?.products ?? []} submitForReviewAction={submitVendorPurchaseOrderForReviewAction} updateLineAction={updateVendorPurchaseOrderLineAction} updateScheduleAction={updateVendorPurchaseOrderScheduleAction} />;
+          const purchaseOrderTab = params.po_tab === "order_products" || params.po_tab === "ex_factory_qa" ? params.po_tab : "profile";
+          return <PurchaseOrderDetail activeTab={purchaseOrderTab} addLineAction={addVendorPurchaseOrderLineAction} deleteLineAction={deleteVendorPurchaseOrderLineAction} editingLineId={params.po_line} editingSchedule={params.po_edit === "schedule"} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} products={workspace?.products ?? []} submitForReviewAction={submitVendorPurchaseOrderForReviewAction} updateLineAction={updateVendorPurchaseOrderLineAction} updateScheduleAction={updateVendorPurchaseOrderScheduleAction} />;
         })() : activeModule === "vendor-purchase-order-review" ? await (async () => {
           const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;
           return <PurchaseOrderReview decisionAction={reviewVendorPurchaseOrderAction} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} showVendorConfirmation={params.po_vendor_confirmation === "1"} submitForReviewAction={submitVendorPurchaseOrderForReviewAction} tariffRatePercent={workspace?.purchasingSettings.tariffRatePercent ?? DEFAULT_IMPORT_TARIFF_RATE_PERCENT} vendorConfirmationAction={confirmVendorPurchaseOrderAction} />;

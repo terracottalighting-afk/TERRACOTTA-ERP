@@ -247,6 +247,7 @@ export type SearchParams = Promise<{
   po_edit?: string;
   po_line?: string;
   po_tab?: string;
+  qa_line?: string;
   po_vendor_confirmation?: string;
   payment?: string;
   invoice?: string;
@@ -2232,6 +2233,52 @@ async function savePurchasingSettingsAction(formData: FormData) {
   if (error) redirect(errorUrl(error.message));
   revalidatePath("/");
   redirect("/?module=admin&admin_tab=purchasing");
+}
+
+async function saveFactoryInspectionAreaSettingAction(formData: FormData) {
+  "use server";
+  const areaId = textValue(formData, "inspection_area_id");
+  const areaName = textValue(formData, "area_name");
+  const sortOrder = Number(textValue(formData, "sort_order") || 0);
+  const fail = (message: string) => redirect(`/?module=admin&admin_tab=ex_factory_qa&error=${encodeURIComponent(message)}`);
+  if (!areaName || !Number.isInteger(sortOrder) || sortOrder < 0) fail("Enter an inspection area name and a valid display order.");
+  const supabase = createSupabaseUntypedAdminClient();
+  const query = areaId ? supabase.from("factory_inspection_area_setting").update({ area_name: areaName, sort_order: sortOrder }).eq("id", areaId) : supabase.from("factory_inspection_area_setting").insert({ area_name: areaName, sort_order: sortOrder });
+  const { error } = await query;
+  if (error) fail(error.message);
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=ex_factory_qa");
+}
+
+async function saveFactoryInspectionPointSettingAction(formData: FormData) {
+  "use server";
+  const pointId = textValue(formData, "inspection_point_id");
+  const areaId = textValue(formData, "inspection_area_id");
+  const pointName = textValue(formData, "point_name");
+  const expectedResult = textValue(formData, "expected_result");
+  const sortOrder = Number(textValue(formData, "sort_order") || 0);
+  const fail = (message: string) => redirect(`/?module=admin&admin_tab=ex_factory_qa&error=${encodeURIComponent(message)}`);
+  if (!areaId || !pointName || !expectedResult || !Number.isInteger(sortOrder) || sortOrder < 0) fail("Enter an inspection point, its expected result, and a valid display order.");
+  const supabase = createSupabaseUntypedAdminClient();
+  const values = { area_id: areaId, expected_result: expectedResult, point_name: pointName, sort_order: sortOrder };
+  const query = pointId ? supabase.from("factory_inspection_point_setting").update(values).eq("id", pointId) : supabase.from("factory_inspection_point_setting").insert(values);
+  const { error } = await query;
+  if (error) fail(error.message);
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=ex_factory_qa");
+}
+
+async function deactivateFactoryInspectionSettingAction(formData: FormData) {
+  "use server";
+  const id = textValue(formData, "configuration_id");
+  const type = textValue(formData, "configuration_type");
+  const fail = (message: string) => redirect(`/?module=admin&admin_tab=ex_factory_qa&error=${encodeURIComponent(message)}`);
+  if (!id || (type !== "area" && type !== "point")) fail("The QA setting could not be identified.");
+  const table = type === "area" ? "factory_inspection_area_setting" : "factory_inspection_point_setting";
+  const { error } = await createSupabaseUntypedAdminClient().from(table).update({ is_active: false }).eq("id", id);
+  if (error) fail(error.message);
+  revalidatePath("/");
+  redirect("/?module=admin&admin_tab=ex_factory_qa");
 }
 
 async function getReportFieldMappings(reportType?: ReportTypeCode): Promise<ReportFieldMapping[]> {
@@ -14356,7 +14403,7 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
   if (!order) return null;
   const [{ data: vendorProducts, error: vendorProductsError }, { data: lines, error: linesError }, { data: vendorContact, error: vendorContactError }, { data: purchasingSettings, error: purchasingSettingsError }] = await Promise.all([
     supabase.from("vendor_product").select("id, product_id, vendor_item_number, unit_cost").eq("vendor_id", order.vendor_id).eq("is_active", true).order("vendor_item_number"),
-    supabase.from("vendor_purchase_order_line").select("id, product_sku_snapshot, product_name_snapshot, vendor_item_number_snapshot, quantity_ordered, unit_cost, line_total, expected_ready_date, notes, production_status, production_status_changed_at, quantity_exited_factory, cancellation_reason").eq("vendor_purchase_order_id", order.id).order("created_at"),
+    supabase.from("vendor_purchase_order_line").select("id, product_id, product_sku_snapshot, product_name_snapshot, vendor_item_number_snapshot, quantity_ordered, unit_cost, line_total, expected_ready_date, notes, production_status, production_status_changed_at, quantity_exited_factory, cancellation_reason").eq("vendor_purchase_order_id", order.id).order("created_at"),
     supabase.from("vendor").select("contact_name, email").eq("id", order.vendor_id).maybeSingle(),
     supabase.from("system_setting").select("setting_key, setting_value").in("setting_key", ["purchasing_import_tariff_rate_percent", "purchasing_vendor_production_commitment"]),
   ]);
@@ -14370,6 +14417,22 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
   const tariffRatePercent = Number.isFinite(configuredTariffRate) && configuredTariffRate >= 0 && configuredTariffRate <= 100 ? configuredTariffRate : DEFAULT_IMPORT_TARIFF_RATE_PERCENT;
   const configuredCommitment = purchasingSettingByKey.get("purchasing_vendor_production_commitment");
   const vendorProductionCommitment = typeof configuredCommitment === "string" && configuredCommitment.trim() ? configuredCommitment : DEFAULT_VENDOR_PRODUCTION_COMMITMENT;
+  const [qaAreasResult, qaPointsResult, inspectionsResult] = await Promise.all([
+    supabase.from("factory_inspection_area_setting").select("id, area_name, sort_order").eq("is_active", true).order("sort_order").order("area_name"),
+    supabase.from("factory_inspection_point_setting").select("id, area_id, point_name, expected_result, sort_order").eq("is_active", true).order("sort_order").order("point_name"),
+    supabase.from("factory_inspection").select("id, inspection_number, inspection_status").eq("vendor_purchase_order_id", order.id).order("created_at", { ascending: false }).limit(1),
+  ]);
+  const missingQaSchemaCodes = new Set(["42P01", "42703", "PGRST204", "PGRST205"]);
+  const qaSetupMissing = [qaAreasResult.error, qaPointsResult.error].some((error) => error && missingQaSchemaCodes.has(error.code));
+  const qaError = [qaAreasResult.error, qaPointsResult.error, inspectionsResult.error].find((error) => error && !missingQaSchemaCodes.has(error.code));
+  if (qaError) throw new Error(qaError.message);
+  const inspection = inspectionsResult.data?.[0] ?? null;
+  const qaLinesResult = inspection && !qaSetupMissing ? await supabase.from("factory_inspection_line").select("id, vendor_purchase_order_line_id, inspection_area_id, inspection_point_id, actual_result, pass_fail_status, notes").eq("factory_inspection_id", inspection.id) : { data: [], error: null };
+  if (qaLinesResult.error && !missingQaSchemaCodes.has(qaLinesResult.error.code)) throw new Error(qaLinesResult.error.message);
+  const qaLineIds = (qaLinesResult.data ?? []).map((line) => line.id);
+  const qaImagesResult = qaLineIds.length ? await supabase.from("factory_inspection_line_image").select("id, factory_inspection_line_id, display_name, uploaded_at, attachment:file_id(original_file_name, storage_bucket, storage_path)").in("factory_inspection_line_id", qaLineIds).order("uploaded_at", { ascending: false }) : { data: [], error: null };
+  if (qaImagesResult.error && !missingQaSchemaCodes.has(qaImagesResult.error.code)) throw new Error(qaImagesResult.error.message);
+  const qaImages = await Promise.all((qaImagesResult.data ?? []).flatMap((image) => { const attachment = Array.isArray(image.attachment) ? image.attachment[0] : image.attachment; return attachment ? [{ ...image, original_file_name: attachment.original_file_name, storage_bucket: attachment.storage_bucket, storage_path: attachment.storage_path }] : []; }).map(async (image) => ({ id: image.id, factory_inspection_line_id: image.factory_inspection_line_id, display_name: image.display_name, original_file_name: image.original_file_name, uploaded_at: image.uploaded_at, signed_url: (await supabase.storage.from(image.storage_bucket).createSignedUrl(image.storage_path, 60 * 60)).data?.signedUrl ?? null })));
   const addressSnapshot = order.vendor_address_snapshot_json && typeof order.vendor_address_snapshot_json === "object" && !Array.isArray(order.vendor_address_snapshot_json) ? order.vendor_address_snapshot_json as Record<string, unknown> : {};
   const vendorAddress = [addressSnapshot.address_line_1, addressSnapshot.address_line_2, [addressSnapshot.city, addressSnapshot.state_province, addressSnapshot.postal_code].filter(Boolean).join(", "), addressSnapshot.country].filter((value) => typeof value === "string" && value.trim()).join("\n");
   return {
@@ -14378,12 +14441,103 @@ async function getVendorPurchaseOrderWorkspace(purchaseOrderId: string) {
       const product = productById.get(vendorProduct.product_id);
       return product ? [{ id: vendorProduct.id, sku: product.sku, name: product.name, vendor_item_number: vendorProduct.vendor_item_number, unit_cost: Number(vendorProduct.unit_cost) }] : [];
     }),
-    lines: (lines ?? []).map((line) => ({ id: line.id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, vendor_item_number: line.vendor_item_number_snapshot, quantity_ordered: Number(line.quantity_ordered), unit_cost: Number(line.unit_cost), line_total: Number(line.line_total), expected_ready_date: line.expected_ready_date, notes: line.notes, production_status: line.production_status, production_status_changed_at: line.production_status_changed_at, quantity_exited_factory: Number(line.quantity_exited_factory ?? 0), cancellation_reason: line.cancellation_reason })),
+    lines: (lines ?? []).map((line) => ({ id: line.id, product_id: line.product_id, sku: line.product_sku_snapshot, name: line.product_name_snapshot, vendor_item_number: line.vendor_item_number_snapshot, quantity_ordered: Number(line.quantity_ordered), unit_cost: Number(line.unit_cost), line_total: Number(line.line_total), expected_ready_date: line.expected_ready_date, notes: line.notes, production_status: line.production_status, production_status_changed_at: line.production_status_changed_at, quantity_exited_factory: Number(line.quantity_exited_factory ?? 0), cancellation_reason: line.cancellation_reason })),
+    qa: { areas: (qaAreasResult.data ?? []).map((area) => ({ ...area, points: (qaPointsResult.data ?? []).filter((point) => point.area_id === area.id) })), images: qaImages, inspection, results: qaLinesResult.data ?? [], setupMissing: qaSetupMissing },
     purchasingSettings: { tariffRatePercent, vendorProductionCommitment },
   };
 }
 
 const PRE_VENDOR_CONFIRMATION_EDITABLE_PO_STATUSES = ["draft", "ready_for_review", "for_vendor_confirmation"];
+
+async function ensureFactoryInspectionResultLine(purchaseOrderId: string, purchaseOrderLineId: string, inspectionPointId: string) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const [{ data: orderLine, error: orderLineError }, { data: point, error: pointError }] = await Promise.all([
+    supabase.from("vendor_purchase_order_line").select("id, product_id").eq("id", purchaseOrderLineId).eq("vendor_purchase_order_id", purchaseOrderId).maybeSingle(),
+    supabase.from("factory_inspection_point_setting").select("id, area_id, point_name, expected_result").eq("id", inspectionPointId).eq("is_active", true).maybeSingle(),
+  ]);
+  if (orderLineError || !orderLine || pointError || !point) throw new Error(orderLineError?.message ?? pointError?.message ?? "The SKU or inspection point was not found.");
+  const { data: inspections, error: inspectionError } = await supabase.from("factory_inspection").select("id").eq("vendor_purchase_order_id", purchaseOrderId).order("created_at", { ascending: false }).limit(1);
+  if (inspectionError) throw new Error(inspectionError.message);
+  let inspectionId = inspections?.[0]?.id as string | undefined;
+  if (!inspectionId) {
+    const { data: createdInspection, error: createInspectionError } = await supabase.from("factory_inspection").insert({ vendor_purchase_order_id: purchaseOrderId }).select("id").single();
+    if (createInspectionError || !createdInspection) throw new Error(createInspectionError?.message ?? "The factory inspection could not be created.");
+    inspectionId = createdInspection.id;
+  }
+  const { data: existingLine, error: existingLineError } = await supabase.from("factory_inspection_line").select("id").eq("factory_inspection_id", inspectionId).eq("vendor_purchase_order_line_id", purchaseOrderLineId).eq("inspection_point_id", inspectionPointId).maybeSingle();
+  if (existingLineError) throw new Error(existingLineError.message);
+  if (existingLine) return { inspectionId: inspectionId!, resultLineId: existingLine.id };
+  const { data: resultLine, error: resultLineError } = await supabase.from("factory_inspection_line").insert({ factory_inspection_id: inspectionId, vendor_purchase_order_line_id: purchaseOrderLineId, product_id: orderLine.product_id, checkpoint_name: point.point_name, expected_result: point.expected_result, inspection_area_id: point.area_id, inspection_point_id: point.id }).select("id").single();
+  if (resultLineError || !resultLine) throw new Error(resultLineError?.message ?? "The inspection result line could not be created.");
+  return { inspectionId: inspectionId!, resultLineId: resultLine.id };
+}
+
+async function refreshFactoryInspectionStatus(inspectionId: string, purchaseOrderId: string) {
+  const supabase = createSupabaseUntypedAdminClient();
+  const [{ data: results }, { count: pointCount }, { count: skuCount }] = await Promise.all([
+    supabase.from("factory_inspection_line").select("pass_fail_status").eq("factory_inspection_id", inspectionId).not("inspection_point_id", "is", null),
+    supabase.from("factory_inspection_point_setting").select("id", { count: "exact", head: true }).eq("is_active", true),
+    supabase.from("vendor_purchase_order_line").select("id", { count: "exact", head: true }).eq("vendor_purchase_order_id", purchaseOrderId),
+  ]);
+  const completed = (results ?? []).filter((result) => result.pass_fail_status === "pass" || result.pass_fail_status === "fail");
+  const status = completed.some((result) => result.pass_fail_status === "fail") ? "failed" : completed.length > 0 && completed.length >= Number(pointCount ?? 0) * Number(skuCount ?? 0) ? "passed" : completed.length ? "partial" : "draft";
+  await supabase.from("factory_inspection").update({ inspection_status: status }).eq("id", inspectionId);
+}
+
+async function saveFactoryInspectionResultAction(formData: FormData) {
+  "use server";
+  const purchaseOrderId = textValue(formData, "purchase_order_id");
+  const purchaseOrderLineId = textValue(formData, "purchase_order_line_id");
+  const inspectionPointId = textValue(formData, "inspection_point_id");
+  const actualResult = textValue(formData, "actual_result");
+  const resultStatus = textValue(formData, "pass_fail_status");
+  const returnUrl = `/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&po_tab=ex_factory_qa&qa_line=${purchaseOrderLineId}`;
+  const fail = (message: string) => redirect(`${returnUrl}&error=${encodeURIComponent(message)}`);
+  if (!purchaseOrderId || !purchaseOrderLineId || !inspectionPointId || !actualResult || (resultStatus !== "pass" && resultStatus !== "fail")) fail("Enter the observed result and select PASS or FAIL.");
+  try {
+    const { inspectionId, resultLineId } = await ensureFactoryInspectionResultLine(purchaseOrderId, purchaseOrderLineId, inspectionPointId);
+    const { error } = await createSupabaseUntypedAdminClient().from("factory_inspection_line").update({ actual_result: actualResult, pass_fail_status: resultStatus }).eq("id", resultLineId);
+    if (error) throw new Error(error.message);
+    await refreshFactoryInspectionStatus(inspectionId, purchaseOrderId);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : "The inspection result could not be saved.");
+  }
+  revalidatePath("/");
+  redirect(returnUrl);
+}
+
+async function uploadFactoryInspectionImageAction(formData: FormData) {
+  "use server";
+  const purchaseOrderId = textValue(formData, "purchase_order_id");
+  const purchaseOrderLineId = textValue(formData, "purchase_order_line_id");
+  const inspectionPointId = textValue(formData, "inspection_point_id");
+  const displayName = textValue(formData, "display_name");
+  const imageFile = formData.get("inspection_image");
+  const returnUrl = `/?module=vendor-purchase-order&purchase_order=${purchaseOrderId}&po_tab=ex_factory_qa&qa_line=${purchaseOrderLineId}`;
+  const fail = (message: string) => redirect(`${returnUrl}&error=${encodeURIComponent(message)}`);
+  if (!purchaseOrderId || !purchaseOrderLineId || !inspectionPointId || !(imageFile instanceof File) || imageFile.size === 0) fail("Choose an inspection image to upload.");
+  const uploadFile = imageFile as File;
+  if (uploadFile.size > 25 * 1024 * 1024) fail("Inspection images must be smaller than 25 MB.");
+  const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp", "image/tiff"]);
+  if (uploadFile.type && !allowedTypes.has(uploadFile.type)) fail("Upload a JPG, PNG, WEBP, GIF, BMP, or TIFF image.");
+  try {
+    const { inspectionId, resultLineId } = await ensureFactoryInspectionResultLine(purchaseOrderId, purchaseOrderLineId, inspectionPointId);
+    const supabase = createSupabaseUntypedAdminClient();
+    const safeName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storageBucket = "customer-attachments";
+    const storagePath = `factory-inspections/${inspectionId}/${resultLineId}/${Date.now()}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from(storageBucket).upload(storagePath, new Uint8Array(await uploadFile.arrayBuffer()), { contentType: uploadFile.type || "application/octet-stream", upsert: false });
+    if (uploadError) throw new Error(uploadError.message);
+    const { data: attachment, error: attachmentError } = await supabase.from("attachment").insert({ category: "factory_inspection_image", content_type: uploadFile.type || null, entity_id: resultLineId, entity_type: "factory_inspection_line", file_size: uploadFile.size, original_file_name: uploadFile.name, storage_bucket: storageBucket, storage_path: storagePath }).select("id").single();
+    if (attachmentError || !attachment) throw new Error(attachmentError?.message ?? "The inspection image record could not be created.");
+    const { error: linkError } = await supabase.from("factory_inspection_line_image").insert({ factory_inspection_line_id: resultLineId, file_id: attachment!.id, display_name: displayName || uploadFile.name });
+    if (linkError) throw new Error(linkError.message);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : "The inspection image could not be uploaded.");
+  }
+  revalidatePath("/");
+  redirect(returnUrl);
+}
 
 async function addVendorPurchaseOrderLineAction(formData: FormData) {
   "use server";
@@ -16692,7 +16846,7 @@ export async function ErpRouter({
           const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;
           if (workspace?.order.status === "in_production") redirect(`/?module=vendor-purchase-order-review&purchase_order=${workspace.order.id}`);
           const purchaseOrderTab = params.po_tab === "order_products" || params.po_tab === "ex_factory_qa" ? params.po_tab : "profile";
-          return <PurchaseOrderDetail activeTab={purchaseOrderTab} addLineAction={addVendorPurchaseOrderLineAction} deleteLineAction={deleteVendorPurchaseOrderLineAction} editingLineId={params.po_line} editingSchedule={params.po_edit === "schedule"} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} products={workspace?.products ?? []} submitForReviewAction={submitVendorPurchaseOrderForReviewAction} updateLineAction={updateVendorPurchaseOrderLineAction} updateScheduleAction={updateVendorPurchaseOrderScheduleAction} />;
+          return <PurchaseOrderDetail activeTab={purchaseOrderTab} addLineAction={addVendorPurchaseOrderLineAction} deleteLineAction={deleteVendorPurchaseOrderLineAction} editingLineId={params.po_line} editingSchedule={params.po_edit === "schedule"} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} products={workspace?.products ?? []} qa={workspace?.qa ?? { areas: [], images: [], inspection: null, results: [], setupMissing: true }} saveQaResultAction={saveFactoryInspectionResultAction} selectedQaLineId={params.qa_line} submitForReviewAction={submitVendorPurchaseOrderForReviewAction} updateLineAction={updateVendorPurchaseOrderLineAction} updateScheduleAction={updateVendorPurchaseOrderScheduleAction} uploadQaImageAction={uploadFactoryInspectionImageAction} />;
         })() : activeModule === "vendor-purchase-order-review" ? await (async () => {
           const workspace = params.purchase_order ? await getVendorPurchaseOrderWorkspace(params.purchase_order) : null;
           return <PurchaseOrderReview decisionAction={reviewVendorPurchaseOrderAction} error={params.error} lines={workspace?.lines ?? []} order={workspace?.order ?? null} showVendorConfirmation={params.po_vendor_confirmation === "1"} submitForReviewAction={submitVendorPurchaseOrderForReviewAction} tariffRatePercent={workspace?.purchasingSettings.tariffRatePercent ?? DEFAULT_IMPORT_TARIFF_RATE_PERCENT} vendorConfirmationAction={confirmVendorPurchaseOrderAction} />;
@@ -16743,7 +16897,7 @@ export async function ErpRouter({
         ) : activeModule === "admin-warehouse" ? (
           <WarehouseInfoPage deactivateAisleAction={deactivateWarehouseAisleAction} deactivateSectionAction={deactivateWarehouseSectionAction} deactivateZoneAction={deactivateWarehouseZoneAction} warehouseId={params.warehouse} />
         ) : activeModule === "admin" ? (
-          <AdminDashboard addReportAction={createReportDefinitionAction} addReportTypeAction={createReportSettingTypeAction} assignReportTypeAction={setReportDefinitionTypeAction} assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} deleteReportMappingAction={deleteReportMappingAction} editReportMappingAction={editReportMappingAction} editReportTypeAction={editReportSettingTypeAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveMappingObjectSourcesAction={saveMappingObjectSourcesAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
+          <AdminDashboard addReportAction={createReportDefinitionAction} addReportTypeAction={createReportSettingTypeAction} assignReportTypeAction={setReportDefinitionTypeAction} assignStyleAction={assignStyleToSignatureSuiteAction} createReportMappingAction={createReportMappingAction} deactivateCustomerSettingAction={deactivateCustomerSettingAction} deactivateProductSettingAction={deactivateProductSettingAction} deactivateQaSettingAction={deactivateFactoryInspectionSettingAction} deactivateWarehousesAction={deactivateWarehousesAction} deleteReportMappingAction={deleteReportMappingAction} editReportMappingAction={editReportMappingAction} editReportTypeAction={editReportSettingTypeAction} error={params.error} saveCustomerSettingAction={saveCustomerSettingAction} saveDropshipSettingsAction={saveDropshipSettingsAction} saveFreightCarrierAction={saveFreightCarrierAction} saveFreightLevelAction={saveFreightLevelAction} saveMappingObjectSourcesAction={saveMappingObjectSourcesAction} savePrimaryShowroomSettingsAction={savePrimaryShowroomSettingsAction} saveProductSettingAction={saveProductSettingAction} savePurchasingSettingsAction={savePurchasingSettingsAction} saveQaAreaAction={saveFactoryInspectionAreaSettingAction} saveQaPointAction={saveFactoryInspectionPointSettingAction} selectedFreightTab={params.freight_tab} selectedTab={params.admin_tab} />
         ) : activeModule === "orders" || activeModule === "quotes" ? (
           <OrdersOverview
             convertQuoteToOrderAction={convertQuoteToOrderAction}

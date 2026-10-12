@@ -2231,6 +2231,130 @@ dd {
   gap: 16px;
 }
 
+.qa-setting-areas,
+.qa-inspection-workspace {
+  margin-top: 16px;
+}
+
+.qa-setting-area {
+  border-top: 1px solid var(--line);
+}
+
+.qa-setting-area > .section-title {
+  padding-inline: 0;
+}
+
+.qa-add-point-form {
+  align-items: end;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(180px, 1fr) minmax(260px, 2fr) 120px auto;
+  padding: 14px 0;
+}
+
+.qa-add-point-form label,
+.compact-setting-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.inline-editor {
+  display: inline-block;
+  position: relative;
+}
+
+.inline-editor summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.compact-setting-form {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 10px;
+  min-width: 320px;
+  padding: 12px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 5;
+}
+
+.compact-setting-form--wide {
+  min-width: min(520px, 80vw);
+}
+
+.qa-inspection-heading {
+  border: 1px solid var(--line);
+  border-radius: 8px 8px 0 0;
+}
+
+.qa-sku-tabs {
+  margin-top: 0;
+}
+
+.qa-selected-sku {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 14px 4px;
+}
+
+.qa-selected-sku span {
+  color: var(--muted);
+}
+
+.qa-inspection-table {
+  min-width: 1120px;
+}
+
+.qa-inspection-table th:nth-child(1) { width: 20%; }
+.qa-inspection-table th:nth-child(2) { width: 26%; }
+.qa-inspection-table th:nth-child(3) { width: 25%; }
+.qa-inspection-table th:nth-child(4) { width: 10%; }
+.qa-inspection-table th:nth-child(5) { width: 19%; }
+
+.qa-inspection-table textarea {
+  min-height: 72px;
+  min-width: 220px;
+  width: 100%;
+}
+
+.qa-save-result {
+  display: block;
+  margin-top: 8px;
+}
+
+.qa-image-links,
+.qa-image-upload form {
+  display: grid;
+  gap: 7px;
+}
+
+.qa-image-upload {
+  margin-top: 8px;
+}
+
+.qa-image-upload summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.qa-image-upload form {
+  margin-top: 8px;
+  min-width: 220px;
+}
+
+@media (max-width: 900px) {
+  .qa-add-point-form {
+    grid-template-columns: 1fr;
+  }
+}
+
 .section-title {
   align-items: center;
   background: var(--panel-soft);
